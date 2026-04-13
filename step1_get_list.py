@@ -34,7 +34,7 @@ def fetch_movie_list(start_url):
     while current_url:
         print(f"  -> 正在抓取第 {page_count} 页: {current_url}")
         try:
-            # 【核心魔法】impersonate="edge101" 完美模拟 Edge 浏览器的 TLS 指纹
+            #impersonate="edge101" 模拟 Edge 浏览器的 TLS 指纹
             response = requests.get(
                 current_url, 
                 headers=HEADERS, 
