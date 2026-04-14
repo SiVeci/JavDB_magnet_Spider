@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JavDB 磁力智能爬虫节点</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .log-box::-webkit-scrollbar { width: 6px; }
+        .log-box::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 md:p-8 font-sans">
+
+    <div class="max-w-4xl mx-auto space-y-6">
+        <div class="text-center md:text-left">
+            <h1 class="text-3xl font-bold text-gray-800">🧲 JavDB 磁力智能爬虫</h1>
+            <p class="text-gray-500 mt-2 text-sm">后台静默执行 · 自动续传支持</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <h2 class="text-lg font-semibold text-gray-700 mb-4">⚙️ 任务全新配置</h2>
+                <div class="space-y-4 text-sm">
+                    <div>
+                        <label class="block text-gray-600 mb-1">起始页面 URL</label>
+                        <input type="text" id="start_url" class="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-gray-600 mb-1">Cookie</label>
+                        <textarea id="cookie" rows="3" class="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-gray-600 mb-1">User-Agent</label>
+                        <input type="text" id="user_agent" class="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-gray-600 mb-1">自定义文件名 (可选)</label>
+                        <input type="text" id="filename" placeholder="留空则以时间戳自动命名" class="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-gray-600 mb-1">HTTP 代理 (可选)</label>
+                        <div class="flex space-x-2">
+                            <input type="text" id="proxy_host" placeholder="IP / 地址 (如: 192.168.2.1)" class="w-2/3 border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                            <input type="text" id="proxy_port" placeholder="端口 (如: 7893)" class="w-1/3 border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                        </div>
+                        <p class="text-xs text-gray-400 mt-1">系统会自动拼接 "http://"。若不使用请留空。</p>
+                    </div>
+                    <button onclick="startTask()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-200 mt-2">
+                        🚀 全新启动任务
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex flex-col space-y-4">
+                
+                <div id="resumePanel" class="hidden bg-orange-50 p-5 rounded-xl shadow-sm border border-orange-200">
+                    <h3 class="text-orange-700 font-bold mb-2 flex items-center">
+                        <span class="text-xl mr-2">⚠️</span> 任务被拦截已挂起！
+                    </h3>
+                    <p class="text-sm text-orange-600 mb-3">Cookie可能已过期或被Cloudflare盾拦截。爬取进度已安全保存。</p>
+                    <a href="https://javdb.com" target="_blank" class="text-xs text-blue-600 underline block mb-2">👉 点击此处前往网站重新登录</a>
+                    <textarea id="resume_cookie" rows="2" placeholder="请在此粘贴全新的 Cookie..." class="w-full border border-orange-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-orange-500 outline-none mb-3"></textarea>
+                    <button onclick="resumeTask()" class="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-2 rounded-lg transition duration-200 shadow-md">
+                        ▶️ 提交并从断点接力续传
+                    </button>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex-grow flex flex-col">
+                    <h2 class="text-lg font-semibold text-gray-700 mb-4">📊 实时监控</h2>
+                    <div class="mb-4">
+                        <div class="flex justify-between text-sm mb-1">
+                            <span id="statusLabel" class="text-blue-600 font-medium">状态: 闲置中</span>
+                            <span id="progressText" class="text-gray-600 font-mono">0/0</span>
+                        </div>
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-lg font-semibold text-gray-700">📊 实时监控</h2>
+                            <button id="stopBtn" onclick="stopTask()" class="hidden bg-red-100 hover:bg-red-200 text-red-600 text-xs font-bold py-1 px-3 rounded-lg border border-red-200 transition">
+                                🛑 强行终止任务
+                            </button>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2.5">
+                            <div id="progressBar" class="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+                        </div>
+                        <div class="mt-2 text-xs text-gray-500 text-right">正在处理: <span id="currentCode" class="font-mono font-bold text-gray-700">-</span></div>
+                    </div>
+
+                    <div class="flex-grow bg-gray-50 rounded-lg border border-gray-200 p-3 h-48 overflow-y-auto log-box font-mono text-xs text-gray-600" id="logContainer">
+                        <div>等待任务启动...</div>
+                    </div>
+
+                    <a id="downloadBtn" href="#" target="_blank" class="hidden mt-4 text-center w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg shadow-md transition duration-200">
+                        📥 下载最终 CSV 文件
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let pollInterval = null;
+
+        window.onload = function() {
+            document.getElementById('start_url').value = localStorage.getItem('javdb_url') || '';
+            document.getElementById('cookie').value = localStorage.getItem('javdb_cookie') || '';
+            document.getElementById('user_agent').value = localStorage.getItem('javdb_ua') || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0';
+            
+            document.getElementById('filename').value = localStorage.getItem('javdb_filename') || '';
+            document.getElementById('proxy_host').value = localStorage.getItem('javdb_proxy_host') || '';
+            document.getElementById('proxy_port').value = localStorage.getItem('javdb_proxy_port') || '';
+            
+            pollStatus();
+        };
+        async function stopTask() {
+            if (!confirm("确定要强行终止当前任务吗？进度将被保存为断点。")) return;
+            
+            try {
+                const res = await fetch('/api/stop', { method: 'POST' }).then(r => r.json());
+                alert(res.msg);
+            } catch (err) {
+                alert("停止请求失败。");
+            }
+        }
+        async function startTask() {
+            const url = document.getElementById('start_url').value.trim();
+            const cookie = document.getElementById('cookie').value.trim();
+            const ua = document.getElementById('user_agent').value.trim();
+            const filename = document.getElementById('filename').value.trim();
+            const host = document.getElementById('proxy_host').value.trim();
+            const port = document.getElementById('proxy_port').value.trim();
+
+            if (!url || !cookie) return alert("URL和Cookie不能为空！");
+
+            let finalProxy = null;
+            if (host || port) {
+                if (!host || !port) return alert("如果使用代理，IP地址和端口号都必须填写！");
+                let cleanHost = host.replace(/^https?:\/\//, ''); 
+                finalProxy = `http://${cleanHost}:${port}`;
+            }
+
+            localStorage.setItem('javdb_url', url);
+            localStorage.setItem('javdb_cookie', cookie);
+            localStorage.setItem('javdb_ua', ua);
+            localStorage.setItem('javdb_filename', filename);
+            localStorage.setItem('javdb_proxy_host', host);
+            localStorage.setItem('javdb_proxy_port', port);
+
+            const res = await fetch('/api/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    start_url: url, 
+                    cookie: cookie, 
+                    user_agent: ua, 
+                    filename: filename,
+                    proxies: finalProxy 
+                })
+            }).then(r => r.json());
+            
+            if (res.code === 200) {
+                document.getElementById('downloadBtn').classList.add('hidden');
+                document.getElementById('resumePanel').classList.add('hidden');
+                pollStatus();
+                if (!pollInterval) pollInterval = setInterval(pollStatus, 2000);
+            } else { alert(res.msg); }
+        }
+
+        async function resumeTask() {
+            const newCookie = document.getElementById('resume_cookie').value.trim();
+            if (!newCookie) return alert("请先粘贴新获取的 Cookie！");
+
+            const res = await fetch('/api/resume', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cookie: newCookie })
+            }).then(r => r.json());
+
+            if (res.code === 200) {
+                document.getElementById('cookie').value = newCookie;
+                localStorage.setItem('javdb_cookie', newCookie);
+                
+                document.getElementById('resumePanel').classList.add('hidden');
+                document.getElementById('resume_cookie').value = '';
+                
+                if (!pollInterval) pollInterval = setInterval(pollStatus, 2000);
+            } else { alert(res.msg); }
+        }
+
+        async function pollStatus() {
+            try {
+                const data = await fetch('/api/status').then(r => r.json());
+                
+                document.getElementById('progressText').innerText = data.progress;
+                document.getElementById('currentCode').innerText = data.current;
+                
+                if(data.progress && data.progress.includes('/')) {
+                    const parts = data.progress.split('/');
+                    if(parts[1] !== '0') {
+                        document.getElementById('progressBar').style.width = ((parseInt(parts[0]) / parseInt(parts[1])) * 100) + '%';
+                    }
+                }
+
+                const logBox = document.getElementById('logContainer');
+                logBox.innerHTML = '';
+                if(data.logs && data.logs.length > 0) {
+                    data.logs.forEach(log => {
+                        const div = document.createElement('div');
+                        div.className = "mb-1 border-b border-gray-100 pb-1";
+                        if(log.includes("成功") || log.includes("恢复中")) div.classList.add("text-green-600");
+                        if(log.includes("异常") || log.includes("挂起") || log.includes("拦截")) div.classList.add("text-red-500");
+                        div.innerText = log;
+                        logBox.appendChild(div);
+                    });
+                    logBox.scrollTop = logBox.scrollHeight;
+                }
+                const stopBtn = document.getElementById('stopBtn');
+                const statusLabel = document.getElementById('statusLabel');
+                const progressBar = document.getElementById('progressBar');
+                const resumePanel = document.getElementById('resumePanel');
+
+                if (data.state === "running") {
+                    statusLabel.innerText = "状态: 🏃 正在运行...";
+                    stopBtn.classList.remove('hidden'); // 运行中显示停止按钮
+                    statusLabel.className = "text-blue-600 font-medium animate-pulse";
+                    progressBar.className = "bg-blue-600 h-2.5 rounded-full transition-all duration-500";
+                    resumePanel.classList.add('hidden');
+                    if (!pollInterval) pollInterval = setInterval(pollStatus, 2000);
+                } else if (data.state === "stopped") {
+                    statusLabel.innerText = "状态: 🛑 任务已手动停止";
+                    statusLabel.className = "text-gray-600 font-bold";
+                    stopBtn.classList.add('hidden'); // 停止后隐藏
+                    document.getElementById('resumePanel').classList.remove('hidden'); // 允许从断点恢复
+                    clearInterval(pollInterval); pollInterval = null;
+                }else if (data.state === "paused_need_cookie") {
+                    statusLabel.innerText = "状态: ⏸️ 拦截挂起，等待救援";
+                    statusLabel.className = "text-orange-600 font-bold animate-pulse";
+                    progressBar.className = "bg-orange-400 h-2.5 rounded-full transition-all duration-500";
+                    resumePanel.classList.remove('hidden'); 
+                    clearInterval(pollInterval); pollInterval = null; 
+                } else if (data.state === "finished") {
+                    statusLabel.innerText = "状态: ✅ 任务完成";
+                    statusLabel.className = "text-green-600 font-medium";
+                    
+                    // 绑定动态生成的下载文件名
+                    const fname = data.final_filename || "final_magnets.csv";
+                    const dlBtn = document.getElementById('downloadBtn');
+                    dlBtn.href = `/api/download?name=${encodeURIComponent(fname)}`;
+                    dlBtn.classList.remove('hidden');
+                    
+                    resumePanel.classList.add('hidden');
+                    clearInterval(pollInterval); pollInterval = null;
+                } else if (data.state === "error") {
+                    statusLabel.innerText = "状态: ❌ 任务异常终止";
+                    statusLabel.className = "text-red-600 font-medium";
+                    resumePanel.classList.add('hidden');
+                    clearInterval(pollInterval); pollInterval = null;
+                }else {
+                    stopBtn.classList.add('hidden'); // 其他状态（完成、空闲）隐藏按钮
+                }
+            } catch (err) { console.log("轮询失败", err); }
+        }
+    </script>
+</body>
+</html>
