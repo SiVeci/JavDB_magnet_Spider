@@ -63,8 +63,19 @@ def start_task(config: TaskConfig):
     task_data['final_filename'] = target_filename # 记录最终确定的文件名
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump(task_data, f, ensure_ascii=False)
-        
-    # 4. 启动独立线程运行爬虫，不阻塞 API
+    
+    # 【新增】4. 在启动线程前，先在主线程同步写入初始状态！
+    # 这样能保证返回给前端 200 OK 时，status.json 在 Docker 硬盘里绝对是合法的 JSON
+    initial_status = {
+        "state": "running", 
+        "progress": "0/0", 
+        "current": "系统初始化", 
+        "logs": ["系统已分配资源，正在启动爬虫引擎..."]
+    }
+    with open(STATUS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(initial_status, f, ensure_ascii=False, indent=2) 
+
+    # 5. 启动独立线程运行爬虫，不阻塞 API
     thread = threading.Thread(
         target=run_spider, 
         args=(
@@ -96,7 +107,17 @@ def resume_task(r_config: ResumeConfig):
     # 将更新后的配置重新写回文件
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump(old_config, f, ensure_ascii=False)
-        
+
+    # 【新增】同步预写入唤醒状态
+    resume_status = {
+        "state": "running", 
+        "progress": "恢复中", 
+        "current": "系统唤醒", 
+        "logs": ["已接收新凭据，正在从断点处唤醒引擎..."]
+    }
+    with open(STATUS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(resume_status, f, ensure_ascii=False, indent=2)
+
     # 重新触发引擎，开启续传
     thread = threading.Thread(
         target=run_spider, 
@@ -117,12 +138,13 @@ def get_status():
     """供前端定时轮询获取最新进度"""
     if not os.path.exists(STATUS_FILE):
         return {"state": "idle", "progress": "0/0", "current": "-", "logs": ["等待任务启动..."]}
-        
+
     try:
         with open(STATUS_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     except:
-        return {"state": "error", "progress": "-", "current": "-", "logs": ["状态文件读取异常"]}
+        #return {"state": "error", "progress": "-", "current": "-", "logs": ["状态文件读取异常"]}
+        return {"state": "syncing", "progress": "IO同步", "current": "-", "logs": ["磁盘 IO 同步中，请稍候..."]}
 
 @app.get("/api/download")
 def download_csv(name: str = None):
