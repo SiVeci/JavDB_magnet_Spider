@@ -146,6 +146,15 @@ def read_root():
             return HTMLResponse(f.read())
     return HTMLResponse("<h1>找不到 frontend/index.html 文件，请检查目录结构。</h1>")
 
+@app.get("/favicon.png")
+def get_favicon():
+    """为前端放行 Logo 图标"""
+    file_path = os.path.join("frontend", "favicon.png")
+    if os.path.exists(file_path):
+        # 这里的 FileResponse 我们之前在顶部已经导入过了
+        return FileResponse(file_path, media_type="image/png")
+    return {"error": "找不到图标文件"}
+
 @app.get("/api/magnets")
 def get_magnets(name: str = None):
     """提取 CSV 中的纯磁力链接，供前端一键复制"""
