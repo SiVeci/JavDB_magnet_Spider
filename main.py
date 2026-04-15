@@ -6,6 +6,7 @@ import threading
 import json
 import os
 from spider_engine import run_spider, DATA_DIR, STATUS_FILE, STOP_EVENT
+import csv
 
 # 从我们的爬虫引擎导入需要的函数和常量
 from spider_engine import run_spider, DATA_DIR, STATUS_FILE
@@ -144,3 +145,50 @@ def read_root():
         with open(html_path, 'r', encoding='utf-8') as f:
             return HTMLResponse(f.read())
     return HTMLResponse("<h1>找不到 frontend/index.html 文件，请检查目录结构。</h1>")
+
+@app.get("/api/magnets")
+def get_magnets(name: str = None):
+    """提取 CSV 中的纯磁力链接，供前端一键复制"""
+    if not name:
+        return {"code": 400, "msg": "未指定文件名参数"}
+        
+    file_path = os.path.join(DATA_DIR, name)
+    if not os.path.exists(file_path):
+        return {"code": 404, "msg": "找不到该文件"}
+        
+    magnets = []
+    try:
+        # 打开生成的 CSV 文件，提取磁力链接列
+        with open(file_path, 'r', encoding='utf-8-sig') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                if '磁力链接' in row and row['磁力链接']:
+                    magnets.append(row['磁力链接'])
+        return {"code": 200, "data": magnets}
+    except Exception as e:
+        return {"code": 500, "msg": f"读取文件出错: {str(e)}"}
+    
+@app.post("/api/clear_logs")
+def clear_logs():
+    """清除运行记录和日志，保护隐私"""
+    # 检查当前是否在运行，运行中禁止清除
+    if os.path.exists(STATUS_FILE):
+        try:
+            with open(STATUS_FILE, 'r', encoding='utf-8') as f:
+                status = json.load(f)
+                if status.get("state") == "running":
+                    return {"code": 400, "msg": "任务运行中，请先停止后再清除记录！"}
+        except:
+            pass
+
+    # 重置状态文件，但不触碰 task_config.json (保留 Cookie)
+    empty_status = {
+        "state": "idle",
+        "progress": "0/0",
+        "current": "-",
+        "logs": ["记录已安全清除。"]
+    }
+    with open(STATUS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(empty_status, f, ensure_ascii=False, indent=2)
+    
+    return {"code": 200, "msg": "记录已成功清除"}

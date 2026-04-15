@@ -46,9 +46,14 @@
                         </div>
                         <p class="text-xs text-gray-400 mt-1">系统会自动拼接 "http://"。若不使用请留空。</p>
                     </div>
-                    <button onclick="startTask()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-200 mt-2">
-                        🚀 全新启动任务
-                    </button>
+                    <div class="flex space-x-3 mt-2">
+                        <button onclick="startTask()" class="flex-grow bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition duration-200">
+                            🚀 全新启动任务
+                        </button>
+                        <button id="clearBtn" onclick="clearLogs()" class="bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold px-4 rounded-lg border border-gray-300 transition duration-200 flex items-center justify-center" title="清除当前日志和进度记录">
+                            🗑️ 清除历史
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -89,9 +94,14 @@
                         <div>等待任务启动...</div>
                     </div>
 
-                    <a id="downloadBtn" href="#" target="_blank" class="hidden mt-4 text-center w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg shadow-md transition duration-200">
-                        📥 下载最终 CSV 文件
-                    </a>
+                    <div id="actionButtons" class="hidden mt-4 flex space-x-4">
+                        <a id="downloadBtn" href="#" target="_blank" class="w-1/2 text-center bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg shadow-md transition duration-200">
+                            📥 下载 CSV
+                        </a>
+                        <button onclick="copyMagnets()" class="w-1/2 flex items-center justify-center bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-lg shadow-md transition duration-200">
+                            📋 一键复制磁力
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -99,6 +109,7 @@
 
     <script>
         let pollInterval = null;
+        let finalFileName = ""; // 【新增】用于保存最终的文件名，供复制使用
 
         window.onload = function() {
             document.getElementById('start_url').value = localStorage.getItem('javdb_url') || '';
@@ -158,7 +169,7 @@
             }).then(r => r.json());
             
             if (res.code === 200) {
-                document.getElementById('downloadBtn').classList.add('hidden');
+                document.getElementById('actionButtons').classList.add('hidden');
                 document.getElementById('resumePanel').classList.add('hidden');
                 pollStatus();
                 if (!pollInterval) pollInterval = setInterval(pollStatus, 2000);
@@ -214,9 +225,11 @@
                     logBox.scrollTop = logBox.scrollHeight;
                 }
                 const stopBtn = document.getElementById('stopBtn');
+                const actionButtons = document.getElementById('actionButtons');
                 const statusLabel = document.getElementById('statusLabel');
                 const progressBar = document.getElementById('progressBar');
                 const resumePanel = document.getElementById('resumePanel');
+                const clearBtn = document.getElementById('clearBtn'); // 获取清除按钮
 
                 if (data.state === "running") {
                     statusLabel.innerText = "状态: 🏃 正在运行...";
@@ -225,6 +238,8 @@
                     progressBar.className = "bg-blue-600 h-2.5 rounded-full transition-all duration-500";
                     resumePanel.classList.add('hidden');
                     if (!pollInterval) pollInterval = setInterval(pollStatus, 2000);
+                    clearBtn.classList.add('hidden'); // 运行中隐藏清除按钮
+                    actionButtons.classList.add('hidden');
                 } else if (data.state === "stopped") {
                     statusLabel.innerText = "状态: 🛑 任务已手动停止";
                     statusLabel.className = "text-gray-600 font-bold";
@@ -237,18 +252,28 @@
                     progressBar.className = "bg-orange-400 h-2.5 rounded-full transition-all duration-500";
                     resumePanel.classList.remove('hidden'); 
                     clearInterval(pollInterval); pollInterval = null; 
+                    clearBtn.classList.remove('hidden'); // 暂停或停止时允许清除
                 } else if (data.state === "finished") {
                     statusLabel.innerText = "状态: ✅ 任务完成";
                     statusLabel.className = "text-green-600 font-medium";
                     
                     // 绑定动态生成的下载文件名
                     const fname = data.final_filename || "final_magnets.csv";
+                    finalFileName = fname; // 【新增】将文件名存入全局变量
                     const dlBtn = document.getElementById('downloadBtn');
                     dlBtn.href = `/api/download?name=${encodeURIComponent(fname)}`;
-                    dlBtn.classList.remove('hidden');
+                    // 【修改】显示整个操作按钮组，而不是单个按钮
+                    document.getElementById('actionButtons').classList.remove('hidden');
                     
                     resumePanel.classList.add('hidden');
                     clearInterval(pollInterval); pollInterval = null;
+                    clearBtn.classList.remove('hidden'); // 完成或闲置时允许清除
+                    actionButtons.classList.remove('hidden');
+                } else if (data.state === "idle") {
+                    // 【核心修改】当状态为闲置或清除后
+                    statusLabel.innerText = "状态: 闲置中";
+                    statusLabel.className = "text-gray-500 font-medium";
+                    actionButtons.classList.add('hidden'); // 强制隐藏下载和复制按钮
                 } else if (data.state === "error") {
                     statusLabel.innerText = "状态: ❌ 任务异常终止";
                     statusLabel.className = "text-red-600 font-medium";
@@ -258,6 +283,72 @@
                     stopBtn.classList.add('hidden'); // 其他状态（完成、空闲）隐藏按钮
                 }
             } catch (err) { console.log("轮询失败", err); }
+        }
+        // 【新增】一键复制纯净磁力链接逻辑
+        async function copyMagnets() {
+            if (!finalFileName) return alert("未找到有效的文件名！");
+            
+            try {
+                // 请求我们刚在后端写好的提取 API
+                const res = await fetch(`/api/magnets?name=${encodeURIComponent(finalFileName)}`).then(r => r.json());
+                
+                if (res.code !== 200) return alert(res.msg);
+                if (!res.data || res.data.length === 0) return alert("文件中没有找到磁力链接！");
+                
+                // 将数组用换行符拼接，生成干干净净的纯文本格式
+                const textToCopy = res.data.join('\n');
+
+                // 终极复制方案：兼顾 HTTPS (现代API) 和 HTTP (传统API，NAS局域网常用)
+                if (navigator.clipboard && window.isSecureContext) {
+                    // 如果是 HTTPS 或 localhost，使用现代剪贴板 API
+                    await navigator.clipboard.writeText(textToCopy);
+                    alert(`✅ 成功复制 ${res.data.length} 条磁力链接！\n现在可以直接粘贴到下载工具中了。`);
+                } else {
+                    // 如果是 HTTP (局域网 IP)，使用隐藏文本域的传统后备方案
+                    const textArea = document.createElement("textarea");
+                    textArea.value = textToCopy;
+                    // 强制隐藏且不影响页面滚动，防止手机端键盘闪烁
+                    textArea.style.position = "fixed";
+                    textArea.style.top = "0";
+                    textArea.style.left = "0";
+                    textArea.style.opacity = "0";
+                    document.body.appendChild(textArea);
+                    
+                    textArea.focus();
+                    textArea.select();
+                    
+                    try {
+                        document.execCommand('copy');
+                        alert(`✅ 成功复制 ${res.data.length} 条磁力链接！\n现在可以直接粘贴到下载工具中了。`);
+                    } catch (err) {
+                        alert("❌ 您的浏览器环境不支持自动复制，请手动下载 CSV 文件。");
+                    }
+                    document.body.removeChild(textArea);
+                }
+            } catch (err) {
+                console.error("提取磁力链接失败", err);
+                alert("提取磁力链接请求失败，请检查网络或后台服务。");
+            }
+        }
+        // 【新增】调用后端清理接口
+        async function clearLogs() {
+            if (!confirm("确定要清除所有运行日志和进度记录吗？\n(此操作不会删除您的 Cookie 配置)")) return;
+            
+            try {
+                const res = await fetch('/api/clear_logs', { method: 'POST' }).then(r => r.json());
+                if (res.code === 200) {
+                    // 立即刷新界面状态
+                    finalFileName = ""; // 清空全局文件名变量
+                    document.getElementById('actionButtons').classList.add('hidden'); // 立即隐藏按钮组
+                    document.getElementById('progressBar').style.width = '0%'; // 进度条归零
+                    pollStatus(); 
+                    alert("✅ 运行记录已清空，隐私已保护。");
+                } else {
+                    alert(res.msg);
+                }
+            } catch (err) {
+                alert("清理失败，请检查网络连接。");
+            }
         }
     </script>
 </body>
