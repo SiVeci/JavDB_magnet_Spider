@@ -7,6 +7,9 @@ import json
 import os
 from spider_engine import run_spider, DATA_DIR, STATUS_FILE, STOP_EVENT
 import csv
+from bs4 import BeautifulSoup
+from curl_cffi import requests
+from urllib.parse import urlparse, parse_qs
 
 # 从我们的爬虫引擎导入需要的函数和常量
 from spider_engine import run_spider, DATA_DIR, STATUS_FILE
@@ -27,6 +30,12 @@ class TaskConfig(BaseModel):
 # 定义接收前端续传任务数据的结构体
 class ResumeConfig(BaseModel):
     cookie: str
+
+# 定义接收获取标签请求的结构体
+class TagConfigRequest(BaseModel):
+    url: str
+    cookie: str
+    user_agent: str
 
 # ================= API 路由 =================
 @app.post("/api/stop")
@@ -223,3 +232,47 @@ def clear_logs():
         json.dump(empty_status, f, ensure_ascii=False, indent=2)
     
     return {"code": 200, "msg": "记录已成功清除"}
+
+@app.post("/api/get_tags")
+def get_tags(req: TagConfigRequest):
+    """根据输入的演员主页获取标签列表"""
+    try:
+        # 清理 URL，确保请求的是干净的基础页面
+        base_url = req.url.split('?')[0]
+        
+        headers = {
+            "User-Agent": req.user_agent,
+            "Cookie": req.cookie
+        }
+        
+        # 发起请求
+        response = requests.get(base_url, headers=headers, impersonate="chrome110", timeout=15)
+        if response.status_code != 200:
+            return {"code": response.status_code, "msg": f"请求失败，状态码: {response.status_code}"}
+            
+        soup = BeautifulSoup(response.text, 'html.parser')
+        tags_div = soup.select_one('.actor-tags .content')
+        
+        if not tags_div:
+            return {"code": 404, "msg": "未在页面中找到标签区域，可能是Cookie失效或不是演员目录页。"}
+            
+        tags = []
+        # 遍历带有 tag class 的 a 标签
+        for a in tags_div.find_all('a', class_='tag'):
+            name = a.text.strip()
+            href = a.get('href', '')
+            
+            # 解析 href 中的 t 参数
+            parsed_url = urlparse(href)
+            params = parse_qs(parsed_url.query)
+            
+            if 't' in params:
+                tag_value = params['t'][0]
+                # 排除可能混入的非功能性 tag
+                if tag_value: 
+                    tags.append({"name": name, "value": tag_value})
+                    
+        return {"code": 200, "data": tags}
+        
+    except Exception as e:
+        return {"code": 500, "msg": f"解析标签发生异常: {str(e)}"}
