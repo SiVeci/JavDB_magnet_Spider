@@ -26,22 +26,16 @@
 
 你可以通过手动构建镜像的方式，快速在 NAS 或服务器上运行。
 
-#### 1. 构建镜像
-在项目根目录下执行：
-```bash
-docker build -t javdb-spider .
-```
-
-#### 2. 启动容器 (以 Unraid/Linux 为例)
+#### 1. 启动容器
 ```bash
 docker run -d \
   --name=javdb-spider \
   -p 8090:8000 \
   -v /你的路径/appdata/javdb_spider/data:/app/data \
   --restart=unless-stopped \
-  javdb-spider
+  ghcr.io/siveci/javdb_spider:latest
 ```
-*启动后，访问 `http://NAS-IP:8090` 即可进入控制台。*
+*启动后，访问 `http://IP:8090` 即可进入控制台。*
 
 ---
 
