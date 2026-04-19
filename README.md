@@ -1,6 +1,7 @@
 <div align="center">
   <img src="frontend/logo.png" alt="JavDB Magnet Scraper Logo" width="180">
 </div>
+
 # 🧲 JavDB Magnet Scraper
 基于 Python 编写的 JavDB 自动化爬虫工具。
 集成 **FastAPI 后端**与**响应式 Web UI**，支持 **Cloudflare 完美绕过**、**断点续传**功能。
