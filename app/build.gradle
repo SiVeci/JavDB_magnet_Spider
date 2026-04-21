@@ -1,0 +1,68 @@
+plugins {
+    alias(libs.plugins.android.application)
+    id 'com.chaquo.python'
+}
+
+android {
+    namespace 'com.javdb_spider.app'
+    compileSdk {
+        version = release(36)
+    }
+
+    defaultConfig {
+        applicationId "com.javdb_spider.app"
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // === 新增：配置 NDK，指定手机 CPU 架构 ===
+        ndk {
+            abiFilters "arm64-v8a"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+    sourceSets {
+        main {
+            // 告诉 Chaquopy，Python 代码不在默认的 src/main/python 里了，
+            // 而是在 app 文件夹上一级的 spider_core 文件夹里！
+            python.srcDir "../spider_core"
+        }
+    }
+}
+
+dependencies {
+    implementation libs.appcompat
+    implementation libs.material
+    implementation libs.activity
+    implementation libs.constraintlayout
+    testImplementation libs.junit
+    androidTestImplementation libs.ext.junit
+    androidTestImplementation libs.espresso.core
+}
+
+chaquopy {
+    defaultConfig {
+        // 指定 Python 版本
+        version = "3.12"
+        // 配置你的爬虫需要的 Python 库
+        pip {
+            install "fastapi==0.95.2"
+            install "pydantic<2.0.0"
+            install "uvicorn"
+            install "beautifulsoup4"
+            // 注意：不安装 curl_cffi，因为我们要改用安卓原生 WebView
+        }
+    }
+}

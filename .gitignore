@@ -1,0 +1,31 @@
+# ================= Android & Gradle 默认忽略 =================
+*.iml
+.gradle
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# 忽略 app 模块下的编译产物
+/app/build/
+
+# ================= Python 忽略 =================
+# 字节码缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
+# ================= 爬虫业务隐私数据忽略 =================
+spider_core/data/
+spider_core/task_config.json
+spider_core/status.json
+spider_core/checkpoint.json

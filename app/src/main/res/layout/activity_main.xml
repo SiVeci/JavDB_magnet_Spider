@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F3F4F6"
+    android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:id="@+id/control_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:orientation="vertical"
+        android:padding="32dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🧲 JavDB 引擎 (安卓端)"
+            android:textAlignment="center"
+            android:textColor="#1F2937"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp"/>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="登录网站→启动服务→打开控制台→开始任务"
+            android:textAlignment="center"
+            android:textColor="#6B7280"
+            android:textSize="14sp"
+            android:layout_marginBottom="32dp"/>
+
+        <Button
+            android:id="@+id/btn_login"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="1. 手动登录过盾"
+            android:backgroundTint="#F59E0B"
+            android:textSize="16sp"
+            android:layout_marginBottom="16dp"/>
+
+        <Button
+            android:id="@+id/btn_start"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="2. 启动爬虫引擎"
+            android:backgroundTint="#3B82F6"
+            android:textSize="16sp"
+            android:layout_marginBottom="16dp"/>
+
+        <Button
+            android:id="@+id/btn_open_browser"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="3. 打开 WebUI 控制台"
+            android:backgroundTint="#10B981"
+            android:textSize="16sp"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/login_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <Button
+            android:id="@+id/btn_close_login"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="登录完成？点击关闭此页面"
+            android:backgroundTint="#10B981"/>
+
+        <WebView
+            android:id="@+id/visible_webview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"/>
+    </LinearLayout>
+
+</RelativeLayout>
