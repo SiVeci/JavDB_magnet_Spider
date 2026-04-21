@@ -1,41 +1,35 @@
-name: Docker Publish to GHCR (Manual)
-on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: '请输入发布的版本号 (例如: v0.2.0, 留空默认 latest)'
-        required: true
-        default: 'latest'
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository_owner }}/javdb_spider 
-jobs:
-  build-and-push-image:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Log in to the Container registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=${{ github.event.inputs.version }}
+# 1. 弃用 slim，回到最稳、库最全的官方全量镜像
+FROM python:3.12
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+# 2. 设置工作目录为 /app
+WORKDIR /app
+
+# 3. 安装最核心的系统依赖 (全量镜像虽然全，但补上这三个能解决 99% 的 TLS 报错)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libnss3 \
+    libcurl4 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 4. 复制依赖清单
+COPY requirements.txt .
+
+# 5. 【核心修复】强制对齐 PC 端的版本，且不使用缓存
+# 这样能确保 Docker 下载的是专门为 Linux 编译的 0.15.0 完整版
+RUN pip install --no-cache-dir curl_cffi==0.15.0
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 6. 【关键路径控制】将 spider_core 内容平铺到 /app
+# 这样 main.py 就在 /app/main.py，与你 PC 上的“扁平”运行环境一致
+COPY spider_core/ .
+
+# 7. 预创建数据目录
+RUN mkdir -p /app/data
+
+# 8. 环境变量优化：强制 Python 输出实时日志，方便我们排查
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8000
+
+# 9. 启动命令
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
