@@ -18,13 +18,12 @@
 ## ✨ 核心特性
 
 - 📱 **Android 原生支持**：基于 Chaquopy 框架，在手机内运行完整的 FastAPI + Uvicorn 后端。
-- 🛡️ **CF 盾牌克星**：
-  - **Android 端**：利用原生 WebView 手动登录，物理级绕过 Cloudflare 5 秒盾，Cookie 自动无缝同步。
-  - **PC/Docker 端**：采用 `curl_cffi` 模拟 TLS 指纹，稳定穿透防护。
-- 🖥️ **响应式 Web 控制台**：适配所有屏幕尺寸，支持实时日志查看与任务管理。
-- 🧠 **智能磁力精选**：按 `中字无码 > 无码 > 中字 > 高清` 优先级自动筛选，拒绝垃圾链接。
-- ⏯️ **断点续传系统**：支持任务挂起与救援，Cookie 失效后补充即可接力，无需重头开始。
-- 🐳 **Docker 化部署**：专为 Unraid / 群晖等环境优化，支持多架构 (amd64/arm64) 构建。
+- **Android 端**：利用原生 WebView 手动登录，Cookie 自动无缝同步。
+- **PC/Docker 端**：采用 `curl_cffi` 模拟 TLS 指纹，稳定穿透防护。
+- 🖥️ **Web 控制台**：适配移动＆桌面屏幕尺寸，支持实时日志查看与任务管理。
+- 🧠 **自动选择磁力**：按 `中字无码 > 无码 > 中字 > 高清` 优先级自动筛选。
+- ⏯️ **断点续传系统**：支持任务挂起与救援，Cookie 失效后补充即可接力。
+- 🐳 **Docker 化部署**
 
 ---
 
@@ -79,7 +78,7 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ## 📁 项目结构 (Monorepo)
 ```text
 ├── app/                # Android 原生 Java 代码与资源
-├── spider_core/        # 🐍 核心 Python 逻辑 (三端共享)
+├── spider_core/        # 核心 Python 逻辑 (三端共享)
 │   ├── frontend/       # WebUI 静态资源
 │   ├── main.py         # FastAPI 路由入口
 │   └── spider_engine.py # 爬虫核心引擎
