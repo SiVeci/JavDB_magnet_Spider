@@ -1,0 +1,16 @@
+# 排除所有 GitHub 自动化相关的配置
+.github/ export-ignore
+
+# 排除 Git 自身的配置文件
+.gitignore export-ignore
+.gitattributes export-ignore
+
+# 排除 Windows 批处理脚本
+gradlew.bat export-ignore
+
+# 排除测试代码
+app/src/androidTest/ export-ignore
+app/src/test/ export-ignore
+
+# 排除签名文件
+app/javdb_spider.jks export-ignore
