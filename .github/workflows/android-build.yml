@@ -29,8 +29,11 @@ jobs:
           sed -i "s/\"dev-local\"/\"${{ github.event.inputs.version }}\"/g" spider_core/main.py
       - name: Build Release APK
         run: ./gradlew assembleRelease
+      - name: Rename APK File
+        run: |
+          mv app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/JavDB-Spider_${{ github.event.inputs.version }}_android_arm64-v8a.apk
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: JavDB-Spider-Release-${{ github.event.inputs.version }}
-          path: app/build/outputs/apk/release/*.apk
+          name: JavDB-Spider_${{ github.event.inputs.version }}_android_arm64-v8a
+          path: app/build/outputs/apk/release/JavDB-Spider_${{ github.event.inputs.version }}_android_arm64-v8a.apk
