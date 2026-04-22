@@ -1,15 +1,18 @@
-FROM python:3.12
+FROM python:3.12-slim
 WORKDIR /app
+ENV PYTHONUNBUFFERED=1 \
+    TZ=Asia/Shanghai
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libnss3 \
     libcurl4 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
-RUN pip install --no-cache-dir curl_cffi==0.15.0
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 COPY spider_core/ .
 RUN mkdir -p /app/data
-ENV PYTHONUNBUFFERED=1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://127.0.0.1:8000/docs || exit 1
 EXPOSE 8000
 CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
