@@ -9,7 +9,7 @@ import csv
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse, parse_qs
 
-# 【关键修改】去掉了 curl_cffi，新增导入了我们自己写的 fetch_html
+#去掉了 curl_cffi，新增导入fetch_html
 from spider_engine import run_spider, DATA_DIR, STATUS_FILE, STOP_EVENT, fetch_html
 
 app = FastAPI()
@@ -188,8 +188,9 @@ def get_tags(req: TagConfigRequest):
         base_url = req.url.split('?')[0]
         headers = {"User-Agent": req.user_agent, "Cookie": req.cookie}
 
-        # 【关键修改】不再使用 requests，直接调用封装好的环境自适应网关
-        response = fetch_html(base_url, headers=headers)
+        #不再使用 requests，直接调用封装好的环境自适应网关
+        #response = fetch_html(base_url, headers=headers)
+        response = fetch_html(base_url, headers=headers, proxies=req.proxies)
         if response.status_code != 200:
             return {"code": response.status_code, "msg": f"请求失败，状态码: {response.status_code}"}
 
