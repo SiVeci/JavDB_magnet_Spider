@@ -31,6 +31,7 @@ class TagConfigRequest(BaseModel):
     url: str
     cookie: str
     user_agent: str
+    proxies: str = None
 
 @app.post("/api/stop")
 def stop_task():
