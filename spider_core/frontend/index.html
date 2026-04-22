@@ -202,7 +202,7 @@
         }
 
         // ================= 标签获取与拼接 =================
-        async function fetchTags() {
+async function fetchTags() {
             const urlInput = document.getElementById('start_url');
             let currentUrl = urlInput.value.trim();
             
@@ -217,6 +217,17 @@
             const cookie = document.getElementById('cookie').value.trim();
             const userAgent = document.getElementById('user_agent').value.trim();
             
+            // 👇 --- 【新增：完整照搬 startTask 里的代理读取与组装逻辑】 ---
+            const host = document.getElementById('proxy_host').value.trim();
+            const port = document.getElementById('proxy_port').value.trim();
+            let finalProxy = null;
+            if (host || port) {
+                if (!host || !port) return alert("如果使用代理获取标签，IP地址和端口号都必须填写！");
+                let cleanHost = host.replace(/^https?:\/\//, ''); 
+                finalProxy = `http://${cleanHost}:${port}`;
+            }
+            // 👆 ----------------------------------------------------
+
             // 剥离参数，保留纯净的 Base URL
             actorBaseUrl = currentUrl.split('?')[0]; 
             urlInput.value = actorBaseUrl; 
@@ -228,11 +239,18 @@
                 btn.innerHTML = "⏳ 获取中";
                 btn.disabled = true;
 
+                // 👇 --- 【新增：构造 payload，如果填写了代理则带上 proxies 字段】 ---
+                const payload = { url: actorBaseUrl, cookie: cookie, user_agent: userAgent };
+                if (finalProxy) {
+                    payload.proxies = finalProxy;
+                }
+
                 const res = await fetch('/api/get_tags', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url: actorBaseUrl, cookie: cookie, user_agent: userAgent })
+                    body: JSON.stringify(payload) // 使用新的 payload 发送
                 }).then(r => r.json());
+                // 👆 ----------------------------------------------------
 
                 btn.innerHTML = oldHTML;
                 btn.disabled = false;
@@ -245,7 +263,6 @@
                         wrapper.classList.add('hidden');
                     } else {
                         renderTags();
-                        // 获取成功后，强制展开标签面板，方便用户查看
                         wrapper.classList.remove('hidden');
                         document.getElementById('tags-container').classList.remove('hidden');
                         document.getElementById('tags_icon').style.transform = 'rotate(180deg)';
