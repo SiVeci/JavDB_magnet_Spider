@@ -14,6 +14,11 @@ from spider_engine import run_spider, DATA_DIR, STATUS_FILE, STOP_EVENT, fetch_h
 
 app = FastAPI()
 
+APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "dev-local")
+
+@app.get("/api/version")
+def get_version():
+    return {"version": APP_VERSION}
 # 定义配置文件路径
 CONFIG_FILE = os.path.join(DATA_DIR, 'task_config.json')
 

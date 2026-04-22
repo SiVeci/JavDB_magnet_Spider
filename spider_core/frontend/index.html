@@ -20,7 +20,7 @@
                 <img src="/favicon.png" alt="Logo" class="w-10 h-10 object-contain rounded-lg">
                 <h1 class="text-3xl font-bold text-gray-800 tracking-tight">JavDB 磁力爬虫</h1>
             </div>
-            <span class="bg-indigo-100 text-indigo-600 text-[10px] px-1.5 py-0.5 rounded font-black tracking-tight">v1.0.1</span>
+            <span id="app_version" class="bg-indigo-100 text-indigo-600 text-[10px] px-1.5 py-0.5 rounded font-black tracking-tight">加载中...</span>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
@@ -172,7 +172,7 @@
         let availableTags = [];
         let selectedTags = new Set();
 
-        window.onload = function() {
+        window.onload = async function() {
             // 恢复本地存储的配置
             document.getElementById('start_url').value = localStorage.getItem('javdb_url') || '';
             document.getElementById('cookie').value = localStorage.getItem('javdb_cookie') || '';
@@ -180,7 +180,17 @@
             document.getElementById('filename').value = localStorage.getItem('javdb_filename') || '';
             document.getElementById('proxy_host').value = localStorage.getItem('javdb_proxy_host') || '';
             document.getElementById('proxy_port').value = localStorage.getItem('javdb_proxy_port') || '';
-            
+            try {
+                const res = await fetch('/api/version').then(r => r.json());
+                // 如果后端返回了 404 (通常带有 detail 字段)，防止显示 undefined
+                if (res.version) {
+                    document.getElementById('app_version').innerText = res.version;
+                } else {
+                    document.getElementById('app_version').innerText = "v?.?.?";
+                }
+            } catch (err) {
+                document.getElementById('app_version').innerText = "v?.?.?"; // 获取失败的降级显示
+            }
             pollStatus();
         };
 

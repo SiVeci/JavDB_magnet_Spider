@@ -22,13 +22,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
-      - name: Build APK
-        run: ./gradlew assembleDebug
+      - name: Inject Version Tag
+        run: |
+          sed -i "s/\"dev-local\"/\"${{ github.event.inputs.version }}\"/g" spider_core/main.py
+      - name: Build Release APK
+        run: ./gradlew assembleRelease
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: JavDB-Spider-Debug-APK
-          path: app/build/outputs/apk/debug/*.apk
+          name: JavDB-Spider-Release-${{ github.event.inputs.version }}
+          path: app/build/outputs/apk/release/*.apk
