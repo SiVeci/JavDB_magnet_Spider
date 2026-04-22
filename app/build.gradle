@@ -22,11 +22,24 @@ android {
             abiFilters "arm64-v8a"
         }
     }
+    signingConfigs {
+        release {
+            storeFile file("javdb_spider.jks")
+            storePassword "123456"
+            keyAlias "javdb"
+            keyPassword "123456"
+        }
+    }
 
     buildTypes {
+        debug {
+            signingConfig signingConfigs.release
+        }
+
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
     compileOptions {
