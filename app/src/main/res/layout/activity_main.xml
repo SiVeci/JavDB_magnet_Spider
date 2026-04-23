@@ -66,12 +66,29 @@
         android:orientation="vertical"
         android:visibility="gone">
 
-        <Button
-            android:id="@+id/btn_close_login"
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="登录完成？点击关闭此页面"
-            android:backgroundTint="#10B981"/>
+            android:orientation="horizontal"
+            android:padding="4dp">
+
+            <Button
+                android:id="@+id/btn_copy_link"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="复制当前链接"
+                android:backgroundTint="#3B82F6"
+                android:layout_marginEnd="4dp" />
+
+            <Button
+                android:id="@+id/btn_close_login"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="完成并关闭"
+                android:backgroundTint="#10B981" />
+        </LinearLayout>
 
         <WebView
             android:id="@+id/visible_webview"

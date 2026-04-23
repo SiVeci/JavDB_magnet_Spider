@@ -1,6 +1,9 @@
 package com.javdb_spider.app;
 
 import android.Manifest;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
@@ -43,6 +46,7 @@ public class MainActivity extends AppCompatActivity {
         Button btnStart = findViewById(R.id.btn_start);
         Button btnOpenBrowser = findViewById(R.id.btn_open_browser); // 新增的按钮
         Button btnCloseLogin = findViewById(R.id.btn_close_login);
+        Button btnCopyLink = findViewById(R.id.btn_copy_link); // 新增：复制当前链接按钮
 
         initVisibleWebView();
 
@@ -58,6 +62,21 @@ public class MainActivity extends AppCompatActivity {
             visibleWebView.loadUrl("about:blank");
             Toast.makeText(this, "Cookie 已自动接管", Toast.LENGTH_SHORT).show();
         });
+        
+        // 【新增】点击复制当前可见 WebView 的链接
+        if (btnCopyLink != null) {
+            btnCopyLink.setOnClickListener(v -> {
+                String currentUrl = visibleWebView.getUrl();
+                if (currentUrl != null && !currentUrl.isEmpty()) {
+                    ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                    ClipData clip = ClipData.newPlainText("JavDB_URL", currentUrl);
+                    clipboard.setPrimaryClip(clip);
+                    Toast.makeText(this, "✅ 链接已复制，请前往控制台粘贴", Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(this, "⚠️ 当前页面暂无有效链接", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
 
         // 点击启动引擎
         btnStart.setOnClickListener(v -> {

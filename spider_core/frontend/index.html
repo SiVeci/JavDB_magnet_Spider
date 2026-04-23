@@ -161,6 +161,38 @@
 
             </div>
         </div>
+        
+        <!-- 历史数据管理卡片 -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mt-6">
+            <div class="px-6 py-4 border-b border-gray-50 flex justify-between items-center bg-white cursor-pointer hover:bg-gray-50 transition-colors" onclick="toggleSection('history_content', 'history_icon')">
+                <div class="flex items-center gap-3">
+                    <h2 class="text-lg font-semibold text-gray-700">📁 历史数据管理</h2>
+                    <button id="batchDeleteBtn" onclick="batchDelete(); event.stopPropagation();" class="hidden text-xs px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-md font-bold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">🗑️ 批量删除 (0)</button>
+                    <button onclick="loadHistory(); event.stopPropagation();" class="text-gray-400 hover:text-indigo-600 transition-colors p-1 rounded-full hover:bg-indigo-50" title="刷新列表">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                    </button>
+                </div>
+                <span id="history_icon" class="transform transition-transform duration-300 text-gray-400" style="transform: rotate(180deg);">▼</span>
+            </div>
+            <div id="history_content" class="p-0 overflow-x-auto">
+                <table class="w-full text-sm text-left text-gray-500">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-50 border-b border-gray-200">
+                        <tr>
+                            <th scope="col" class="px-3 py-3 w-4 border-r border-gray-200 text-center"><input type="checkbox" id="selectAllCheckbox" onclick="toggleSelectAll()" class="hidden w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"></th>
+                            <th scope="col" class="px-3 py-3 border-r border-gray-200 text-center whitespace-nowrap">文件信息</th>
+                            <th scope="col" class="px-3 py-3 border-r border-gray-200 text-center whitespace-nowrap">数据量</th>
+                            <th scope="col" class="px-3 py-3 text-center whitespace-nowrap">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-list">
+                        <tr><td colspan="4" class="px-6 py-4 text-center text-gray-400">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
     </div>
 
     <script>
@@ -192,6 +224,7 @@
                 document.getElementById('app_version').innerText = "v?.?.?"; // 获取失败的降级显示
             }
             pollStatus();
+            loadHistory(); // 页面初次加载时获取历史数据
         };
 
         // ================= UI 交互助手 =================
@@ -545,7 +578,10 @@ function setResumePanelMode(mode) {
                     resumePanel.classList.add('hidden');
                     actionButtons.classList.remove('hidden');
                     clearBtn.classList.remove('opacity-50', 'pointer-events-none');
-                    clearInterval(pollInterval); pollInterval = null;
+                    if (pollInterval) { // 只在任务刚完成的那一次执行刷新
+                        loadHistory();
+                        clearInterval(pollInterval); pollInterval = null;
+                    }
                 } 
                 else if (data.state === "idle") {
                     statusLabel.innerText = "状态: 闲置中";
@@ -565,10 +601,11 @@ function setResumePanelMode(mode) {
             } catch (err) { console.log("轮询失败", err); }
         }
         
-        async function copyMagnets() {
-            if (!finalFileName) return alert("未找到有效的文件名！");
+        async function copyMagnets(fileNameOverride = null) {
+            const targetName = (typeof fileNameOverride === 'string') ? fileNameOverride : finalFileName;
+            if (!targetName) return alert("未找到有效的文件名！");
             try {
-                const res = await fetch(`/api/magnets?name=${encodeURIComponent(finalFileName)}`).then(r => r.json());
+                const res = await fetch(`/api/magnets?name=${encodeURIComponent(targetName)}`).then(r => r.json());
                 if (res.code !== 200) return alert(res.msg);
                 if (!res.data || res.data.length === 0) return alert("文件中没有找到磁力链接！");
                 
@@ -608,6 +645,103 @@ function setResumePanelMode(mode) {
                     alert("✅ 运行记录已清空，面板已重置。");
                 } else { alert(res.msg); }
             } catch (err) { alert("清理失败，请检查网络。"); }
+        }
+        
+        // ================= 历史数据管理 =================
+        async function loadHistory() {
+            try {
+                const res = await fetch('/api/history').then(r => r.json());
+                const tbody = document.getElementById('history-list');
+                const selectAllCb = document.getElementById('selectAllCheckbox');
+                const batchDelBtn = document.getElementById('batchDeleteBtn');
+                
+                if (res.code !== 200) {
+                    tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-4 text-center text-red-500">获取失败: ${res.msg}</td></tr>`;
+                    selectAllCb.classList.add('hidden');
+                    batchDelBtn.classList.add('hidden');
+                    return;
+                }
+                if (res.data.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="4" class="px-6 py-4 text-center text-gray-400">暂无历史数据</td></tr>`;
+                    selectAllCb.classList.add('hidden');
+                    batchDelBtn.classList.add('hidden');
+                    return;
+                }
+                
+                selectAllCb.classList.remove('hidden');
+                selectAllCb.checked = false;
+                batchDelBtn.classList.remove('hidden');
+                
+                tbody.innerHTML = res.data.map(file => `
+                    <tr class="bg-white border-b hover:bg-gray-50 transition-colors">
+                        <td class="px-3 py-3 text-center"><input type="checkbox" value="${file.name}" class="file-checkbox w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded cursor-pointer" onclick="updateBatchDeleteBtn()"></td>
+                        <td class="px-3 py-3">
+                            <div class="flex flex-col">
+                                <span class="font-medium text-gray-900 truncate max-w-[100px] sm:max-w-[200px] md:max-w-xs" title="${file.name}">${file.name}</span>
+                                <span class="text-[10px] text-gray-400 mt-0.5">${file.time}</span>
+                            </div>
+                        </td>
+                        <td class="px-3 py-3 text-center whitespace-nowrap"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-blue-50 text-blue-700">${file.count} 条</span></td>
+                        <td class="px-3 py-3 text-center space-x-1 whitespace-nowrap">
+                            <button onclick="copyMagnets('${file.name}')" class="inline-flex items-center px-2 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md font-bold shadow-sm transition-colors text-xs">📋 复制</button>
+                            <a href="/api/download?name=${encodeURIComponent(file.name)}" target="_blank" class="inline-flex items-center px-2 py-1.5 bg-green-50 text-green-600 hover:bg-green-100 rounded-md font-bold shadow-sm transition-colors text-xs">📥 下载</a>
+                            <button onclick="deleteFiles(['${file.name}'])" class="inline-flex items-center px-2 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-md font-bold shadow-sm transition-colors text-xs">🗑️ 删除</button>
+                        </td>
+                    </tr>
+                `).join('');
+                updateBatchDeleteBtn();
+            } catch (err) { console.error("加载历史数据失败", err); }
+        }
+
+        function toggleSelectAll() {
+            const isChecked = document.getElementById('selectAllCheckbox').checked;
+            const checkboxes = document.querySelectorAll('.file-checkbox');
+            checkboxes.forEach(cb => cb.checked = isChecked);
+            updateBatchDeleteBtn();
+        }
+
+        function updateBatchDeleteBtn() {
+            const checkboxes = document.querySelectorAll('.file-checkbox');
+            const checkedBoxes = document.querySelectorAll('.file-checkbox:checked');
+            const btn = document.getElementById('batchDeleteBtn');
+            const selectAllCb = document.getElementById('selectAllCheckbox');
+            
+            btn.disabled = checkedBoxes.length === 0;
+            btn.innerText = `🗑️ 批量删除 (${checkedBoxes.length})`;
+            
+            if (checkboxes.length > 0) {
+                selectAllCb.checked = checkboxes.length === checkedBoxes.length;
+            }
+        }
+
+        function batchDelete() {
+            const checkedBoxes = document.querySelectorAll('.file-checkbox:checked');
+            if (checkedBoxes.length === 0) return;
+            const filenames = Array.from(checkedBoxes).map(cb => cb.value);
+            deleteFiles(filenames);
+        }
+
+        async function deleteFiles(filenames) {
+            const msg = filenames.length === 1 
+                ? `确定要彻底删除文件 ${filenames[0]} 吗？\n删除后将不可恢复！` 
+                : `确定要批量删除选中的 ${filenames.length} 个文件吗？\n删除后将不可恢复！`;
+                
+            if (!confirm(msg)) return;
+            
+            try {
+                const res = await fetch('/api/delete', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ filenames: filenames }) 
+                }).then(r => r.json());
+                
+                if (res.code === 200) { 
+                    loadHistory(); 
+                } else { 
+                    alert("❌ 删除结果: " + res.msg); 
+                    loadHistory(); // 也刷新一下，可能部分删除了
+                }
+            } catch (err) { alert("❌ 请求失败，请检查网络或后端状态。"); }
         }
     </script>
 </body>

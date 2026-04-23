@@ -122,13 +122,101 @@ def get_status():
     except:
         return {"state": "syncing", "progress": "IO同步", "current": "-", "logs": ["磁盘 IO 同步中，请稍候..."]}
 
+# ================= 历史数据管理 =================
+def get_safe_path(filename: str) -> str:
+    """安全路径校验：防止 ../ 路径穿越攻击，限制在 DATA_DIR 且后缀为 csv"""
+    base_dir = os.path.abspath(DATA_DIR)
+    target_path = os.path.abspath(os.path.join(base_dir, filename))
+    if not target_path.startswith(base_dir) or not target_path.endswith('.csv'):
+        return None
+    return target_path
+
+# 全局内存缓存：记录文件的修改时间与行数，格式 { filename: {'mtime': float, 'count': int} }
+FILE_COUNT_CACHE = {}
+
+@app.get("/api/history")
+def get_history():
+    files_info = []
+    if os.path.exists(DATA_DIR):
+        for f in os.listdir(DATA_DIR):
+            if f.endswith(".csv"):
+                path = os.path.join(DATA_DIR, f)
+                stats = os.stat(path)
+                mtime = stats.st_mtime
+                ctime = stats.st_ctime
+                
+                # 检查缓存：如果文件在这个字典里，且修改时间没变，直接秒读缓存
+                if f in FILE_COUNT_CACHE and FILE_COUNT_CACHE[f]['mtime'] == mtime:
+                    count = FILE_COUNT_CACHE[f]['count']
+                else:
+                    try:
+                        with open(path, 'r', encoding='utf-8-sig') as csv_f:
+                            count = max(0, sum(1 for _ in csv_f) - 1)  # 减去1行表头
+                        FILE_COUNT_CACHE[f] = {'mtime': mtime, 'count': count}
+                    except Exception:
+                        count = 0
+                
+                ctime_str = datetime.fromtimestamp(ctime).strftime('%Y-%m-%d %H:%M:%S')
+                files_info.append({
+                    "name": f,
+                    "count": count,
+                    "time": ctime_str,
+                    "timestamp": ctime
+                })
+    files_info.sort(key=lambda x: x["timestamp"], reverse=True)
+    return {"code": 200, "data": files_info}
+
+class DeleteRequest(BaseModel):
+    filenames: list[str]
+
+@app.post("/api/delete")
+def delete_history(req: DeleteRequest):
+    success_count = 0
+    fail_count = 0
+    fail_reasons = []
+    
+    active_file = None
+    if os.path.exists(STATUS_FILE):
+        try:
+            with open(STATUS_FILE, 'r', encoding='utf-8') as f:
+                status = json.load(f)
+                if status.get("state") == "running":
+                    active_file = status.get("final_filename")
+        except:
+            pass
+
+    for fname in req.filenames:
+        target_path = get_safe_path(fname)
+        if not target_path or not os.path.exists(target_path):
+            fail_count += 1
+            fail_reasons.append(f"{fname}(不存在)")
+            continue
+            
+        if active_file == fname:
+            fail_count += 1
+            fail_reasons.append(f"{fname}(被占用)")
+            continue
+            
+        try:
+            os.remove(target_path)
+            success_count += 1
+        except OSError as e:
+            fail_count += 1
+            fail_reasons.append(f"{fname}(系统占用)")
+            
+    if fail_count == 0:
+        return {"code": 200, "msg": "删除成功"}
+    else:
+        reason_str = ", ".join(fail_reasons[:3]) + ("..." if len(fail_reasons) > 3 else "")
+        return {"code": 200 if success_count > 0 else 400, "msg": f"成功 {success_count} 个，失败 {fail_count} 个 [{reason_str}]"}
+
 @app.get("/api/download")
 def download_csv(name: str = None):
     if not name: return {"error": "未指定文件名参数"}
-    file_path = os.path.join(DATA_DIR, name)
-    if os.path.exists(file_path):
+    file_path = get_safe_path(name)
+    if file_path and os.path.exists(file_path):
         return FileResponse(file_path, media_type="text/csv", filename=name)
-    return {"error": "找不到该文件"}
+    return {"error": "找不到该文件或路径非法"}
 
 @app.get("/")
 def read_root():
@@ -154,8 +242,8 @@ def get_favicon():
 @app.get("/api/magnets")
 def get_magnets(name: str = None):
     if not name: return {"code": 400, "msg": "未指定文件名参数"}
-    file_path = os.path.join(DATA_DIR, name)
-    if not os.path.exists(file_path): return {"code": 404, "msg": "找不到该文件"}
+    file_path = get_safe_path(name)
+    if not file_path or not os.path.exists(file_path): return {"code": 404, "msg": "找不到该文件或路径非法"}
     magnets = []
     try:
         with open(file_path, 'r', encoding='utf-8-sig') as f:
