@@ -119,6 +119,15 @@
                             ▶️ 使用现有 Cookie 继续任务
                         </button>
                     </div>
+
+                    <div id="choiceBox" class="hidden grid grid-cols-2 gap-3 mt-3">
+                        <button onclick="setTaskMode('incremental')" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-2 rounded-lg transition duration-200 shadow-md">
+                            ⚡ 快速增量
+                        </button>
+                        <button onclick="setTaskMode('overwrite')" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 rounded-lg transition duration-200 shadow-md">
+                            🔄 覆盖重爬
+                        </button>
+                    </div>
                 </div>
 
                 <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex-grow flex flex-col relative">
@@ -435,14 +444,16 @@ async function startTask() {
         }
 
 // ================= 动态面板 UI 控制 =================
-function setResumePanelMode(mode) {
+function setResumePanelMode(mode, extraData = {}) {
     const panel = document.getElementById('resumePanel');
     const title = document.getElementById('resumeTitle');
     const desc = document.getElementById('resumeDesc');
     const newCookieBox = document.getElementById('newCookieBox');
     const oldCookieBox = document.getElementById('oldCookieBox');
+    const choiceBox = document.getElementById('choiceBox');
 
     panel.classList.remove('hidden');
+    if (choiceBox) choiceBox.classList.add('hidden');
 
     if (mode === 'stopped') {
         // 手动暂停：蓝色主题
@@ -462,6 +473,14 @@ function setResumePanelMode(mode) {
         desc.innerText = "Cookie可能已过期或被Cloudflare盾拦截。进度已安全保存。";
         newCookieBox.classList.remove('hidden');
         oldCookieBox.classList.add('hidden');
+    } else if (mode === 'need_choice') {
+        // 模式选择：紫色增量主题
+        panel.className = "bg-purple-50 p-5 rounded-xl shadow-sm border border-purple-200";
+        title.className = "text-purple-700 font-bold mb-2 flex items-center";
+        title.innerHTML = '<span class="text-xl mr-2">🤔</span> 发现历史爬取记录';
+        desc.className = "text-sm text-purple-600 mb-3";
+        desc.innerText = extraData.msg || "请选择接下来的爬取模式：";
+        if (choiceBox) choiceBox.classList.remove('hidden');
     }
 }
 
@@ -497,6 +516,21 @@ function setResumePanelMode(mode) {
             } else { 
                 alert(res.msg); 
             }
+        }
+
+        async function setTaskMode(mode) {
+            try {
+                const res = await fetch('/api/set_mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: mode })
+                }).then(r => r.json());
+                
+                if (res.code === 200) {
+                    document.getElementById('resumePanel').classList.add('hidden');
+                    if (!pollInterval) pollInterval = setInterval(pollStatus, 2000);
+                } else { alert("❌ 恢复失败: " + res.msg); }
+            } catch(e) { alert("❌ 请求失败，请检查后端状态。"); }
         }
 
         // ================= 状态轮询 =================
@@ -566,6 +600,18 @@ function setResumePanelMode(mode) {
                     clearBtn.classList.remove('opacity-50', 'pointer-events-none');
                     clearInterval(pollInterval); pollInterval = null; 
                 } 
+                else if (data.state === "paused_need_choice") {
+                    statusLabel.innerText = "状态: 🤔 等待模式选择";
+                    statusLabel.className = "text-purple-600 font-bold animate-pulse";
+                    progressBar.className = "bg-purple-400 h-2.5 rounded-full transition-all duration-500";
+                    stopBtn.classList.add('hidden');
+                    
+                    let msg = "请选择接下来的爬取模式：";
+                    if (data.logs && data.logs.length > 0) { msg = data.logs[data.logs.length - 1].replace(/^\[.*?\] /, ''); }
+                    setResumePanelMode('need_choice', { msg: msg }); 
+                    clearBtn.classList.remove('opacity-50', 'pointer-events-none');
+                    clearInterval(pollInterval); pollInterval = null; 
+                }
                 else if (data.state === "finished") {
                     statusLabel.innerText = "状态: ✅ 任务完成";
                     statusLabel.className = "text-green-600 font-medium";

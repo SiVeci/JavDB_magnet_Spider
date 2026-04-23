@@ -123,7 +123,7 @@ def evaluate_magnet(item_soup):
         'rank': rank, 'date': date_str, 'size_mb': parse_size(size_str)
     }
 
-def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=None, is_resume=False):
+def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=None, is_resume=False, crawl_mode=None):
     STOP_EVENT.clear()
     headers = {
         'User-Agent': user_agent,
@@ -133,7 +133,6 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
         'Referer': 'https://javdb.com/'
     }
     proxies = {'http': proxies_config, 'https': proxies_config} if proxies_config else None
-    final_csv_path = os.path.join(DATA_DIR, output_filename)
 
     phase = 1
     current_url = start_url
@@ -189,12 +188,36 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
                         movie_links.append({'code': code, 'url': full_url, 'title': raw_title})
 
                 next_btn = soup.select_one('nav.pagination a.pagination-next')
-                if next_btn and next_btn.get('href'):
-                    current_url = urllib.parse.urljoin('https://javdb.com', next_btn.get('href'))
+                next_url = urllib.parse.urljoin('https://javdb.com', next_btn.get('href')) if (next_btn and next_btn.get('href')) else None
+
+                # ======== 新增：动态命名与模式选择 ========
+                if not output_filename:
+                    actor_name = ""
+                    if "/actors/" in current_url:
+                        actor_tag = soup.select_one('.actor-section-name')
+                        if actor_tag:
+                            actor_name = actor_tag.text.strip()
+                    
+                    if actor_name:
+                        output_filename = f"{actor_name}.csv"
+                    else:
+                        timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+                        output_filename = f"javdb_{timestamp}.csv"
+                    
+                    update_status("running", f"第 {page} 页", "生成文件名", f"已自动命名为: {output_filename}", final_filename=output_filename)
+
+                final_csv_path = os.path.join(DATA_DIR, output_filename)
+                
+                if page == 1 and os.path.exists(final_csv_path) and not crawl_mode:
+                    save_checkpoint({"phase": 1, "current_url": next_url, "page": page + 1 if next_url else page, "movie_links": movie_links})
+                    update_status("paused_need_choice", f"第 {page} 页", "等待选择", f"发现历史记录：【{output_filename}】，请选择爬取模式。", final_filename=output_filename)
+                    return
+                # ========================================
+
+                current_url = next_url
+                if current_url:
                     page += 1
                     time.sleep(1.5)
-                else:
-                    break
             except Exception as e:
                 update_status("error", "异常", "代码报错", f"目录页请求异常: {str(e)}")
                 return
@@ -213,9 +236,21 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
 
     # === 阶段二：提取磁力 ===
     if phase == 2:
+        final_csv_path = os.path.join(DATA_DIR, output_filename)
         fieldnames = ['影片番号', '原始标题', '影片链接', '最佳资源文件名', '磁力链接', '优先级得分', '日期', '文件大小(MB)']
 
-        mode = 'a' if (is_resume and start_index > 0) else 'w'
+        # === 增量模式读取已有番号 ===
+        existing_codes = set()
+        if crawl_mode == 'incremental' and os.path.exists(final_csv_path):
+            try:
+                with open(final_csv_path, 'r', encoding='utf-8-sig') as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        if '影片番号' in row and row['影片番号']:
+                            existing_codes.add(row['影片番号'])
+            except Exception: pass
+
+        mode = 'a' if (is_resume and start_index > 0) or crawl_mode == 'incremental' else 'w'
         with open(final_csv_path, mode, encoding='utf-8-sig', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             if mode == 'w':
@@ -228,6 +263,13 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
                     return
                 movie = movie_links[i]
                 progress_str = f"{i+1}/{total_movies}"
+                
+                # 增量跳过判断
+                if crawl_mode == 'incremental' and movie['code'] in existing_codes:
+                    update_status("running", progress_str, movie['code'], f"⏭️ 跳过: 本地记录已存在")
+                    time.sleep(0.1) # 稍微延迟让UI有时间刷新
+                    continue
+
                 update_status("running", progress_str, movie['code'], f"正在解析详情页...")
 
                 try:

@@ -32,6 +32,9 @@ class TaskConfig(BaseModel):
 class ResumeConfig(BaseModel):
     cookie: str
 
+class ModeConfig(BaseModel):
+    mode: str
+
 class TagConfigRequest(BaseModel):
     url: str
     cookie: str
@@ -55,15 +58,12 @@ def start_task(config: TaskConfig):
             pass
 
     target_filename = config.filename.strip()
-    if not target_filename:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        target_filename = f"javdb_{timestamp}.csv"
-    else:
-        if not target_filename.lower().endswith(".csv"):
-            target_filename += ".csv"
+    if target_filename and not target_filename.lower().endswith(".csv"):
+        target_filename += ".csv"
 
     task_data = config.dict()
     task_data['final_filename'] = target_filename
+    task_data['crawl_mode'] = None
     with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
         json.dump(task_data, f, ensure_ascii=False)
 
@@ -73,15 +73,18 @@ def start_task(config: TaskConfig):
         "current": "系统初始化",
         "logs": ["系统已分配资源，正在启动爬虫引擎..."]
     }
+    if target_filename:
+        initial_status["final_filename"] = target_filename
+        
     with open(STATUS_FILE, 'w', encoding='utf-8') as f:
         json.dump(initial_status, f, ensure_ascii=False, indent=2)
 
     thread = threading.Thread(
         target=run_spider,
-        args=(config.start_url, config.cookie, config.user_agent, target_filename, config.proxies, False)
+        args=(config.start_url, config.cookie, config.user_agent, target_filename, config.proxies, False, None)
     )
     thread.start()
-    return {"code": 200, "msg": f"任务已启动，文件将保存为: {target_filename}"}
+    return {"code": 200, "msg": f"任务已启动！"}
 
 @app.post("/api/resume")
 def resume_task(r_config: ResumeConfig):
@@ -107,10 +110,42 @@ def resume_task(r_config: ResumeConfig):
 
     thread = threading.Thread(
         target=run_spider,
-        args=(old_config['start_url'], old_config['cookie'], old_config['user_agent'], old_config['final_filename'], old_config['proxies'], True)
+        args=(old_config['start_url'], old_config['cookie'], old_config['user_agent'], old_config.get('final_filename', ''), old_config.get('proxies'), True, old_config.get('crawl_mode'))
     )
     thread.start()
     return {"code": 200, "msg": "任务已成功从断点处恢复运行"}
+
+@app.post("/api/set_mode")
+def set_mode(m_config: ModeConfig):
+    if not os.path.exists(CONFIG_FILE):
+        return {"code": 400, "msg": "找不到原始任务配置，无法恢复！"}
+
+    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+        old_config = json.load(f)
+
+    final_filename = old_config.get('final_filename', '')
+    if os.path.exists(STATUS_FILE):
+        try:
+            with open(STATUS_FILE, 'r', encoding='utf-8') as f:
+                status = json.load(f)
+                if status.get("final_filename"): final_filename = status.get("final_filename")
+        except: pass
+
+    old_config['final_filename'] = final_filename
+    old_config['crawl_mode'] = m_config.mode
+    with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+        json.dump(old_config, f, ensure_ascii=False)
+
+    resume_status = {
+        "state": "running", "progress": "恢复中", "current": "模式确认",
+        "logs": [f"已选择模式: {'快速增量' if m_config.mode == 'incremental' else '覆盖重爬'}，正在继续任务..."],
+        "final_filename": final_filename
+    }
+    with open(STATUS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(resume_status, f, ensure_ascii=False, indent=2)
+
+    threading.Thread(target=run_spider, args=(old_config['start_url'], old_config['cookie'], old_config['user_agent'], final_filename, old_config.get('proxies'), True, m_config.mode)).start()
+    return {"code": 200, "msg": "已应用爬取模式"}
 
 @app.get("/api/status")
 def get_status():
