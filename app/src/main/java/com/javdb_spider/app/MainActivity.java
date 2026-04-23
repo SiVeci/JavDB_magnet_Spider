@@ -20,7 +20,9 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.Toast;
+import android.widget.TextView;
 
+import com.google.android.material.card.MaterialCardView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -35,6 +37,7 @@ public class MainActivity extends AppCompatActivity {
     private View controlPanel;
     private View loginContainer;
     private WebView visibleWebView;
+    private TextView tvEngineStatus;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,6 +55,7 @@ public class MainActivity extends AppCompatActivity {
         controlPanel = findViewById(R.id.control_panel);
         loginContainer = findViewById(R.id.login_container);
         visibleWebView = findViewById(R.id.visible_webview);
+        tvEngineStatus = findViewById(R.id.tv_engine_status);
 
         Button btnLogin = findViewById(R.id.btn_login);
         Button btnStart = findViewById(R.id.btn_start);
@@ -60,6 +64,11 @@ public class MainActivity extends AppCompatActivity {
         Button btnCopyLink = findViewById(R.id.btn_copy_link); // 新增：复制当前链接按钮
 
         initVisibleWebView();
+
+        // 如果由于应用切到后台再回来，服务仍在运行，自动恢复绿灯状态
+        if (WebViewBridge.activeService != null) {
+            setEngineStatusRunning();
+        }
 
         btnLogin.setOnClickListener(v -> {
             controlPanel.setVisibility(View.GONE);
@@ -180,6 +189,17 @@ public class MainActivity extends AppCompatActivity {
         }
 
         Toast.makeText(this, "🚀 引擎已启动，可以点击第三步打开控制台了", Toast.LENGTH_SHORT).show();
-        // 【修改】去掉了 moveTaskToBack(true); 这样界面就不会自动回退到桌面了
+        setEngineStatusRunning();
+    }
+
+    // ================= UI 状态更新 =================
+    private void setEngineStatusRunning() {
+        if (tvEngineStatus != null) {
+            tvEngineStatus.setText("🟢 引擎状态：运行中 (端口 8000)");
+            tvEngineStatus.setTextColor(Color.parseColor("#16A34A")); // Tailwind Green-600
+            if (tvEngineStatus.getParent() instanceof MaterialCardView) {
+                ((MaterialCardView) tvEngineStatus.getParent()).setCardBackgroundColor(Color.parseColor("#DCFCE7")); // Tailwind Green-50
+            }
+        }
     }
 }

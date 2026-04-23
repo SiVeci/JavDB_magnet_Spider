@@ -26,11 +26,18 @@ import com.chaquo.python.android.AndroidPlatform;
 import android.util.Log;
 import com.chaquo.python.PyException;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+import org.json.JSONObject;
+
 public class SpiderService extends Service {
 
     private WindowManager windowManager;
     private WebView stealthWebView;
     private Handler mainHandler;
+    private Runnable statusUpdater;
 
     @Override
     public void onCreate() {
@@ -48,6 +55,9 @@ public class SpiderService extends Service {
 
         // 4. 启动 Python FastAPI 后端
         startPythonBackend();
+        
+        // 5. 启动通知栏进度同步
+        startStatusUpdater();
     }
 
     private void initStealthWebView() {
@@ -139,15 +149,92 @@ public class SpiderService extends Service {
                 new Notification.Builder(this, channelId) : new Notification.Builder(this);
 
         return builder.setContentTitle("JavDB 爬虫引擎运行中")
-                .setContentText("127.0.0.1:8000 已开启，可使用浏览器访问")
+                .setContentText("127.0.0.1:8000 已开启，请前往浏览器配置")
                 .setSmallIcon(android.R.drawable.ic_menu_compass) // 临时用个系统图标
+                .setOnlyAlertOnce(true) // 重要：避免每次更新通知时发出声音或震动
                 .build();
+    }
+
+    private void startStatusUpdater() {
+        statusUpdater = new Runnable() {
+            @Override
+            public void run() {
+                updateNotificationFromJson();
+                mainHandler.postDelayed(this, 2000);
+            }
+        };
+        mainHandler.postDelayed(statusUpdater, 2000);
+    }
+
+    private void updateNotificationFromJson() {
+        try {
+            File statusFile = new File(getFilesDir(), "data/status.json");
+            if (!statusFile.exists()) return;
+
+            StringBuilder sb = new StringBuilder();
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(statusFile), "UTF-8"))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    sb.append(line);
+                }
+            }
+
+            JSONObject json = new JSONObject(sb.toString());
+            String state = json.optString("state", "idle");
+            String progress = json.optString("progress", "");
+            String current = json.optString("current", "");
+
+            String title = "JavDB 引擎运行中";
+            String text = "127.0.0.1:8000 已开启，请前往控制台配置";
+
+            switch (state) {
+                case "running":
+                    title = "▶️ 爬取中: " + progress;
+                    text = "当前: " + current;
+                    break;
+                case "paused_need_cookie":
+                case "paused_need_choice":
+                    title = "⚠️ 任务已挂起等待救援";
+                    text = "请打开控制台处理 (" + current + ")";
+                    break;
+                case "finished":
+                    title = "✅ 任务已圆满完成";
+                    text = "所有目标已抓取完毕，文件已保存";
+                    break;
+                case "error":
+                    title = "❌ 任务异常终止";
+                    text = "请打开控制台查看详细日志";
+                    break;
+                case "stopped":
+                    title = "🛑 任务已手动停止";
+                    text = "进度已安全保存";
+                    break;
+            }
+
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
+                    new Notification.Builder(this, "spider_channel") : new Notification.Builder(this);
+
+            Notification notification = builder.setContentTitle(title)
+                    .setContentText(text)
+                    .setSmallIcon(android.R.drawable.ic_menu_compass)
+                    .setOnlyAlertOnce(true) // 重要：静默更新
+                    .build();
+
+            nm.notify(1, notification);
+
+        } catch (Exception e) {
+            // 解析失败或文件正被 Python 占用时跳过本次更新，不打断服务
+        }
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
         WebViewBridge.activeService = null;
+        if (statusUpdater != null) {
+            mainHandler.removeCallbacks(statusUpdater);
+        }
         if (windowManager != null && stealthWebView != null) {
             windowManager.removeView(stealthWebView);
             stealthWebView.destroy();
