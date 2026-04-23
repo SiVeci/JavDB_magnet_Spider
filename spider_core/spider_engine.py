@@ -53,10 +53,12 @@ def fetch_html(url, headers=None, proxies=None):
 
 # ======= 3. 核心业务逻辑 =======
 
-def update_status(state="idle", progress="", current="", log_msg=None, clear_log=False, final_filename=None):
+def update_status(state="idle", progress="", current="", log_msg=None, clear_log=False, final_filename=None, added_count=None):
     status_data = {"state": state, "progress": progress, "current": current, "logs": []}
     if final_filename:
         status_data["final_filename"] = final_filename
+    if added_count is not None:
+        status_data["added_count"] = added_count
 
     if not clear_log and os.path.exists(STATUS_FILE):
         try:
@@ -250,6 +252,7 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
                             existing_codes.add(row['影片番号'])
             except Exception: pass
 
+        new_added_count = 0
         mode = 'a' if (is_resume and start_index > 0) or crawl_mode == 'incremental' else 'w'
         with open(final_csv_path, mode, encoding='utf-8-sig', newline='') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -299,6 +302,7 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
                             '最佳资源文件名': best['name'], '磁力链接': best['link'], '优先级得分': best['rank'],
                             '日期': best['date'], '文件大小(MB)': round(best['size_mb'], 2)
                         })
+                        new_added_count += 1
                         update_status("running", progress_str, movie['code'], f"成功: 获取到最高级资源 (Rank {best['rank']}, {round(best['size_mb'],2)}MB)")
                     else:
                         update_status("running", progress_str, movie['code'], f"跳过: 此页面无有效磁力链。")
@@ -307,4 +311,4 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
                     update_status("error", progress_str, movie['code'], f"提取失败: {str(e)}")
 
                 time.sleep(2)
-    update_status("finished", f"{total_movies}/{total_movies}", "全部完成", "🎉 爬取任务圆满结束，文件已保存！", final_filename=output_filename)
+    update_status("finished", f"{total_movies}/{total_movies}", "全部完成", "🎉 爬取任务圆满结束，文件已保存！", final_filename=output_filename, added_count=new_added_count)

@@ -626,6 +626,10 @@ function setResumePanelMode(mode, extraData = {}) {
                     clearBtn.classList.remove('opacity-50', 'pointer-events-none');
                     if (pollInterval) { // 只在任务刚完成的那一次执行刷新
                         loadHistory();
+                        // 弹窗提示新增记录数
+                        if (data.added_count !== undefined) {
+                            setTimeout(() => alert(`🎉 爬取任务完成！\n本次共新增了 ${data.added_count} 条影片记录。`), 300);
+                        }
                         clearInterval(pollInterval); pollInterval = null;
                     }
                 } 
