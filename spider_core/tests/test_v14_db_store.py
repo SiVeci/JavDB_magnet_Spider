@@ -54,6 +54,7 @@ class DbStoreTest(unittest.TestCase):
         self.assertEqual(len(history), 1)
         self.assertEqual(history[0]["name"], "history.csv")
         self.assertEqual(history[0]["count"], 1)
+        self.assertEqual(history[0]["tags"], [])
 
     def test_import_csv_tolerates_malformed_numeric_fields(self):
         self.write_csv(
@@ -130,6 +131,76 @@ class DbStoreTest(unittest.TestCase):
         self.assertEqual(rows[0]["影片番号"], "ABC-001")
         self.assertEqual(rows[0]["磁力链接"], "magnet:?xt=urn:btih:best")
 
+    def test_movie_tags_are_stored_and_filter_exports(self):
+        db_store.ensure_collection("output.csv")
+        first = {
+            "name": "first.torrent",
+            "link": "magnet:?xt=urn:btih:first",
+            "rank": 110,
+            "date": "2026-01-01",
+            "size_mb": 100,
+        }
+        second = {
+            "name": "second.torrent",
+            "link": "magnet:?xt=urn:btih:second",
+            "rank": 110,
+            "date": "2026-01-02",
+            "size_mb": 200,
+        }
+        db_store.save_movie_result(
+            "output.csv",
+            {"code": "ABC-001", "title": "Title 1", "url": "https://example.test/v/1", "tags": ["美乳", "中出"]},
+            first,
+            [first],
+        )
+        db_store.save_movie_result(
+            "output.csv",
+            {"code": "ABC-002", "title": "Title 2", "url": "https://example.test/v/2", "tags": ["美乳", "潮吹"]},
+            second,
+            [second],
+        )
+
+        history = db_store.get_history()
+        self.assertEqual(history[0]["tags"], ["美乳", "中出", "潮吹"])
+
+        collection = db_store.get_collection_movies("output.csv")
+        self.assertEqual(collection["available_tags"], ["美乳", "中出", "潮吹"])
+        self.assertEqual(collection["movies"][0]["tags"], ["美乳", "中出"])
+
+        self.assertEqual(db_store.get_magnet_links("output.csv", ["美乳"]), [first["link"], second["link"]])
+        self.assertEqual(db_store.get_magnet_links("output.csv", ["美乳", "中出"]), [first["link"]])
+
+        csv_bytes, _ = db_store.export_collection_to_csv_bytes("output.csv", ["潮吹"])
+        rows = list(csv.DictReader(io.StringIO(csv_bytes.decode("utf-8-sig"))))
+        self.assertEqual([row["影片番号"] for row in rows], ["ABC-002"])
+        self.assertNotIn("标签", rows[0])
+
+    def test_replacing_movie_tags_rebuilds_collection_union(self):
+        db_store.ensure_collection("output.csv")
+        best = {
+            "name": "best.torrent",
+            "link": "magnet:?xt=urn:btih:best",
+            "rank": 110,
+            "date": "2026-01-02",
+            "size_mb": 2048,
+        }
+        db_store.save_movie_result(
+            "output.csv",
+            {"code": "ABC-001", "title": "Title", "url": "https://example.test/v/1", "tags": ["旧标签"]},
+            best,
+            [best],
+        )
+        db_store.save_movie_result(
+            "output.csv",
+            {"code": "ABC-001", "title": "Title", "url": "https://example.test/v/1", "tags": ["新标签"]},
+            best,
+            [best],
+        )
+
+        self.assertEqual(db_store.get_history()[0]["tags"], ["新标签"])
+        db_store.clear_collection("output.csv")
+        self.assertEqual(db_store.get_history()[0]["tags"], [])
+
     def test_delete_collections_removes_db_and_physical_csv(self):
         self.write_csv("history.csv", [])
         db_store.ensure_collection("history.csv")
@@ -162,7 +233,7 @@ class DbBackedApiTest(unittest.TestCase):
         }
         db_store.save_movie_result(
             "api.csv",
-            {"code": "API-001", "title": "API Title", "url": "https://example.test/v/api"},
+            {"code": "API-001", "title": "API Title", "url": "https://example.test/v/api", "tags": ["美乳", "中出"]},
             best,
             [best],
         )
@@ -179,6 +250,8 @@ class DbBackedApiTest(unittest.TestCase):
 
         magnets = self.main.get_magnets("api.csv")
         self.assertEqual(magnets, {"code": 200, "data": ["magnet:?xt=urn:btih:api"]})
+        self.assertEqual(self.main.get_magnets("api.csv", tags="美乳,中出"), magnets)
+        self.assertEqual(self.main.get_magnets("api.csv", tags="潮吹"), {"code": 200, "data": []})
 
         path = os.path.join(self.tmpdir.name, "api.csv")
         if os.path.exists(path):

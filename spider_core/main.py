@@ -114,6 +114,13 @@ def get_safe_name(filename: str) -> str | None:
         return None
 
 
+def parse_tag_filter(tags: str = None):
+    if not tags:
+        return []
+    values = [tag.strip() for tag in tags.split(",")]
+    return [tag for tag in values if tag and tag.lower() != "all"]
+
+
 def ensure_zh_locale(url: str) -> str:
     parsed = urlparse(url)
     params = parse_qs(parsed.query, keep_blank_values=True)
@@ -620,11 +627,11 @@ def delete_history(req: DeleteRequest):
 
 
 @app.get("/api/download")
-def download_csv(name: str = None):
+def download_csv(name: str = None, tags: str = None):
     if not name:
         return JSONResponse(status_code=400, content={"code": 400, "msg": "未指定文件名参数"})
     try:
-        csv_bytes, safe_name = db_store.export_collection_to_csv_bytes(name)
+        csv_bytes, safe_name = db_store.export_collection_to_csv_bytes(name, parse_tag_filter(tags))
     except UnsafeFilenameError:
         return JSONResponse(status_code=400, content={"code": 400, "msg": "文件名非法"})
     if csv_bytes is not None:
@@ -657,7 +664,7 @@ def get_favicon():
 
 
 @app.get("/api/magnets")
-def get_magnets(name: str = None):
+def get_magnets(name: str = None, tags: str = None):
     if not name:
         return {"code": 400, "msg": "未指定文件名参数"}
     try:
@@ -667,7 +674,7 @@ def get_magnets(name: str = None):
     if not db_store.collection_exists(safe_name):
         return {"code": 404, "msg": "找不到该文件"}
     try:
-        return {"code": 200, "data": db_store.get_magnet_links(safe_name)}
+        return {"code": 200, "data": db_store.get_magnet_links(safe_name, parse_tag_filter(tags))}
     except Exception as e:
         return {"code": 500, "msg": f"读取数据出错: {str(e)}"}
 

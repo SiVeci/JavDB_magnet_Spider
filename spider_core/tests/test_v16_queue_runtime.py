@@ -118,7 +118,7 @@ class MagnetSelectionTest(unittest.TestCase):
         second = {"name": "second.torrent", "link": "magnet:?xt=urn:btih:second", "rank": 2, "date": "2026-01-02", "size_mb": 200}
         db_store.save_movie_result("output.csv", movie, first, [first, second])
 
-        movies = db_store.get_collection_movies("output.csv")
+        movies = db_store.get_collection_movies("output.csv")["movies"]
         magnets = db_store.get_movie_magnets(movies[0]["id"])
         second_id = next(row["id"] for row in magnets if row["link"] == second["link"])
 

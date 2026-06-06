@@ -1,5 +1,6 @@
 import csv
 import io
+import json
 import os
 import sqlite3
 import time
@@ -71,6 +72,7 @@ def init_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 filename TEXT NOT NULL UNIQUE,
                 source_url TEXT DEFAULT '',
+                tags_json TEXT DEFAULT '[]',
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL
             );
@@ -86,6 +88,7 @@ def init_database():
                 priority_score INTEGER DEFAULT 0,
                 magnet_date TEXT DEFAULT '',
                 size_mb REAL DEFAULT 0,
+                tags_json TEXT DEFAULT '[]',
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL,
                 FOREIGN KEY(collection_id) REFERENCES collections(id) ON DELETE CASCADE,
@@ -155,6 +158,19 @@ def init_database():
             """
         )
     _migrate_task_runtime_columns()
+    _migrate_tag_columns()
+
+
+def _ensure_column(conn, table, column, definition):
+    columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def _migrate_tag_columns():
+    with connect() as conn:
+        _ensure_column(conn, "collections", "tags_json", "TEXT DEFAULT '[]'")
+        _ensure_column(conn, "movies", "tags_json", "TEXT DEFAULT '[]'")
 
 
 def _migrate_task_runtime_columns():
@@ -228,6 +244,59 @@ def _normalize_state(state):
     if state not in TASK_STATES:
         raise ValueError(f"Invalid task state: {state}")
     return state
+
+
+def _normalize_tags(tags):
+    if not tags:
+        return []
+    normalized = []
+    seen = set()
+    for tag in tags:
+        value = str(tag or "").strip()
+        if value and value not in seen:
+            normalized.append(value)
+            seen.add(value)
+    return normalized
+
+
+def _tags_to_json(tags):
+    return json.dumps(_normalize_tags(tags), ensure_ascii=False)
+
+
+def _tags_from_json(value):
+    if not value:
+        return []
+    try:
+        data = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    return _normalize_tags(data if isinstance(data, list) else [])
+
+
+def _matches_tags(row_tags_json, required_tags):
+    required = set(_normalize_tags(required_tags))
+    if not required:
+        return True
+    return required.issubset(set(_tags_from_json(row_tags_json)))
+
+
+def _rebuild_collection_tags(conn, collection_id, now=None):
+    union = []
+    seen = set()
+    rows = conn.execute(
+        "SELECT tags_json FROM movies WHERE collection_id = ? ORDER BY id",
+        (collection_id,),
+    ).fetchall()
+    for row in rows:
+        for tag in _tags_from_json(row["tags_json"]):
+            if tag not in seen:
+                union.append(tag)
+                seen.add(tag)
+    conn.execute(
+        "UPDATE collections SET tags_json = ?, updated_at = ? WHERE id = ?",
+        (_tags_to_json(union), now or _now(), collection_id),
+    )
+    return union
 
 
 def create_task(start_url, cookie="", user_agent="", filename="", proxies=None, crawl_mode=""):
@@ -648,7 +717,7 @@ def clear_collection(filename):
             return
         conn.execute("DELETE FROM movies WHERE collection_id = ?", (row["id"],))
         conn.execute(
-            "UPDATE collections SET updated_at = ? WHERE id = ?",
+            "UPDATE collections SET tags_json = '[]', updated_at = ? WHERE id = ?",
             (_now(), row["id"]),
         )
 
@@ -669,15 +738,16 @@ def get_existing_codes(filename):
 def save_movie_result(filename, movie, best_magnet, candidates):
     safe_name = normalize_csv_filename(filename)
     now = _now()
+    movie_tags = _normalize_tags(movie.get("tags", []))
     with connect() as conn:
         collection_id = _collection_id(conn, safe_name)
         conn.execute(
             """
             INSERT INTO movies(
                 collection_id, code, title, url, best_magnet_name, best_magnet_link,
-                priority_score, magnet_date, size_mb, created_at, updated_at
+                priority_score, magnet_date, size_mb, tags_json, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(collection_id, code) DO UPDATE SET
                 title = excluded.title,
                 url = excluded.url,
@@ -686,6 +756,7 @@ def save_movie_result(filename, movie, best_magnet, candidates):
                 priority_score = excluded.priority_score,
                 magnet_date = excluded.magnet_date,
                 size_mb = excluded.size_mb,
+                tags_json = excluded.tags_json,
                 updated_at = excluded.updated_at
             """,
             (
@@ -698,6 +769,7 @@ def save_movie_result(filename, movie, best_magnet, candidates):
                 _to_int(best_magnet.get("rank", 0)),
                 best_magnet.get("date", ""),
                 _to_float(best_magnet.get("size_mb", 0)),
+                _tags_to_json(movie_tags),
                 now,
                 now,
             ),
@@ -728,17 +800,14 @@ def save_movie_result(filename, movie, best_magnet, candidates):
                     now,
                 ),
             )
-        conn.execute(
-            "UPDATE collections SET updated_at = ? WHERE id = ?",
-            (now, collection_id),
-        )
+        _rebuild_collection_tags(conn, collection_id, now)
 
 
 def get_history():
     with connect() as conn:
         rows = conn.execute(
             """
-            SELECT c.filename, c.created_at, c.updated_at, COUNT(m.id) AS count
+            SELECT c.filename, c.tags_json, c.created_at, c.updated_at, COUNT(m.id) AS count
             FROM collections c
             LEFT JOIN movies m ON m.collection_id = c.id
             GROUP BY c.id
@@ -749,6 +818,7 @@ def get_history():
         {
             "name": row["filename"],
             "count": row["count"],
+            "tags": _tags_from_json(row["tags_json"]),
             "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(row["created_at"])),
             "timestamp": row["updated_at"],
         }
@@ -759,10 +829,14 @@ def get_history():
 def get_collection_movies(filename):
     safe_name = normalize_csv_filename(filename)
     with connect() as conn:
+        collection = conn.execute(
+            "SELECT tags_json FROM collections WHERE filename = ?",
+            (safe_name,),
+        ).fetchone()
         rows = conn.execute(
             """
             SELECT m.id, m.code, m.title, m.url, m.best_magnet_name, m.best_magnet_link,
-                   m.priority_score, m.magnet_date, m.size_mb, COUNT(mg.id) AS candidate_count
+                   m.priority_score, m.magnet_date, m.size_mb, m.tags_json, COUNT(mg.id) AS candidate_count
             FROM movies m
             JOIN collections c ON c.id = m.collection_id
             LEFT JOIN magnets mg ON mg.movie_id = m.id
@@ -772,7 +846,16 @@ def get_collection_movies(filename):
             """,
             (safe_name,),
         ).fetchall()
-    return [dict(row) for row in rows]
+    movies = []
+    for row in rows:
+        item = dict(row)
+        item["tags"] = _tags_from_json(item.pop("tags_json", ""))
+        movies.append(item)
+    return {
+        "movies": movies,
+        "available_tags": _tags_from_json(collection["tags_json"] if collection else ""),
+        "total_count": len(movies),
+    }
 
 
 def get_movie_magnets(movie_id):
@@ -824,12 +907,12 @@ def select_movie_magnet(movie_id, magnet_id):
     return True
 
 
-def _export_rows(conn, filename):
+def _export_rows(conn, filename, required_tags=None):
     safe_name = normalize_csv_filename(filename)
     rows = conn.execute(
         """
         SELECT m.code, m.title, m.url, m.best_magnet_name, m.best_magnet_link,
-               m.priority_score, m.magnet_date, m.size_mb
+               m.priority_score, m.magnet_date, m.size_mb, m.tags_json
         FROM movies m
         JOIN collections c ON c.id = m.collection_id
         WHERE c.filename = ?
@@ -837,6 +920,7 @@ def _export_rows(conn, filename):
         """,
         (safe_name,),
     ).fetchall()
+    rows = [row for row in rows if _matches_tags(row["tags_json"], required_tags)]
     return [
         {
             "影片番号": row["code"],
@@ -852,12 +936,12 @@ def _export_rows(conn, filename):
     ]
 
 
-def export_collection_to_csv_bytes(filename):
+def export_collection_to_csv_bytes(filename, required_tags=None):
     safe_name = normalize_csv_filename(filename)
     with connect() as conn:
         if not conn.execute("SELECT 1 FROM collections WHERE filename = ?", (safe_name,)).fetchone():
             return None, safe_name
-        rows = _export_rows(conn, safe_name)
+        rows = _export_rows(conn, safe_name, required_tags)
 
     buffer = io.StringIO(newline="")
     buffer.write("\ufeff")
@@ -867,12 +951,12 @@ def export_collection_to_csv_bytes(filename):
     return buffer.getvalue().encode("utf-8"), safe_name
 
 
-def get_magnet_links(filename):
+def get_magnet_links(filename, required_tags=None):
     safe_name = normalize_csv_filename(filename)
     with connect() as conn:
         rows = conn.execute(
             """
-            SELECT m.best_magnet_link
+            SELECT m.best_magnet_link, m.tags_json
             FROM movies m
             JOIN collections c ON c.id = m.collection_id
             WHERE c.filename = ? AND m.best_magnet_link != ''
@@ -880,7 +964,7 @@ def get_magnet_links(filename):
             """,
             (safe_name,),
         ).fetchall()
-    return [row["best_magnet_link"] for row in rows]
+    return [row["best_magnet_link"] for row in rows if _matches_tags(row["tags_json"], required_tags)]
 
 
 def delete_collections(filenames, data_dir):
@@ -946,9 +1030,9 @@ def import_csv_file(path, filename):
                 """
                 INSERT INTO movies(
                     collection_id, code, title, url, best_magnet_name, best_magnet_link,
-                    priority_score, magnet_date, size_mb, created_at, updated_at
+                    priority_score, magnet_date, size_mb, tags_json, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '[]', ?, ?)
                 """,
                 (
                     collection_id,
@@ -993,6 +1077,7 @@ def import_csv_file(path, filename):
             "UPDATE collections SET updated_at = ? WHERE id = ?",
             (now, collection_id),
         )
+        _rebuild_collection_tags(conn, collection_id, now)
     return imported
 
 

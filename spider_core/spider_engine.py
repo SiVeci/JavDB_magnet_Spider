@@ -202,6 +202,25 @@ def evaluate_magnet(item_soup):
         'rank': rank, 'date': date_str, 'size_mb': parse_size(size_str)
     }
 
+
+def parse_movie_tags(soup):
+    for block in soup.select('.movie-panel-info .panel-block'):
+        label = block.select_one('strong')
+        if not label:
+            continue
+        label_text = label.get_text(strip=True).rstrip(':：')
+        if label_text not in {'類別', '类别'}:
+            continue
+        tags = []
+        seen = set()
+        for link in block.select('.value a'):
+            tag = link.get_text(strip=True)
+            if tag and tag not in seen:
+                tags.append(tag)
+                seen.add(tag)
+        return tags
+    return []
+
 def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=None, is_resume=False, crawl_mode=None, task_id=None):
     TASK_CONTEXT.task_id = task_id
     if not task_id:
@@ -372,6 +391,7 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
                         return
 
                     soup = BeautifulSoup(res.text, 'html.parser')
+                    movie["tags"] = parse_movie_tags(soup)
                     magnets_content = soup.find(id='magnets-content')
 
                     valid_magnets = []
