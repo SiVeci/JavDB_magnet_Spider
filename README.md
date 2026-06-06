@@ -21,7 +21,7 @@
 - **Android 端**：利用原生 WebView 手动登录，Cookie 自动无缝同步。
 - **PC/Docker 端**：采用 `curl_cffi` 模拟 TLS 指纹，稳定穿透防护。
 - **Web 控制台**：适配移动＆桌面屏幕尺寸，支持实时日志查看与任务管理。
-- **自动选择磁力**：按 `中字无码 > 无码 > 中字 > 高清` 优先级自动筛选。
+- **自动选择磁力**：基于权重算法（无码+100 > 高清+10 > 字幕+1）自动筛选出最高质量资源。
 - **断点续传系统**：支持任务挂起与救援，Cookie 失效后补充即可接力。
 - **Docker 化部署**
 
@@ -54,6 +54,7 @@ docker run -d \
 pip install -r requirements.txt
 
 # 2. 进入核心目录并启动
+# (可选) 设置 JAVDB_AUTH_TOKEN 环境变量启用 API 鉴权保护
 cd spider_core
 python -m uvicorn main:app --host 0.0.0.0 --port 8000
 ```
@@ -112,4 +113,5 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 - Docker 镜像默认启用 API 访问保护，请通过 `JAVDB_AUTH_TOKEN` 设置访问令牌；WebUI 首次访问时会提示输入令牌。
 - WebUI 的 Cookie 默认只保存在当前浏览器会话中；勾选“记住 Cookie”后才会写入 `localStorage`。
 - Android WebView 抓取增加 45 秒超时保护，避免页面卡住时 Python 线程永久阻塞。
+- 引入文件写入与防路径穿越机制，提高底层文件的安全性。
 - 本版本暂不迁移 Android release 签名，仍保留现有本地编译方式；后续建议再迁移到安全的 Secrets 流程。
