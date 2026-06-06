@@ -30,9 +30,11 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStreamReader;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.json.JSONObject;
 
 public class SpiderService extends Service {
+    private static final long FETCH_TIMEOUT_MS = 45000L;
 
     private WindowManager windowManager;
     private WebView stealthWebView;
@@ -92,6 +94,18 @@ public class SpiderService extends Service {
     public void fetchHtml(String url, WebViewBridge.HtmlCallback callback) {
         // 必须在主线程操作 UI
         mainHandler.post(() -> {
+            final AtomicBoolean completed = new AtomicBoolean(false);
+            final Runnable timeoutTask = () -> {
+                if (completed.compareAndSet(false, true)) {
+                    try {
+                        stealthWebView.stopLoading();
+                    } catch (Exception ignored) {
+                    }
+                    callback.onResult("<html><body>Engine Timeout: WebView fetch exceeded 45 seconds</body></html>");
+                }
+            };
+            mainHandler.postDelayed(timeoutTask, FETCH_TIMEOUT_MS);
+
             stealthWebView.setWebViewClient(new WebViewClient() {
                 @Override
                 public void onPageFinished(WebView view, String currentUrl) {
@@ -101,6 +115,13 @@ public class SpiderService extends Service {
                             new ValueCallback<String>() {
                                 @Override
                                 public void onReceiveValue(String html) {
+                                    if (!completed.compareAndSet(false, true)) {
+                                        return;
+                                    }
+                                    mainHandler.removeCallbacks(timeoutTask);
+                                    if (html == null) {
+                                        html = "";
+                                    }
                                     // 过滤掉自带的转义引号
                                     if (html.startsWith("\"") && html.endsWith("\"")) {
                                         html = html.substring(1, html.length() - 1).replace("\\u003C", "<").replace("\\\"", "\"");
@@ -111,7 +132,14 @@ public class SpiderService extends Service {
                 }
             });
             // 开始加载
-            stealthWebView.loadUrl(url);
+            try {
+                stealthWebView.loadUrl(url);
+            } catch (Exception e) {
+                if (completed.compareAndSet(false, true)) {
+                    mainHandler.removeCallbacks(timeoutTask);
+                    callback.onResult("<html><body>Engine Error: WebView load failed</body></html>");
+                }
+            }
         });
     }
 

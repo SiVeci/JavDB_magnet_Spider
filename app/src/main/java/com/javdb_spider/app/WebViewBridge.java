@@ -1,8 +1,10 @@
 package com.javdb_spider.app;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 public class WebViewBridge {
+    private static final long FETCH_TIMEOUT_SECONDS = 45;
 
     // 保存当前正在运行的后台服务实例
     public static SpiderService activeService = null;
@@ -35,12 +37,15 @@ public class WebViewBridge {
 
         try {
             // Python 线程运行到这里会被挂起阻塞，直到 latch 被 countDown
-            latch.await();
+            boolean completed = latch.await(FETCH_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!completed) {
+                return "<html><body>Engine Timeout: WebView fetch exceeded 45 seconds</body></html>";
+            }
         } catch (InterruptedException e) {
-            e.printStackTrace();
-            return "";
+            Thread.currentThread().interrupt();
+            return "<html><body>Engine Error: WebView fetch interrupted</body></html>";
         }
 
-        return result[0];
+        return result[0] != null ? result[0] : "";
     }
 }

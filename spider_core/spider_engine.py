@@ -6,6 +6,14 @@ import time
 import os
 import json
 import threading
+from storage_utils import (
+    UnsafeFilenameError,
+    atomic_write_json,
+    get_safe_csv_path,
+    make_csv_filename_from_label,
+    normalize_csv_filename,
+    read_json_file,
+)
 
 # ======= 1. 环境嗅探与路径配置 =======
 try:
@@ -42,6 +50,8 @@ def fetch_html(url, headers=None, proxies=None):
         html_content = WebViewBridge.getHtmlBlocking(url)
 
         # 简单模拟状态码：如果 WebView 返回的 HTML 包含 CF 盾的特征词，模拟返回 403 触发救援
+        if html_content and ("Engine Timeout" in html_content or "Engine Error" in html_content):
+            return MockResponse(html_content, 503)
         if not html_content or "Just a moment..." in html_content or "Cloudflare" in html_content:
             return MockResponse(html_content, 403)
         return MockResponse(html_content, 200)
@@ -56,17 +66,16 @@ def fetch_html(url, headers=None, proxies=None):
 def update_status(state="idle", progress="", current="", log_msg=None, clear_log=False, final_filename=None, added_count=None):
     status_data = {"state": state, "progress": progress, "current": current, "logs": []}
     if final_filename:
-        status_data["final_filename"] = final_filename
+        status_data["final_filename"] = normalize_csv_filename(final_filename)
     if added_count is not None:
         status_data["added_count"] = added_count
 
     if not clear_log and os.path.exists(STATUS_FILE):
         try:
-            with open(STATUS_FILE, 'r', encoding='utf-8') as f:
-                old_data = json.load(f)
-                status_data["logs"] = old_data.get("logs", [])[-20:]
-                if not final_filename and "final_filename" in old_data:
-                    status_data["final_filename"] = old_data["final_filename"]
+            old_data = read_json_file(STATUS_FILE, default={})
+            status_data["logs"] = old_data.get("logs", [])[-20:]
+            if not final_filename and "final_filename" in old_data:
+                status_data["final_filename"] = normalize_csv_filename(old_data["final_filename"])
         except:
             pass
 
@@ -74,17 +83,14 @@ def update_status(state="idle", progress="", current="", log_msg=None, clear_log
         time_str = time.strftime("%H:%M:%S", time.localtime())
         status_data["logs"].append(f"[{time_str}] {log_msg}")
 
-    with open(STATUS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(status_data, f, ensure_ascii=False, indent=2)
+    atomic_write_json(STATUS_FILE, status_data, indent=2)
 
 def save_checkpoint(data):
-    with open(CHECKPOINT_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False)
+    atomic_write_json(CHECKPOINT_FILE, data)
 
 def load_checkpoint():
     if os.path.exists(CHECKPOINT_FILE):
-        with open(CHECKPOINT_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        return read_json_file(CHECKPOINT_FILE)
     return None
 
 def parse_size(size_str):
@@ -108,16 +114,14 @@ def evaluate_magnet(item_soup):
     date_str = date_elem.text.strip() if date_elem else '1970-01-01'
     size_str = item_soup.select_one('.meta').text.strip() if item_soup.select_one('.meta') else ''
 
-    has_sub = '-c' in name or 'chs' in name or '字幕' in tags
-    has_uncensored = '-u' in name or 'uncensored' in name
-    has_uc = '-uc' in name
-    has_hd = '高清' in tags
+    has_uncensored = bool(re.search(r'\b(uc|uncensored|u)\b', name))
+    has_sub = bool(re.search(r'\b(c|chs)\b', name)) or ('字幕' in tags)
+    has_hd = ('高清' in tags) or bool(re.search(r'\b(1080p|4k|2160p)\b', name))
 
-    if has_uc or (has_sub and has_uncensored): rank = 5
-    elif has_sub: rank = 4
-    elif has_uncensored: rank = 3
-    elif has_hd: rank = 2
-    else: rank = 1
+    rank = 0
+    if has_uncensored: rank += 100
+    if has_hd:         rank += 10
+    if has_sub:        rank += 1
 
     return {
         'link': magnet_a.get('href'),
@@ -127,6 +131,12 @@ def evaluate_magnet(item_soup):
 
 def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=None, is_resume=False, crawl_mode=None):
     STOP_EVENT.clear()
+    try:
+        output_filename = normalize_csv_filename(output_filename, allow_empty=True)
+    except UnsafeFilenameError as e:
+        update_status("error", "参数错误", "文件名非法", f"输出文件名非法: {str(e)}")
+        return
+
     headers = {
         'User-Agent': user_agent,
         'Cookie': cookie,
@@ -201,14 +211,14 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
                             actor_name = actor_tag.text.strip()
                     
                     if actor_name:
-                        output_filename = f"{actor_name}.csv"
+                        output_filename = make_csv_filename_from_label(actor_name)
                     else:
                         timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
-                        output_filename = f"javdb_{timestamp}.csv"
+                        output_filename = make_csv_filename_from_label(f"javdb_{timestamp}")
                     
                     update_status("running", f"第 {page} 页", "生成文件名", f"已自动命名为: {output_filename}", final_filename=output_filename)
 
-                final_csv_path = os.path.join(DATA_DIR, output_filename)
+                final_csv_path, output_filename = get_safe_csv_path(DATA_DIR, output_filename)
                 
                 if page == 1 and os.path.exists(final_csv_path) and not crawl_mode:
                     save_checkpoint({"phase": 1, "current_url": next_url, "page": page + 1 if next_url else page, "movie_links": movie_links})
@@ -238,7 +248,10 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
 
     # === 阶段二：提取磁力 ===
     if phase == 2:
-        final_csv_path = os.path.join(DATA_DIR, output_filename)
+        if not output_filename:
+            timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+            output_filename = make_csv_filename_from_label(f"javdb_{timestamp}")
+        final_csv_path, output_filename = get_safe_csv_path(DATA_DIR, output_filename)
         fieldnames = ['影片番号', '原始标题', '影片链接', '最佳资源文件名', '磁力链接', '优先级得分', '日期', '文件大小(MB)']
 
         # === 增量模式读取已有番号 ===

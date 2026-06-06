@@ -23,6 +23,17 @@
             <span id="app_version" class="bg-indigo-100 text-indigo-600 text-[10px] px-1.5 py-0.5 rounded font-black tracking-tight">加载中...</span>
         </div>
 
+        <div id="authPanel" class="hidden bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm">
+            <div class="flex flex-col md:flex-row gap-3 md:items-center">
+                <div class="flex-1">
+                    <div class="text-sm font-bold text-amber-800">访问令牌</div>
+                    <div class="text-xs text-amber-700 mt-0.5">Docker/PC 版启用保护后，需要输入 JAVDB_AUTH_TOKEN 才能操作 API。</div>
+                </div>
+                <input id="auth_token" type="password" autocomplete="off" placeholder="输入访问令牌" class="md:w-72 border border-amber-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-amber-500 outline-none bg-white">
+                <button type="button" onclick="saveAuthToken()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-2 rounded-lg transition-colors shadow-sm">保存</button>
+            </div>
+        </div>
+
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
             
             <div class="flex flex-col gap-6">
@@ -82,7 +93,11 @@
                                 <span>Cookie <span class="text-red-500">*</span></span>
                                 <a href="https://javdb.com" target="_blank" class="text-xs text-blue-500 hover:underline">去获取</a>
                             </label>
-                            <textarea id="cookie" rows="3" class="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-xs"></textarea>
+                            <textarea id="cookie" rows="3" oninput="syncCookieStorage()" class="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none font-mono text-xs"></textarea>
+                            <label class="mt-2 inline-flex items-center gap-2 text-xs text-gray-500 select-none">
+                                <input type="checkbox" id="remember_cookie" class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded cursor-pointer" onchange="syncCookieStorage()">
+                                <span>记住 Cookie（默认仅保存到当前浏览器会话）</span>
+                            </label>
                         </div>
                         <div>
                             <label class="block text-gray-600 mb-1">User-Agent</label>
@@ -159,7 +174,7 @@
                     </div>
 
                     <div id="actionButtons" class="hidden mt-5 grid grid-cols-2 gap-4">
-                        <a id="downloadBtn" href="#" target="_blank" class="flex items-center justify-center bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg shadow-md transition duration-200 text-sm">
+                        <a id="downloadBtn" href="#" onclick="downloadCsv(); return false;" class="flex items-center justify-center bg-green-500 hover:bg-green-600 text-white font-bold py-3 rounded-lg shadow-md transition duration-200 text-sm">
                             📥 下载 CSV 报表
                         </a>
                         <button onclick="copyMagnets()" class="flex items-center justify-center bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-lg shadow-md transition duration-200 text-sm">
@@ -210,13 +225,119 @@
         
         // 标签过滤功能相关变量
         let actorBaseUrl = "";
+        let actorBaseParams = new URLSearchParams();
         let availableTags = [];
         let selectedTags = new Set();
+        let authRequired = false;
+        let apiToken = sessionStorage.getItem('javdb_auth_token') || '';
+
+        function apiHeaders(extraHeaders = {}) {
+            const headers = { ...extraHeaders };
+            if (apiToken) headers['X-JavDB-Token'] = apiToken;
+            return headers;
+        }
+
+        async function apiFetch(url, options = {}) {
+            const response = await fetch(url, {
+                ...options,
+                headers: apiHeaders(options.headers || {})
+            });
+            if (response.status === 401) {
+                showAuthPanel(true);
+                throw new Error('访问令牌缺失或无效');
+            }
+            return response;
+        }
+
+        function showAuthPanel(show) {
+            const panel = document.getElementById('authPanel');
+            if (!panel) return;
+            panel.classList.toggle('hidden', !show);
+            if (show) document.getElementById('auth_token')?.focus();
+        }
+
+        function saveAuthToken() {
+            const input = document.getElementById('auth_token');
+            apiToken = (input?.value || '').trim();
+            if (!apiToken) return alert('请输入访问令牌');
+            sessionStorage.setItem('javdb_auth_token', apiToken);
+            showAuthPanel(false);
+            pollStatus();
+            loadHistory();
+        }
+
+        function cookieStorageKey() {
+            return document.getElementById('remember_cookie')?.checked ? 'local' : 'session';
+        }
+
+        function syncCookieStorage() {
+            const cookie = document.getElementById('cookie')?.value || '';
+            if (cookieStorageKey() === 'local') {
+                localStorage.setItem('javdb_remember_cookie', '1');
+                localStorage.setItem('javdb_cookie', cookie);
+                sessionStorage.removeItem('javdb_cookie');
+            } else {
+                localStorage.setItem('javdb_remember_cookie', '0');
+                localStorage.removeItem('javdb_cookie');
+                sessionStorage.setItem('javdb_cookie', cookie);
+            }
+        }
+
+        function loadCookieFromStorage() {
+            const remember = localStorage.getItem('javdb_remember_cookie') === '1';
+            const checkbox = document.getElementById('remember_cookie');
+            if (checkbox) checkbox.checked = remember;
+            if (remember) {
+                document.getElementById('cookie').value = localStorage.getItem('javdb_cookie') || '';
+            } else {
+                localStorage.removeItem('javdb_cookie');
+                document.getElementById('cookie').value = sessionStorage.getItem('javdb_cookie') || '';
+            }
+        }
+
+        function escapeHtml(value) {
+            return String(value).replace(/[&<>"']/g, char => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[char]));
+        }
+
+        function escapeJsString(value) {
+            return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+
+        function prepareActorUrl(rawUrl) {
+            try {
+                const parsed = new URL(rawUrl);
+                actorBaseUrl = `${parsed.origin}${parsed.pathname}`;
+                actorBaseParams = new URLSearchParams(parsed.search);
+            } catch (err) {
+                const parts = rawUrl.split('?');
+                actorBaseUrl = parts[0];
+                actorBaseParams = new URLSearchParams(parts[1] || '');
+            }
+            actorBaseParams.set('locale', 'zh');
+            if (!actorBaseParams.has('sort_type')) actorBaseParams.set('sort_type', '0');
+            actorBaseParams.delete('page');
+            actorBaseParams.delete('t');
+            return buildActorUrl();
+        }
+
+        function buildActorUrl(tagValues = null) {
+            const params = new URLSearchParams(actorBaseParams);
+            params.set('locale', 'zh');
+            if (tagValues) {
+                params.set('t', tagValues);
+            } else {
+                params.delete('t');
+            }
+            const query = params.toString();
+            return query ? `${actorBaseUrl}?${query}` : actorBaseUrl;
+        }
 
         window.onload = async function() {
             // 恢复本地存储的配置
             document.getElementById('start_url').value = localStorage.getItem('javdb_url') || '';
-            document.getElementById('cookie').value = localStorage.getItem('javdb_cookie') || '';
+            loadCookieFromStorage();
             document.getElementById('user_agent').value = localStorage.getItem('javdb_ua') || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0';
             document.getElementById('filename').value = localStorage.getItem('javdb_filename') || '';
             document.getElementById('proxy_host').value = localStorage.getItem('javdb_proxy_host') || '';
@@ -226,6 +347,8 @@
                 // 如果后端返回了 404 (通常带有 detail 字段)，防止显示 undefined
                 if (res.version) {
                     document.getElementById('app_version').innerText = res.version;
+                    authRequired = !!res.auth_required;
+                    showAuthPanel(authRequired && !apiToken);
                 } else {
                     document.getElementById('app_version').innerText = "v?.?.?";
                 }
@@ -281,8 +404,8 @@ async function fetchTags() {
             // 👆 ----------------------------------------------------
 
             // 剥离参数，保留纯净的 Base URL
-            actorBaseUrl = currentUrl.split('?')[0]; 
-            urlInput.value = actorBaseUrl; 
+            const normalizedActorUrl = prepareActorUrl(currentUrl);
+            urlInput.value = normalizedActorUrl; 
             selectedTags.clear(); 
 
             try {
@@ -292,12 +415,12 @@ async function fetchTags() {
                 btn.disabled = true;
 
                 // 👇 --- 【新增：构造 payload，如果填写了代理则带上 proxies 字段】 ---
-                const payload = { url: actorBaseUrl, cookie: cookie, user_agent: userAgent };
+                const payload = { url: normalizedActorUrl, cookie: cookie, user_agent: userAgent };
                 if (finalProxy) {
                     payload.proxies = finalProxy;
                 }
 
-                const res = await fetch('/api/get_tags', {
+                const res = await apiFetch('/api/get_tags', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload) // 使用新的 payload 发送
@@ -362,10 +485,10 @@ async function fetchTags() {
         function updateUrl() {
             const urlInput = document.getElementById('start_url');
             if (selectedTags.size === 0) {
-                urlInput.value = actorBaseUrl;
+                urlInput.value = buildActorUrl();
             } else {
                 const tParamValues = Array.from(selectedTags).join(',');
-                urlInput.value = `${actorBaseUrl}?t=${tParamValues}&sort_type=0`;
+                urlInput.value = buildActorUrl(tParamValues);
             }
         }
 
@@ -373,7 +496,7 @@ async function fetchTags() {
         async function stopTask() {
             if (!confirm("确定要强行终止当前任务吗？进度将被保存为断点。")) return;
             try {
-                const res = await fetch('/api/stop', { method: 'POST' }).then(r => r.json());
+                const res = await apiFetch('/api/stop', { method: 'POST' }).then(r => r.json());
                 alert(res.msg);
             } catch (err) { alert("停止请求失败。"); }
         }
@@ -398,7 +521,7 @@ async function startTask() {
 
             // 保存配置到本地，下次刷新不用重填
             localStorage.setItem('javdb_url', url);
-            localStorage.setItem('javdb_cookie', cookie);
+            syncCookieStorage();
             localStorage.setItem('javdb_ua', ua);
             localStorage.setItem('javdb_filename', filename);
             localStorage.setItem('javdb_proxy_host', host);
@@ -416,7 +539,7 @@ async function startTask() {
             }
 
             try {
-                const response = await fetch('/api/start', {
+                const response = await apiFetch('/api/start', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
@@ -498,7 +621,7 @@ function setResumePanelMode(mode, extraData = {}) {
                 if (!cookieToUse) return alert("请先粘贴新获取的 Cookie！");
             }
 
-            const res = await fetch('/api/resume', {
+            const res = await apiFetch('/api/resume', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ cookie: cookieToUse })
@@ -507,7 +630,7 @@ function setResumePanelMode(mode, extraData = {}) {
             if (res.code === 200) {
                 // 无论哪种模式，更新左侧输入框并保存到本地
                 document.getElementById('cookie').value = cookieToUse;
-                localStorage.setItem('javdb_cookie', cookieToUse);
+                syncCookieStorage();
                 
                 document.getElementById('resumePanel').classList.add('hidden');
                 document.getElementById('resume_cookie').value = ''; // 清空临时输入框
@@ -520,7 +643,7 @@ function setResumePanelMode(mode, extraData = {}) {
 
         async function setTaskMode(mode) {
             try {
-                const res = await fetch('/api/set_mode', {
+                const res = await apiFetch('/api/set_mode', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ mode: mode })
@@ -536,7 +659,7 @@ function setResumePanelMode(mode, extraData = {}) {
         // ================= 状态轮询 =================
         async function pollStatus() {
             try {
-                const data = await fetch('/api/status').then(r => r.json());
+                const data = await apiFetch('/api/status').then(r => r.json());
                 
                 document.getElementById('progressText').innerText = data.progress;
                 document.getElementById('currentCode').innerText = data.current;
@@ -618,7 +741,7 @@ function setResumePanelMode(mode, extraData = {}) {
                     
                     const fname = data.final_filename || "final_magnets.csv";
                     finalFileName = fname; 
-                    document.getElementById('downloadBtn').href = `/api/download?name=${encodeURIComponent(fname)}`;
+                    document.getElementById('downloadBtn').href = '#';
                     
                     stopBtn.classList.add('hidden');
                     resumePanel.classList.add('hidden');
@@ -651,11 +774,35 @@ function setResumePanelMode(mode, extraData = {}) {
             } catch (err) { console.log("轮询失败", err); }
         }
         
+        async function downloadCsv(fileNameOverride = null) {
+            const targetName = (typeof fileNameOverride === 'string') ? fileNameOverride : finalFileName;
+            if (!targetName) return alert("未找到有效的文件名！");
+            try {
+                const response = await apiFetch(`/api/download?name=${encodeURIComponent(targetName)}`);
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    return alert(data.msg || "下载失败");
+                }
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = targetName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                console.error(err);
+                alert(err.message || "下载请求失败。");
+            }
+        }
+
         async function copyMagnets(fileNameOverride = null) {
             const targetName = (typeof fileNameOverride === 'string') ? fileNameOverride : finalFileName;
             if (!targetName) return alert("未找到有效的文件名！");
             try {
-                const res = await fetch(`/api/magnets?name=${encodeURIComponent(targetName)}`).then(r => r.json());
+                const res = await apiFetch(`/api/magnets?name=${encodeURIComponent(targetName)}`).then(r => r.json());
                 if (res.code !== 200) return alert(res.msg);
                 if (!res.data || res.data.length === 0) return alert("文件中没有找到磁力链接！");
                 
@@ -686,7 +833,7 @@ function setResumePanelMode(mode, extraData = {}) {
         async function clearLogs() {
             if (!confirm("确定要清除所有运行日志和进度记录吗？\n(此操作不会删除您的 Cookie 配置)")) return;
             try {
-                const res = await fetch('/api/clear_logs', { method: 'POST' }).then(r => r.json());
+                const res = await apiFetch('/api/clear_logs', { method: 'POST' }).then(r => r.json());
                 if (res.code === 200) {
                     finalFileName = ""; 
                     document.getElementById('actionButtons').classList.add('hidden'); 
@@ -700,7 +847,7 @@ function setResumePanelMode(mode, extraData = {}) {
         // ================= 历史数据管理 =================
         async function loadHistory() {
             try {
-                const res = await fetch('/api/history').then(r => r.json());
+                const res = await apiFetch('/api/history').then(r => r.json());
                 const tbody = document.getElementById('history-list');
                 const selectAllCb = document.getElementById('selectAllCheckbox');
                 const batchDelBtn = document.getElementById('batchDeleteBtn');
@@ -722,23 +869,28 @@ function setResumePanelMode(mode, extraData = {}) {
                 selectAllCb.checked = false;
                 batchDelBtn.classList.remove('hidden');
                 
-                tbody.innerHTML = res.data.map(file => `
+                tbody.innerHTML = res.data.map(file => {
+                    const htmlName = escapeHtml(file.name);
+                    const htmlTime = escapeHtml(file.time);
+                    const jsName = escapeJsString(file.name);
+                    return `
                     <tr class="bg-white border-b hover:bg-gray-50 transition-colors">
-                        <td class="px-3 py-3 text-center"><input type="checkbox" value="${file.name}" class="file-checkbox w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded cursor-pointer" onclick="updateBatchDeleteBtn()"></td>
+                        <td class="px-3 py-3 text-center"><input type="checkbox" value="${htmlName}" class="file-checkbox w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded cursor-pointer" onclick="updateBatchDeleteBtn()"></td>
                         <td class="px-3 py-3">
                             <div class="flex flex-col">
-                                <span class="font-medium text-gray-900 truncate max-w-[100px] sm:max-w-[200px] md:max-w-xs" title="${file.name}">${file.name}</span>
-                                <span class="text-[10px] text-gray-400 mt-0.5">${file.time}</span>
+                                <span class="font-medium text-gray-900 truncate max-w-[100px] sm:max-w-[200px] md:max-w-xs" title="${htmlName}">${htmlName}</span>
+                                <span class="text-[10px] text-gray-400 mt-0.5">${htmlTime}</span>
                             </div>
                         </td>
                         <td class="px-3 py-3 text-center whitespace-nowrap"><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-blue-50 text-blue-700">${file.count} 条</span></td>
                         <td class="px-3 py-3 text-center space-x-1 whitespace-nowrap">
-                            <button onclick="copyMagnets('${file.name}')" class="inline-flex items-center px-2 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md font-bold shadow-sm transition-colors text-xs">📋 复制</button>
-                            <a href="/api/download?name=${encodeURIComponent(file.name)}" target="_blank" class="inline-flex items-center px-2 py-1.5 bg-green-50 text-green-600 hover:bg-green-100 rounded-md font-bold shadow-sm transition-colors text-xs">📥 下载</a>
-                            <button onclick="deleteFiles(['${file.name}'])" class="inline-flex items-center px-2 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-md font-bold shadow-sm transition-colors text-xs">🗑️ 删除</button>
+                            <button onclick="copyMagnets('${jsName}')" class="inline-flex items-center px-2 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md font-bold shadow-sm transition-colors text-xs">📋 复制</button>
+                            <button onclick="downloadCsv('${jsName}')" class="inline-flex items-center px-2 py-1.5 bg-green-50 text-green-600 hover:bg-green-100 rounded-md font-bold shadow-sm transition-colors text-xs">📥 下载</button>
+                            <button onclick="deleteFiles(['${jsName}'])" class="inline-flex items-center px-2 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-md font-bold shadow-sm transition-colors text-xs">🗑️ 删除</button>
                         </td>
                     </tr>
-                `).join('');
+                `;
+                }).join('');
                 updateBatchDeleteBtn();
             } catch (err) { console.error("加载历史数据失败", err); }
         }
@@ -779,7 +931,7 @@ function setResumePanelMode(mode, extraData = {}) {
             if (!confirm(msg)) return;
             
             try {
-                const res = await fetch('/api/delete', { 
+                const res = await apiFetch('/api/delete', { 
                     method: 'POST', 
                     headers: { 'Content-Type': 'application/json' }, 
                     body: JSON.stringify({ filenames: filenames }) 

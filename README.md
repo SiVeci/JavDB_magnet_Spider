@@ -41,6 +41,7 @@
 docker run -d \
   --name=javdb-spider \
   -p 8090:8000 \
+  -e JAVDB_AUTH_TOKEN=请替换为你的访问令牌 \
   -v /你的路径/appdata/javdb_spider/data:/app/data \
   --restart=unless-stopped \
   ghcr.io/你的用户名/javdb_spider:latest
@@ -104,3 +105,11 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 1. **仅供学习**：本项目仅用于 Python 爬虫技术研究与 Chaquopy 框架实践，请勿用于非法用途。
 2. **合规使用**：请遵守目标网站的 `robots.txt` 协议，合理控制爬取频率。
 3. **隐私安全**：本项目为开源软件，不收集任何用户 Cookie 信息。用户需妥善保管个人凭据。
+---
+
+## v1.3 安全说明
+
+- Docker 镜像默认启用 API 访问保护，请通过 `JAVDB_AUTH_TOKEN` 设置访问令牌；WebUI 首次访问时会提示输入令牌。
+- WebUI 的 Cookie 默认只保存在当前浏览器会话中；勾选“记住 Cookie”后才会写入 `localStorage`。
+- Android WebView 抓取增加 45 秒超时保护，避免页面卡住时 Python 线程永久阻塞。
+- 本版本暂不迁移 Android release 签名，仍保留现有本地编译方式；后续建议再迁移到安全的 Secrets 流程。
