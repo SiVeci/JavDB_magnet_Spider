@@ -11,37 +11,24 @@
 
 ---
 
-<div align="center">
-  <img src="spider_core/frontend/logo.png" alt="JavDB Magnet Spider Logo" width="180">
-  <h1>JavDB Magnet Spider</h1>
-  <p>
-    <img src="https://img.shields.io/badge/Platform-Android%20%7C%20Docker%20%7C%20PC-brightgreen" alt="Platform">
-    <img src="https://img.shields.io/badge/Python-3.12-blue" alt="Python Version">
-    <img src="https://img.shields.io/badge/Framework-FastAPI%20%7C%20Chaquopy-orange" alt="Framework">
-    <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="License">
-  </p>
-</div>
+
+## 项目简介
+
+跨平台的自动化JavDB爬虫工具，支持在Docker、PC、Android 移动端运行。本项目实现了在手机上**手动过盾、后台静默爬取、WebUI 远程控制**的闭环体验，能批量抓取指定目录。
+
+## 核心特性
+
+- **多任务队列**：支持批量下发爬取任务，系统自动进行后台排队与调度。Web 控制台提供实时进度监控，并支持对运行任务进行安全暂停、恢复与取消。
+- **Android支持**：基于 Chaquopy 框架在手机端运行完整后端。集成原生 WebView 机制进行验证拦截与 Cookie 自动同步，支持通过端侧无缝接管并恢复需要身份验证的任务。
+- **智能预检与断点续传**：任务启动前自动执行页面预检与本地数据冲突检测；爬取过程提供精准的断点记录与救援机制，确保增量去重与覆盖操作的数据一致性。
+- **数据库化管理**：底层采用 SQLite 实现可靠的数据持久化。内置可视化数据管理中心，支持浏览抓取集合、查看影片的全部候选磁力，并允许手动切换单部影片的最终生效链接，动态关联 CSV 导出与一键复制功能。
+- **磁力优选策略**：内置智能权重算法（无码+100 > 高清+10 > 字幕+1），自动为每部影片筛选最佳磁力资源，同时透明保留所有候选磁力记录以便进行二次筛查调优。
+- **过盾机制**：采用 `curl_cffi` 模拟 TLS 指纹，稳定穿透 Cloudflare 等网络防护。
+- **系统安全**：严格规范文件路径校验以防止目录穿透，在 PC 及 Docker 端默认启用 `JAVDB_AUTH_TOKEN` 接口鉴权保护。
 
 ---
 
-## 🌟 项目简介
-
-跨平台的自动化JavDB爬虫工具，支持在Docker、PC、Android 移动端运行。本项目实现了在手机上**手动过盾、后台静默爬取、WebUI 远程控制**的闭环体验，能批量抓取指定目录，并根据自定义规则（中文字幕、无码、高清等）自动挑选出质量最高的磁力链接。
-
-## ✨ 核心特性
-
-- **Android 原生支持**：基于 Chaquopy 框架，在手机内运行完整的 FastAPI + Uvicorn 后端。
-- **多端无缝体验**：利用原生 WebView 手动登录，Cookie 自动同步；Web 控制台适配多屏尺寸，支持实时日志与任务管理。
-- **智能过盾与防护穿透**：采用 `curl_cffi` 模拟 TLS 指纹，稳定穿透 Cloudflare；Android WebView 增加 45 秒超时保护，防止进程假死。
-- **高质量磁力优选**：基于权重算法（无码+100 > 高清+10 > 字幕+1）筛选最佳资源，系统数据库将留存所有候选磁力明细以便后续分析调优。
-- **断点续传与增量爬取**：支持任务挂起与救援，Cookie 失效补充后可接力；结合数据库校验，全面保障增量去重和覆盖模式的可靠性。
-- **高效数据持久化 (SQLite)**：底层采用 SQLite 替代纯 CSV 进行数据管理，启动时支持旧版 CSV 数据自动幂等迁移。CSV 文件现仅作为前端按需下载的动态导出格式，彻底告别冗余存储。
-- **系统级安全**：默认启用 API 访问保护机制 (通过 `JAVDB_AUTH_TOKEN`)，并引入严密的底层文件操作与防路径穿越机制。
-- **Docker 化部署**：极简容器化，支持持久化挂载与自动化运行。
-
----
-
-## 🚀 快速开始
+## 快速开始
 
 ### 方案一：Android 手机端
 1. **下载安装**：前往 [Releases] 下载最新的 APK 文件。
@@ -79,7 +66,7 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 
 ---
 
-## 🛠️ 使用指南
+## 使用指南
 
 ### 1. 爬取逻辑配置
 - **起始页面 URL**：进入老师主页，筛选好想要抓取的 Tag（如“单体”、“高清”），复制浏览器地址栏链接（支持在WebUI中动态获取过滤标签）。
@@ -97,7 +84,7 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 
 ---
 
-## 📁 项目结构 (Monorepo)
+## 项目结构
 ```text
 ├── app/                # Android 原生 Java 代码与资源
 ├── spider_core/        # 核心 Python 逻辑 (三端共享)
@@ -111,7 +98,7 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 
 ---
 
-## ⚙️ 系统要求
+## 系统要求
 
 | 维度 | 要求 |
 | :--- | :--- |
@@ -121,7 +108,7 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 
 ---
 
-## ⚠️ 免责声明
+## 免责声明
 1. **仅供学习**：本项目仅用于 Python 爬虫技术研究与 Chaquopy 框架实践，请勿用于非法用途。
 2. **合规使用**：请遵守目标网站的 `robots.txt` 协议，合理控制爬取频率。
 3. **隐私安全**：本项目为开源软件，不收集任何用户 Cookie 信息。用户需妥善保管个人凭据。

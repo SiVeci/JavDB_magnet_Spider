@@ -1,8 +1,7 @@
 import os
 import secrets
 import threading
-from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, urlencode, urlparse, urlunparse
 
 import db_store
 from bs4 import BeautifulSoup
@@ -10,11 +9,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 
-from spider_engine import DATA_DIR, STATUS_FILE, STOP_EVENT, fetch_html, run_spider
+from spider_engine import DATA_DIR, STATUS_FILE, fetch_html, get_android_javdb_cookie, run_task
 from storage_utils import (
     UnsafeFilenameError,
     atomic_write_json,
     get_safe_csv_path,
+    make_csv_filename_from_label,
     normalize_csv_filename,
     read_json_file,
 )
@@ -22,24 +22,40 @@ from storage_utils import (
 
 app = FastAPI()
 
-APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "1.4.0")
-CONFIG_FILE = os.path.join(DATA_DIR, "task_config.json")
+APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "1.5.0")
 AUTH_HEADER = "X-JavDB-Token"
 PUBLIC_API_PATHS = {"/api/version"}
+QUEUE_LOCK = threading.RLock()
+QUEUE_THREAD = None
+
 db_store.configure(DATA_DIR)
 db_store.import_existing_csvs(DATA_DIR)
+db_store.recover_interrupted_tasks()
 
 
 class TaskConfig(BaseModel):
     start_url: str
-    cookie: str
-    user_agent: str
+    cookie: str = ""
+    user_agent: str = ""
     filename: str = ""
     proxies: str = None
+    crawl_mode: str = ""
+    remember_cookie: bool = False
+
+
+class RuntimeConfig(BaseModel):
+    cookie: str = ""
+    remember_cookie: bool = False
+    user_agent: str = ""
+    proxies: str = ""
 
 
 class ResumeConfig(BaseModel):
-    cookie: str
+    cookie: str = ""
+
+
+class CookieConfig(BaseModel):
+    cookie: str = ""
 
 
 class ModeConfig(BaseModel):
@@ -48,13 +64,17 @@ class ModeConfig(BaseModel):
 
 class TagConfigRequest(BaseModel):
     url: str
-    cookie: str
-    user_agent: str
+    cookie: str = ""
+    user_agent: str = ""
     proxies: str = None
 
 
 class DeleteRequest(BaseModel):
     filenames: list[str]
+
+
+class SelectMagnetRequest(BaseModel):
+    magnet_id: int
 
 
 def _env_truthy(name: str) -> bool:
@@ -102,10 +122,260 @@ def ensure_zh_locale(url: str) -> str:
     return urlunparse(parsed._replace(query=query))
 
 
-def start_spider_thread(*args):
-    thread = threading.Thread(target=run_spider, args=args)
-    thread.start()
-    return thread
+def build_proxy_dict(proxy):
+    return {"http": proxy, "https": proxy} if proxy else None
+
+
+def save_runtime_from_payload(config):
+    current = db_store.get_runtime_config(include_cookie=True)
+    cookie = getattr(config, "cookie", "")
+    if not cookie:
+        cookie = current.get("cookie", "")
+    user_agent = getattr(config, "user_agent", "") or current.get("user_agent", "")
+    proxies = getattr(config, "proxies", None)
+    if proxies is None:
+        proxies = current.get("proxies", "")
+    remember_cookie = bool(getattr(config, "remember_cookie", current.get("remember_cookie", False)))
+    db_store.save_runtime_config(
+        cookie=cookie,
+        remember_cookie=remember_cookie,
+        user_agent=user_agent,
+        proxies=proxies or "",
+    )
+
+
+def get_runtime_for_request():
+    runtime = db_store.get_runtime_config(include_cookie=True)
+    if not runtime.get("cookie"):
+        android_cookie = get_android_javdb_cookie().strip()
+        if android_cookie:
+            db_store.save_runtime_config(
+                cookie=android_cookie,
+                remember_cookie=runtime["remember_cookie"],
+                user_agent=runtime["user_agent"],
+                proxies=runtime["proxies"],
+            )
+            runtime = db_store.get_runtime_config(include_cookie=True)
+    return runtime
+
+
+def runtime_headers(runtime):
+    return {
+        "User-Agent": runtime.get("user_agent") or "",
+        "Cookie": runtime.get("cookie") or "",
+    }
+
+
+def infer_task_filename(start_url, requested_filename, soup):
+    if requested_filename:
+        return normalize_csv_filename(requested_filename, allow_empty=True)
+    actor_name = ""
+    if "/actors/" in start_url:
+        actor_tag = soup.select_one(".actor-section-name")
+        if actor_tag:
+            actor_name = actor_tag.text.strip()
+    if actor_name:
+        return make_csv_filename_from_label(actor_name)
+    import time
+
+    return make_csv_filename_from_label(f"javdb_{time.strftime('%Y%m%d_%H%M%S')}")
+
+
+def prepare_task_config(config: TaskConfig):
+    if config.crawl_mode and config.crawl_mode not in {"incremental", "overwrite"}:
+        return JSONResponse(status_code=400, content={"code": 400, "msg": "爬取模式非法"})
+    try:
+        requested_filename = normalize_csv_filename(config.filename, allow_empty=True)
+    except UnsafeFilenameError as e:
+        return JSONResponse(status_code=400, content={"code": 400, "msg": f"文件名非法: {str(e)}"})
+
+    save_runtime_from_payload(config)
+    runtime = get_runtime_for_request()
+    if not runtime.get("cookie"):
+        return JSONResponse(
+            status_code=400,
+            content={"code": 400, "msg": "Cookie 不能为空；Android 端请先在内置浏览器登录 JavDB"},
+        )
+
+    start_url = ensure_zh_locale(config.start_url)
+    response = fetch_html(
+        start_url,
+        headers=runtime_headers(runtime),
+        proxies=build_proxy_dict(runtime.get("proxies")),
+    )
+    if response.status_code != 200:
+        return JSONResponse(
+            status_code=response.status_code if response.status_code >= 400 else 400,
+            content={"code": response.status_code, "msg": f"入队预检查失败，状态码: {response.status_code}"},
+        )
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    try:
+        final_filename = infer_task_filename(start_url, requested_filename, soup)
+    except UnsafeFilenameError as e:
+        return JSONResponse(status_code=400, content={"code": 400, "msg": f"文件名非法: {str(e)}"})
+
+    exists = db_store.collection_exists(final_filename)
+    if exists and not config.crawl_mode:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "code": 409,
+                "msg": f"发现已有数据库集合：{final_filename}，请选择增量或覆盖。",
+                "needs_mode": True,
+                "filename": final_filename,
+            },
+        )
+    return {
+        "start_url": start_url,
+        "filename": final_filename,
+        "crawl_mode": config.crawl_mode or "",
+    }
+
+
+def task_to_response(task, include_logs=False):
+    if not task:
+        return None
+    data = {
+        "task_id": task["task_id"],
+        "start_url": task["start_url"],
+        "filename": task.get("final_filename") or task.get("requested_filename") or "",
+        "final_filename": task.get("final_filename") or task.get("requested_filename") or "",
+        "collection_filename": task.get("collection_filename") or "",
+        "crawl_mode": task.get("crawl_mode") or "",
+        "state": task["state"],
+        "progress": task.get("progress") or "0/0",
+        "current": task.get("current") or "-",
+        "added_count": task.get("added_count") or 0,
+        "error_message": task.get("error_message") or "",
+        "created_at": task.get("created_at") or 0,
+        "updated_at": task.get("updated_at") or 0,
+        "started_at": task.get("started_at") or 0,
+        "finished_at": task.get("finished_at") or 0,
+    }
+    if include_logs:
+        data["logs"] = db_store.get_task_logs(task["task_id"])
+    return data
+
+
+def write_status_mirror(task=None):
+    if not task:
+        empty_status = {
+            "state": "idle",
+            "progress": "0/0",
+            "current": "-",
+            "logs": ["等待任务启动..."],
+        }
+        atomic_write_json(STATUS_FILE, empty_status, indent=2)
+        return
+    data = task_to_response(task, include_logs=True)
+    atomic_write_json(STATUS_FILE, data, indent=2)
+
+
+def queue_worker():
+    global QUEUE_THREAD
+    try:
+        while True:
+            task = db_store.claim_next_pending_task()
+            if not task:
+                write_status_mirror(db_store.get_current_task())
+                return
+            write_status_mirror(task)
+            try:
+                run_task(task["task_id"])
+            except Exception as e:
+                db_store.update_task_status(
+                    task["task_id"],
+                    state="failed",
+                    current="任务异常",
+                    log_msg=f"任务执行异常: {str(e)}",
+                    error_message=str(e),
+                )
+            current = db_store.get_task(task["task_id"])
+            write_status_mirror(current)
+            if current and current["state"] in {"paused", "waiting_cookie", "waiting_choice", "failed"}:
+                return
+    finally:
+        with QUEUE_LOCK:
+            QUEUE_THREAD = None
+
+
+def ensure_queue_worker():
+    global QUEUE_THREAD
+    with QUEUE_LOCK:
+        if QUEUE_THREAD and QUEUE_THREAD.is_alive():
+            return
+        QUEUE_THREAD = threading.Thread(target=queue_worker, daemon=True)
+        QUEUE_THREAD.start()
+
+
+def is_queue_running():
+    return bool(QUEUE_THREAD and QUEUE_THREAD.is_alive())
+
+
+def get_queue_status_data():
+    tasks = db_store.list_tasks(limit=200)
+    pending_count = sum(1 for task in tasks if task["state"] == "pending")
+    counts = db_store.count_tasks_by_state()
+    finished_count = sum(counts.get(state, 0) for state in db_store.FINISHED_TASK_STATES)
+    active_count = sum(count for state, count in counts.items() if state not in db_store.FINISHED_TASK_STATES)
+    current = db_store.get_active_task()
+    if not current:
+        for task in tasks:
+            if task["state"] in {"waiting_cookie", "waiting_choice", "paused"}:
+                current = task
+                break
+    blocking = bool(
+        current
+        and current["state"] in {
+            "running",
+            "pause_requested",
+            "cancel_requested",
+            "waiting_cookie",
+            "waiting_choice",
+            "paused",
+        }
+    )
+    return {
+        "queue_state": "running" if is_queue_running() else ("blocked" if blocking else "idle"),
+        "pending_count": pending_count,
+        "active_count": active_count,
+        "finished_count": finished_count,
+        "current_task_id": current["task_id"] if current else "",
+        "can_start": pending_count > 0 and not is_queue_running() and not blocking,
+    }
+
+
+def resolve_task_cookie(cookie):
+    cookie = (cookie or "").strip()
+    if cookie:
+        return cookie
+    android_cookie = get_android_javdb_cookie().strip()
+    if android_cookie:
+        return android_cookie
+    return ""
+
+
+def current_controllable_task():
+    task = db_store.get_active_task()
+    if task:
+        return task
+    for task in db_store.list_tasks(limit=50):
+        if task["state"] in {"paused", "waiting_cookie", "waiting_choice", "pending"}:
+            return task
+    return db_store.get_current_task()
+
+
+def create_task_from_config(config: TaskConfig):
+    prepared = prepare_task_config(config)
+    if isinstance(prepared, JSONResponse):
+        return prepared
+    task_id = db_store.create_task(
+        prepared["start_url"],
+        filename=prepared["filename"],
+        crawl_mode=prepared["crawl_mode"],
+    )
+    return {"code": 200, "msg": "任务已加入队列", "task_id": task_id, "filename": prepared["filename"]}
 
 
 @app.get("/api/version")
@@ -113,142 +383,198 @@ def get_version():
     return {"version": APP_VERSION, "auth_required": is_auth_required()}
 
 
-@app.post("/api/stop")
-def stop_task():
-    STOP_EVENT.set()
-    return {"code": 200, "msg": "停止信号已发送，请等待当前请求完成后安全退出。"}
+@app.get("/api/runtime_config")
+def get_runtime_config():
+    runtime = db_store.get_runtime_config(include_cookie=False)
+    return {"code": 200, "data": runtime}
+
+
+@app.post("/api/runtime_config")
+def set_runtime_config(config: RuntimeConfig):
+    db_store.save_runtime_config(
+        cookie=config.cookie,
+        remember_cookie=config.remember_cookie,
+        user_agent=config.user_agent,
+        proxies=config.proxies,
+    )
+    return {"code": 200, "msg": "运行配置已保存"}
 
 
 @app.post("/api/start")
 def start_task(config: TaskConfig):
-    try:
-        status = read_json_file(STATUS_FILE, default={})
-        if status and status.get("state") == "running":
-            return {"code": 400, "msg": "当前已有任务正在运行，请等待完成后再提交。"}
-    except Exception:
-        pass
+    return create_task_from_config(config)
 
-    try:
-        target_filename = normalize_csv_filename(config.filename, allow_empty=True)
-    except UnsafeFilenameError as e:
-        return {"code": 400, "msg": f"文件名非法: {str(e)}"}
 
-    task_data = config.dict()
-    task_data["final_filename"] = target_filename
-    task_data["crawl_mode"] = None
-    atomic_write_json(CONFIG_FILE, task_data)
-
-    initial_status = {
-        "state": "running",
-        "progress": "0/0",
-        "current": "系统初始化",
-        "logs": ["系统已分配资源，正在启动爬虫引擎..."],
-    }
-    if target_filename:
-        initial_status["final_filename"] = target_filename
-    atomic_write_json(STATUS_FILE, initial_status, indent=2)
-
-    start_spider_thread(
-        config.start_url,
-        config.cookie,
-        config.user_agent,
-        target_filename,
-        config.proxies,
-        False,
-        None,
-    )
-    return {"code": 200, "msg": "任务已启动！"}
+@app.post("/api/stop")
+def stop_task():
+    task = current_controllable_task()
+    if not task:
+        return {"code": 400, "msg": "当前没有可暂停的任务"}
+    if db_store.request_task_pause(task["task_id"]):
+        return {"code": 200, "msg": "暂停请求已发送", "task_id": task["task_id"]}
+    return {"code": 400, "msg": "当前任务状态不支持暂停"}
 
 
 @app.post("/api/resume")
-def resume_task(r_config: ResumeConfig):
-    if not os.path.exists(CONFIG_FILE):
-        return {"code": 400, "msg": "找不到原始任务配置，无法恢复。"}
-
-    old_config = read_json_file(CONFIG_FILE, default={})
-    old_config["cookie"] = r_config.cookie
-    atomic_write_json(CONFIG_FILE, old_config)
-
-    resume_status = {
-        "state": "running",
-        "progress": "恢复中",
-        "current": "系统唤醒",
-        "logs": ["已接收新凭据，正在从断点处唤醒引擎..."],
-    }
-    atomic_write_json(STATUS_FILE, resume_status, indent=2)
-
-    start_spider_thread(
-        old_config["start_url"],
-        old_config["cookie"],
-        old_config["user_agent"],
-        old_config.get("final_filename", ""),
-        old_config.get("proxies"),
-        True,
-        old_config.get("crawl_mode"),
-    )
-    return {"code": 200, "msg": "任务已成功从断点处恢复运行。"}
+def resume_task(config: ResumeConfig):
+    task = current_controllable_task()
+    if not task:
+        return {"code": 400, "msg": "找不到可恢复的任务"}
+    cookie = resolve_task_cookie(config.cookie)
+    if cookie:
+        runtime = db_store.get_runtime_config(include_cookie=False)
+        db_store.save_runtime_config(
+            cookie=cookie,
+            remember_cookie=runtime["remember_cookie"],
+            user_agent=runtime["user_agent"],
+            proxies=runtime["proxies"],
+        )
+    if db_store.resume_task_to_pending(task["task_id"]):
+        ensure_queue_worker()
+        return {"code": 200, "msg": "任务已恢复到队列", "task_id": task["task_id"]}
+    return {"code": 400, "msg": "当前任务状态不支持恢复"}
 
 
 @app.post("/api/set_mode")
-def set_mode(m_config: ModeConfig):
-    if m_config.mode not in {"incremental", "overwrite"}:
-        return {"code": 400, "msg": "爬取模式非法。"}
-    if not os.path.exists(CONFIG_FILE):
-        return {"code": 400, "msg": "找不到原始任务配置，无法恢复。"}
-
-    old_config = read_json_file(CONFIG_FILE, default={})
-    final_filename = old_config.get("final_filename", "")
-    try:
-        status = read_json_file(STATUS_FILE, default={})
-        if status.get("final_filename"):
-            final_filename = status.get("final_filename")
-    except Exception:
-        pass
-
-    try:
-        final_filename = normalize_csv_filename(final_filename)
-    except UnsafeFilenameError as e:
-        return {"code": 400, "msg": f"文件名非法: {str(e)}"}
-
-    old_config["final_filename"] = final_filename
-    old_config["crawl_mode"] = m_config.mode
-    atomic_write_json(CONFIG_FILE, old_config)
-
-    mode_name = "快速增量" if m_config.mode == "incremental" else "覆盖重爬"
-    resume_status = {
-        "state": "running",
-        "progress": "恢复中",
-        "current": "模式确认",
-        "logs": [f"已选择模式: {mode_name}，正在继续任务..."],
-        "final_filename": final_filename,
-    }
-    atomic_write_json(STATUS_FILE, resume_status, indent=2)
-
-    start_spider_thread(
-        old_config["start_url"],
-        old_config["cookie"],
-        old_config["user_agent"],
-        final_filename,
-        old_config.get("proxies"),
-        True,
-        m_config.mode,
-    )
-    return {"code": 200, "msg": "已应用爬取模式。"}
+def set_mode(config: ModeConfig):
+    if config.mode not in {"incremental", "overwrite"}:
+        return {"code": 400, "msg": "爬取模式非法"}
+    task = current_controllable_task()
+    if not task:
+        return {"code": 400, "msg": "找不到等待模式选择的任务"}
+    if db_store.update_task_mode(task["task_id"], config.mode) and db_store.resume_task_to_pending(task["task_id"]):
+        ensure_queue_worker()
+        return {"code": 200, "msg": "已应用爬取模式", "task_id": task["task_id"]}
+    return {"code": 400, "msg": "当前任务状态不支持设置模式"}
 
 
 @app.get("/api/status")
 def get_status():
-    if not os.path.exists(STATUS_FILE):
+    task = db_store.get_current_task()
+    if not task:
         return {"state": "idle", "progress": "0/0", "current": "-", "logs": ["等待任务启动..."]}
-    try:
-        return read_json_file(STATUS_FILE, default={})
-    except Exception:
-        return {"state": "syncing", "progress": "IO同步", "current": "-", "logs": ["磁盘 IO 同步中，请稍候..."]}
+    return task_to_response(task, include_logs=True)
+
+
+@app.post("/api/tasks")
+def create_task(config: TaskConfig):
+    return create_task_from_config(config)
+
+
+@app.get("/api/tasks")
+def list_tasks():
+    return {"code": 200, "data": [task_to_response(task) for task in db_store.list_tasks(limit=100)]}
+
+
+@app.post("/api/tasks/cleanup")
+def cleanup_finished_tasks():
+    deleted = db_store.cleanup_finished_tasks()
+    return {"code": 200, "msg": f"已清理 {deleted} 个已结束任务", "deleted": deleted}
+
+
+@app.get("/api/tasks/queue_status")
+def get_queue_status():
+    return {"code": 200, "data": get_queue_status_data()}
+
+
+@app.post("/api/tasks/start_queue")
+def start_queue():
+    status = get_queue_status_data()
+    if not status["can_start"]:
+        return {"code": 400, "msg": "当前队列状态不支持启动", "data": status}
+    ensure_queue_worker()
+    return {"code": 200, "msg": "任务队列已启动"}
+
+
+@app.get("/api/tasks/{task_id}")
+def get_task_detail(task_id: str):
+    task = db_store.get_task(task_id)
+    if not task:
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到任务"})
+    return {"code": 200, "data": task_to_response(task, include_logs=True)}
+
+
+@app.post("/api/tasks/{task_id}/pause")
+def pause_task(task_id: str):
+    if db_store.request_task_pause(task_id):
+        return {"code": 200, "msg": "暂停请求已发送"}
+    return {"code": 400, "msg": "任务不存在或状态不支持暂停"}
+
+
+@app.post("/api/tasks/{task_id}/resume")
+def resume_task_by_id(task_id: str):
+    if db_store.resume_task_to_pending(task_id):
+        ensure_queue_worker()
+        return {"code": 200, "msg": "任务已恢复到队列"}
+    return {"code": 400, "msg": "任务不存在或状态不支持恢复"}
+
+
+@app.post("/api/tasks/{task_id}/cancel")
+def cancel_task(task_id: str):
+    if db_store.request_task_cancel(task_id):
+        return {"code": 200, "msg": "取消请求已发送"}
+    return {"code": 400, "msg": "任务不存在或状态不支持取消"}
+
+
+@app.post("/api/tasks/{task_id}/cookie")
+def update_task_cookie(task_id: str, config: CookieConfig):
+    cookie = resolve_task_cookie(config.cookie)
+    if not cookie:
+        return {"code": 400, "msg": "无法获取有效 Cookie"}
+    if not db_store.update_task_cookie(task_id, cookie):
+        return {"code": 404, "msg": "找不到任务"}
+    db_store.resume_task_to_pending(task_id)
+    ensure_queue_worker()
+    return {"code": 200, "msg": "Cookie 已更新"}
+
+
+@app.post("/api/tasks/{task_id}/refresh_cookie")
+def refresh_task_cookie(task_id: str):
+    cookie = get_android_javdb_cookie().strip()
+    if not cookie:
+        return {"code": 400, "msg": "当前环境无法读取 Android Cookie，请手动粘贴 Cookie"}
+    if not db_store.update_task_cookie(task_id, cookie):
+        return {"code": 404, "msg": "找不到任务"}
+    db_store.resume_task_to_pending(task_id)
+    ensure_queue_worker()
+    return {"code": 200, "msg": "已使用 Android 当前 Cookie 恢复任务"}
+
+
+@app.post("/api/tasks/{task_id}/mode")
+def set_task_mode(task_id: str, config: ModeConfig):
+    if not db_store.update_task_mode(task_id, config.mode):
+        return {"code": 400, "msg": "任务不存在或模式非法"}
+    db_store.resume_task_to_pending(task_id)
+    ensure_queue_worker()
+    return {"code": 200, "msg": "已应用爬取模式"}
 
 
 @app.get("/api/history")
 def get_history():
     return {"code": 200, "data": db_store.get_history()}
+
+
+@app.get("/api/collections/{name}/movies")
+def get_collection_movies(name: str):
+    try:
+        safe_name = normalize_csv_filename(name)
+    except UnsafeFilenameError:
+        return JSONResponse(status_code=400, content={"code": 400, "msg": "文件名非法"})
+    if not db_store.collection_exists(safe_name):
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到该集合"})
+    return {"code": 200, "data": db_store.get_collection_movies(safe_name)}
+
+
+@app.get("/api/movies/{movie_id}/magnets")
+def get_movie_magnets(movie_id: int):
+    return {"code": 200, "data": db_store.get_movie_magnets(movie_id)}
+
+
+@app.post("/api/movies/{movie_id}/select_magnet")
+def select_movie_magnet(movie_id: int, req: SelectMagnetRequest):
+    if not db_store.select_movie_magnet(movie_id, req.magnet_id):
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到候选磁力"})
+    return {"code": 200, "msg": "已更新选中磁力"}
 
 
 @app.post("/api/delete")
@@ -258,12 +584,9 @@ def delete_history(req: DeleteRequest):
     fail_reasons = []
 
     active_file = None
-    try:
-        status = read_json_file(STATUS_FILE, default={})
-        if status.get("state") == "running":
-            active_file = get_safe_name(status.get("final_filename"))
-    except Exception:
-        pass
+    active_task = db_store.get_active_task()
+    if active_task:
+        active_file = get_safe_name(active_task.get("collection_filename") or active_task.get("final_filename"))
 
     deletable = []
     for filename in req.filenames:
@@ -272,12 +595,10 @@ def delete_history(req: DeleteRequest):
             fail_count += 1
             fail_reasons.append(f"{filename}(不存在或非法)")
             continue
-
         if active_file == safe_name:
             fail_count += 1
             fail_reasons.append(f"{filename}(被占用)")
             continue
-
         deletable.append(safe_name)
 
     try:
@@ -291,7 +612,6 @@ def delete_history(req: DeleteRequest):
 
     if fail_count == 0:
         return {"code": 200, "msg": "删除成功"}
-
     reason_str = ", ".join(fail_reasons[:3]) + ("..." if len(fail_reasons) > 3 else "")
     return {
         "code": 200 if success_count > 0 else 400,
@@ -303,7 +623,6 @@ def delete_history(req: DeleteRequest):
 def download_csv(name: str = None):
     if not name:
         return JSONResponse(status_code=400, content={"code": 400, "msg": "未指定文件名参数"})
-
     try:
         csv_bytes, safe_name = db_store.export_collection_to_csv_bytes(name)
     except UnsafeFilenameError:
@@ -341,46 +660,38 @@ def get_favicon():
 def get_magnets(name: str = None):
     if not name:
         return {"code": 400, "msg": "未指定文件名参数"}
-
     try:
         safe_name = normalize_csv_filename(name)
     except UnsafeFilenameError:
         return {"code": 400, "msg": "文件名非法"}
     if not db_store.collection_exists(safe_name):
         return {"code": 404, "msg": "找不到该文件"}
-
     try:
-        magnets = db_store.get_magnet_links(safe_name)
-        return {"code": 200, "data": magnets}
+        return {"code": 200, "data": db_store.get_magnet_links(safe_name)}
     except Exception as e:
         return {"code": 500, "msg": f"读取数据出错: {str(e)}"}
 
 
 @app.post("/api/clear_logs")
 def clear_logs():
-    try:
-        status = read_json_file(STATUS_FILE, default={})
-        if status.get("state") == "running":
-            return {"code": 400, "msg": "任务运行中，请先停止后再清除记录。"}
-    except Exception:
-        pass
-
-    empty_status = {
-        "state": "idle",
-        "progress": "0/0",
-        "current": "-",
-        "logs": ["记录已安全清除。"],
-    }
-    atomic_write_json(STATUS_FILE, empty_status, indent=2)
-    return {"code": 200, "msg": "记录已成功清除。"}
+    active_task = db_store.get_active_task()
+    if active_task:
+        return {"code": 400, "msg": "任务运行中，请先暂停或取消后再清除记录"}
+    write_status_mirror(None)
+    return {"code": 200, "msg": "记录已清除"}
 
 
 @app.post("/api/get_tags")
 def get_tags(req: TagConfigRequest):
     try:
         base_url = ensure_zh_locale(req.url)
-        headers = {"User-Agent": req.user_agent, "Cookie": req.cookie}
-        proxy_dict = {"http": req.proxies, "https": req.proxies} if req.proxies else None
+        runtime = get_runtime_for_request()
+        headers = {
+            "User-Agent": req.user_agent or runtime.get("user_agent") or "",
+            "Cookie": req.cookie or runtime.get("cookie") or "",
+        }
+        proxy = req.proxies if req.proxies is not None else runtime.get("proxies")
+        proxy_dict = build_proxy_dict(proxy)
         response = fetch_html(base_url, headers=headers, proxies=proxy_dict)
         if response.status_code != 200:
             return {"code": response.status_code, "msg": f"请求失败，状态码: {response.status_code}"}
@@ -388,7 +699,7 @@ def get_tags(req: TagConfigRequest):
         soup = BeautifulSoup(response.text, "html.parser")
         tags_div = soup.select_one(".actor-tags .content")
         if not tags_div:
-            return {"code": 404, "msg": "未在页面中找到标签区域。"}
+            return {"code": 404, "msg": "未在页面中找到标签区域"}
 
         tags = []
         for a in tags_div.find_all("a", class_="tag"):

@@ -32,6 +32,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 db_store.configure(DATA_DIR)
 
 STOP_EVENT = threading.Event()
+TASK_CONTEXT = threading.local()
 STATUS_FILE = os.path.join(DATA_DIR, 'status.json')
 CHECKPOINT_FILE = os.path.join(DATA_DIR, 'checkpoint.json')
 
@@ -63,8 +64,46 @@ def fetch_html(url, headers=None, proxies=None):
 
 # ======= 3. 核心业务逻辑 =======
 
+def get_current_task_id():
+    return getattr(TASK_CONTEXT, "task_id", None)
+
+
+def map_task_state(state):
+    return {
+        "stopped": "paused",
+        "paused_need_cookie": "waiting_cookie",
+        "paused_need_choice": "waiting_choice",
+        "error": "failed",
+    }.get(state, state)
+
+
+def get_android_javdb_cookie():
+    if not IS_ANDROID:
+        return ""
+    try:
+        WebViewBridge = jclass("com.javdb_spider.app.WebViewBridge")
+        return str(WebViewBridge.getJavdbCookie() or "")
+    except Exception:
+        return ""
+
+
 def update_status(state="idle", progress="", current="", log_msg=None, clear_log=False, final_filename=None, added_count=None):
+    task_id = get_current_task_id()
+    if task_id:
+        db_store.update_task_status(
+            task_id,
+            state=map_task_state(state),
+            progress=progress,
+            current=current,
+            log_msg=log_msg,
+            final_filename=final_filename,
+            added_count=added_count,
+            error_message=log_msg if state == "error" else None,
+        )
+
     status_data = {"state": state, "progress": progress, "current": current, "logs": []}
+    if task_id:
+        status_data["task_id"] = task_id
     if final_filename:
         status_data["final_filename"] = normalize_csv_filename(final_filename)
     if added_count is not None:
@@ -86,12 +125,46 @@ def update_status(state="idle", progress="", current="", log_msg=None, clear_log
     atomic_write_json(STATUS_FILE, status_data, indent=2)
 
 def save_checkpoint(data):
+    task_id = get_current_task_id()
+    if task_id:
+        db_store.save_task_checkpoint(task_id, data)
     atomic_write_json(CHECKPOINT_FILE, data)
 
 def load_checkpoint():
+    task_id = get_current_task_id()
+    if task_id:
+        data = db_store.load_task_checkpoint(task_id)
+        if data:
+            return data
     if os.path.exists(CHECKPOINT_FILE):
         return read_json_file(CHECKPOINT_FILE)
     return None
+
+
+def get_control_request():
+    task_id = get_current_task_id()
+    if not task_id:
+        return "cancel" if STOP_EVENT.is_set() else None
+    task = db_store.get_task(task_id)
+    if not task:
+        return "cancel"
+    if task["state"] == "pause_requested":
+        return "pause"
+    if task["state"] == "cancel_requested":
+        return "cancel"
+    return None
+
+
+def pause_or_cancel_task(progress, current, checkpoint, pause_log, cancel_log):
+    request = get_control_request()
+    if not request:
+        return False
+    save_checkpoint(checkpoint)
+    if request == "cancel":
+        update_status("canceled", progress, current, cancel_log)
+    else:
+        update_status("stopped", progress, current, pause_log)
+    return True
 
 def parse_size(size_str):
     if not size_str: return 0.0
@@ -129,8 +202,10 @@ def evaluate_magnet(item_soup):
         'rank': rank, 'date': date_str, 'size_mb': parse_size(size_str)
     }
 
-def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=None, is_resume=False, crawl_mode=None):
-    STOP_EVENT.clear()
+def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=None, is_resume=False, crawl_mode=None, task_id=None):
+    TASK_CONTEXT.task_id = task_id
+    if not task_id:
+        STOP_EVENT.clear()
     try:
         output_filename = normalize_csv_filename(output_filename, allow_empty=True)
     except UnsafeFilenameError as e:
@@ -164,15 +239,22 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
                 start_index = chk.get('current_index', 0)
         update_status("running", f"恢复中...", "续传启动", "成功接收新 Cookie，正在从断点恢复任务...")
     else:
-        if os.path.exists(CHECKPOINT_FILE): os.remove(CHECKPOINT_FILE)
+        if task_id:
+            db_store.clear_task_checkpoint(task_id)
+        elif os.path.exists(CHECKPOINT_FILE):
+            os.remove(CHECKPOINT_FILE)
         update_status("running", "0/0", "初始化", "任务全新启动，开始拉取目录...", clear_log=True)
 
     # === 阶段一：获取清单 ===
     if phase == 1:
         while current_url:
-            if STOP_EVENT.is_set():
-                save_checkpoint({"phase": 1, "current_url": current_url, "page": page, "movie_links": movie_links})
-                update_status("stopped", f"第 {page} 页", "手动终止", "🛑 接收到停止指令，清单抓取已强行终止。")
+            if pause_or_cancel_task(
+                f"第 {page} 页",
+                "手动暂停",
+                {"phase": 1, "current_url": current_url, "page": page, "movie_links": movie_links},
+                "🛑 接收到暂停指令，清单抓取已保存断点。",
+                "🛑 接收到取消指令，清单抓取已终止。",
+            ):
                 return
             update_status("running", f"第 {page} 页", "拉取目录", f"正在抓取列表页: {current_url}")
             try:
@@ -261,11 +343,15 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
         new_added_count = 0
 
         for i in range(start_index, total_movies):
-                if STOP_EVENT.is_set():
-                    save_checkpoint({"phase": 2, "movie_links": movie_links, "current_index": i})
-                    update_status("stopped", f"{i+1}/{total_movies}", "手动终止", "🛑 接收到停止指令，磁力抓取已强行终止，进度已保存。")
-                    return
                 movie = movie_links[i]
+                if pause_or_cancel_task(
+                    f"{i+1}/{total_movies}",
+                    movie.get("code", "手动暂停"),
+                    {"phase": 2, "movie_links": movie_links, "current_index": i},
+                    "🛑 接收到暂停指令，磁力抓取已保存断点。",
+                    "🛑 接收到取消指令，磁力抓取已终止。",
+                ):
+                    return
                 progress_str = f"{i+1}/{total_movies}"
                 
                 # 增量跳过判断
@@ -309,3 +395,25 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
 
                 time.sleep(2)
     update_status("finished", f"{total_movies}/{total_movies}", "全部完成", "🎉 爬取任务圆满结束，文件已保存！", final_filename=output_filename, added_count=new_added_count)
+
+
+def run_task(task_id):
+    task = db_store.get_task(task_id)
+    if not task:
+        return
+    TASK_CONTEXT.task_id = task_id
+    try:
+        checkpoint = db_store.load_task_checkpoint(task_id)
+        runtime = db_store.get_runtime_config(include_cookie=True)
+        run_spider(
+            task["start_url"],
+            runtime.get("cookie", ""),
+            runtime.get("user_agent", ""),
+            task.get("final_filename") or task.get("requested_filename") or "",
+            runtime.get("proxies") or None,
+            bool(checkpoint),
+            task.get("crawl_mode") or None,
+            task_id=task_id,
+        )
+    finally:
+        TASK_CONTEXT.task_id = None

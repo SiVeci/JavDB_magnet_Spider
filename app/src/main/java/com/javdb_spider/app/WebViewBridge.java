@@ -1,5 +1,7 @@
 package com.javdb_spider.app;
 
+import android.webkit.CookieManager;
+
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -47,5 +49,14 @@ public class WebViewBridge {
         }
 
         return result[0] != null ? result[0] : "";
+    }
+
+    public static String getJavdbCookie() {
+        try {
+            String cookie = CookieManager.getInstance().getCookie("https://javdb.com");
+            return cookie != null ? cookie : "";
+        } catch (Exception e) {
+            return "";
+        }
     }
 }
