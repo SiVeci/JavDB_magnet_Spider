@@ -1,11 +1,11 @@
 from bs4 import BeautifulSoup
 import urllib.parse
 import re
-import csv
 import time
 import os
 import json
 import threading
+import db_store
 from storage_utils import (
     UnsafeFilenameError,
     atomic_write_json,
@@ -29,10 +29,10 @@ except ImportError:
 # 所有的文件都会保存在这个安全的 data 文件夹里
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
+db_store.configure(DATA_DIR)
 
 STOP_EVENT = threading.Event()
 STATUS_FILE = os.path.join(DATA_DIR, 'status.json')
-OUTPUT_CSV = os.path.join(DATA_DIR, 'final_magnets.csv')
 CHECKPOINT_FILE = os.path.join(DATA_DIR, 'checkpoint.json')
 
 # ======= 2. HTML 提取底层网关抽象 =======
@@ -220,7 +220,7 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
 
                 final_csv_path, output_filename = get_safe_csv_path(DATA_DIR, output_filename)
                 
-                if page == 1 and os.path.exists(final_csv_path) and not crawl_mode:
+                if page == 1 and (db_store.collection_exists(output_filename) or os.path.exists(final_csv_path)) and not crawl_mode:
                     save_checkpoint({"phase": 1, "current_url": next_url, "page": page + 1 if next_url else page, "movie_links": movie_links})
                     update_status("paused_need_choice", f"第 {page} 页", "等待选择", f"发现历史记录：【{output_filename}】，请选择爬取模式。", final_filename=output_filename)
                     return
@@ -252,27 +252,15 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
             timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
             output_filename = make_csv_filename_from_label(f"javdb_{timestamp}")
         final_csv_path, output_filename = get_safe_csv_path(DATA_DIR, output_filename)
-        fieldnames = ['影片番号', '原始标题', '影片链接', '最佳资源文件名', '磁力链接', '优先级得分', '日期', '文件大小(MB)']
+        if crawl_mode == 'overwrite' and start_index == 0:
+            db_store.clear_collection(output_filename)
+        else:
+            db_store.ensure_collection(output_filename, start_url)
 
-        # === 增量模式读取已有番号 ===
-        existing_codes = set()
-        if crawl_mode == 'incremental' and os.path.exists(final_csv_path):
-            try:
-                with open(final_csv_path, 'r', encoding='utf-8-sig') as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        if '影片番号' in row and row['影片番号']:
-                            existing_codes.add(row['影片番号'])
-            except Exception: pass
-
+        existing_codes = db_store.get_existing_codes(output_filename) if crawl_mode == 'incremental' else set()
         new_added_count = 0
-        mode = 'a' if (is_resume and start_index > 0) or crawl_mode == 'incremental' else 'w'
-        with open(final_csv_path, mode, encoding='utf-8-sig', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            if mode == 'w':
-                writer.writeheader()
 
-            for i in range(start_index, total_movies):
+        for i in range(start_index, total_movies):
                 if STOP_EVENT.is_set():
                     save_checkpoint({"phase": 2, "movie_links": movie_links, "current_index": i})
                     update_status("stopped", f"{i+1}/{total_movies}", "手动终止", "🛑 接收到停止指令，磁力抓取已强行终止，进度已保存。")
@@ -310,11 +298,7 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
                         valid_magnets.sort(key=lambda x: (x['rank'], x['date'], x['size_mb']), reverse=True)
                         best = valid_magnets[0]
 
-                        writer.writerow({
-                            '影片番号': movie['code'], '原始标题': movie['title'], '影片链接': movie['url'],
-                            '最佳资源文件名': best['name'], '磁力链接': best['link'], '优先级得分': best['rank'],
-                            '日期': best['date'], '文件大小(MB)': round(best['size_mb'], 2)
-                        })
+                        db_store.save_movie_result(output_filename, movie, best, valid_magnets)
                         new_added_count += 1
                         update_status("running", progress_str, movie['code'], f"成功: 获取到最高级资源 (Rank {best['rank']}, {round(best['size_mb'],2)}MB)")
                     else:

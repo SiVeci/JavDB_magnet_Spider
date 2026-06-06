@@ -11,6 +11,19 @@
 
 ---
 
+<div align="center">
+  <img src="spider_core/frontend/logo.png" alt="JavDB Magnet Spider Logo" width="180">
+  <h1>JavDB Magnet Spider</h1>
+  <p>
+    <img src="https://img.shields.io/badge/Platform-Android%20%7C%20Docker%20%7C%20PC-brightgreen" alt="Platform">
+    <img src="https://img.shields.io/badge/Python-3.12-blue" alt="Python Version">
+    <img src="https://img.shields.io/badge/Framework-FastAPI%20%7C%20Chaquopy-orange" alt="Framework">
+    <img src="https://img.shields.io/badge/License-MIT-lightgrey" alt="License">
+  </p>
+</div>
+
+---
+
 ## 🌟 项目简介
 
 跨平台的自动化JavDB爬虫工具，支持在Docker、PC、Android 移动端运行。本项目实现了在手机上**手动过盾、后台静默爬取、WebUI 远程控制**的闭环体验，能批量抓取指定目录，并根据自定义规则（中文字幕、无码、高清等）自动挑选出质量最高的磁力链接。
@@ -18,12 +31,13 @@
 ## ✨ 核心特性
 
 - **Android 原生支持**：基于 Chaquopy 框架，在手机内运行完整的 FastAPI + Uvicorn 后端。
-- **Android 端**：利用原生 WebView 手动登录，Cookie 自动无缝同步。
-- **PC/Docker 端**：采用 `curl_cffi` 模拟 TLS 指纹，稳定穿透防护。
-- **Web 控制台**：适配移动＆桌面屏幕尺寸，支持实时日志查看与任务管理。
-- **自动选择磁力**：基于权重算法（无码+100 > 高清+10 > 字幕+1）自动筛选出最高质量资源。
-- **断点续传系统**：支持任务挂起与救援，Cookie 失效后补充即可接力。
-- **Docker 化部署**
+- **多端无缝体验**：利用原生 WebView 手动登录，Cookie 自动同步；Web 控制台适配多屏尺寸，支持实时日志与任务管理。
+- **智能过盾与防护穿透**：采用 `curl_cffi` 模拟 TLS 指纹，稳定穿透 Cloudflare；Android WebView 增加 45 秒超时保护，防止进程假死。
+- **高质量磁力优选**：基于权重算法（无码+100 > 高清+10 > 字幕+1）筛选最佳资源，系统数据库将留存所有候选磁力明细以便后续分析调优。
+- **断点续传与增量爬取**：支持任务挂起与救援，Cookie 失效补充后可接力；结合数据库校验，全面保障增量去重和覆盖模式的可靠性。
+- **高效数据持久化 (SQLite)**：底层采用 SQLite 替代纯 CSV 进行数据管理，启动时支持旧版 CSV 数据自动幂等迁移。CSV 文件现仅作为前端按需下载的动态导出格式，彻底告别冗余存储。
+- **系统级安全**：默认启用 API 访问保护机制 (通过 `JAVDB_AUTH_TOKEN`)，并引入严密的底层文件操作与防路径穿越机制。
+- **Docker 化部署**：极简容器化，支持持久化挂载与自动化运行。
 
 ---
 
@@ -48,6 +62,10 @@ docker run -d \
 ```
 *访问地址：`http://NAS_IP:8090`*
 
+**部署说明：**
+- **鉴权保护**：Docker 镜像默认启用 API 访问保护，请务必设置 `JAVDB_AUTH_TOKEN`。WebUI 首次访问时会提示输入此令牌进行验证。
+- **数据持久化**：挂载 `/app/data` 目录后，系统运行所需的 SQLite 数据库（`spider_data.db`）将与数据一同安全持久化。
+
 ### 方案三：本地 Python 运行
 ```bash
 # 1. 安装依赖
@@ -69,6 +87,7 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 - **Cookie & UA**：
   - **Android 端**：自动接管，无需手动填写（注意不要留空，随便填，避免触发前台检测）。
   - **PC/Docker 端**：按 `F5` 刷新页面，在开发者工具 `Network` 选项卡的第一个请求头中获取。
+- **WebUI 安全与状态**：前端页面输入的 Cookie 默认仅在当前会话中生效，勾选“记住 Cookie”后才会写入浏览器 `localStorage` 进行长期保存。
 
 ### 2. 电池优化 (Android)
 为了防止安卓系统在息屏后杀掉爬虫进程，请进行以下设置：
@@ -106,12 +125,3 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000
 1. **仅供学习**：本项目仅用于 Python 爬虫技术研究与 Chaquopy 框架实践，请勿用于非法用途。
 2. **合规使用**：请遵守目标网站的 `robots.txt` 协议，合理控制爬取频率。
 3. **隐私安全**：本项目为开源软件，不收集任何用户 Cookie 信息。用户需妥善保管个人凭据。
----
-
-## v1.3 安全说明
-
-- Docker 镜像默认启用 API 访问保护，请通过 `JAVDB_AUTH_TOKEN` 设置访问令牌；WebUI 首次访问时会提示输入令牌。
-- WebUI 的 Cookie 默认只保存在当前浏览器会话中；勾选“记住 Cookie”后才会写入 `localStorage`。
-- Android WebView 抓取增加 45 秒超时保护，避免页面卡住时 Python 线程永久阻塞。
-- 引入文件写入与防路径穿越机制，提高底层文件的安全性。
-- 本版本暂不迁移 Android release 签名，仍保留现有本地编译方式；后续建议再迁移到安全的 Secrets 流程。

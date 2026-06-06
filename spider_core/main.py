@@ -1,13 +1,13 @@
-from datetime import datetime
-import csv
 import os
 import secrets
 import threading
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
+from urllib.parse import quote
 
+import db_store
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 from spider_engine import DATA_DIR, STATUS_FILE, STOP_EVENT, fetch_html, run_spider
@@ -22,10 +22,12 @@ from storage_utils import (
 
 app = FastAPI()
 
-APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "dev-local")
+APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "1.4.0")
 CONFIG_FILE = os.path.join(DATA_DIR, "task_config.json")
 AUTH_HEADER = "X-JavDB-Token"
 PUBLIC_API_PATHS = {"/api/version"}
+db_store.configure(DATA_DIR)
+db_store.import_existing_csvs(DATA_DIR)
 
 
 class TaskConfig(BaseModel):
@@ -82,14 +84,6 @@ async def require_api_token(request: Request, call_next):
                 content={"code": 401, "msg": "访问令牌缺失或无效"},
             )
     return await call_next(request)
-
-
-def get_safe_path(filename: str) -> str | None:
-    try:
-        target_path, _ = get_safe_csv_path(DATA_DIR, filename)
-        return target_path
-    except UnsafeFilenameError:
-        return None
 
 
 def get_safe_name(filename: str) -> str | None:
@@ -252,42 +246,9 @@ def get_status():
         return {"state": "syncing", "progress": "IO同步", "current": "-", "logs": ["磁盘 IO 同步中，请稍候..."]}
 
 
-FILE_COUNT_CACHE = {}
-
-
 @app.get("/api/history")
 def get_history():
-    files_info = []
-    if os.path.exists(DATA_DIR):
-        for filename in os.listdir(DATA_DIR):
-            if not filename.endswith(".csv"):
-                continue
-            path = get_safe_path(filename)
-            if not path:
-                continue
-            stats = os.stat(path)
-            mtime = stats.st_mtime
-            ctime = stats.st_ctime
-            if filename in FILE_COUNT_CACHE and FILE_COUNT_CACHE[filename]["mtime"] == mtime:
-                count = FILE_COUNT_CACHE[filename]["count"]
-            else:
-                try:
-                    with open(path, "r", encoding="utf-8-sig") as csv_f:
-                        count = max(0, sum(1 for _ in csv_f) - 1)
-                    FILE_COUNT_CACHE[filename] = {"mtime": mtime, "count": count}
-                except Exception:
-                    count = 0
-
-            files_info.append(
-                {
-                    "name": filename,
-                    "count": count,
-                    "time": datetime.fromtimestamp(ctime).strftime("%Y-%m-%d %H:%M:%S"),
-                    "timestamp": ctime,
-                }
-            )
-    files_info.sort(key=lambda x: x["timestamp"], reverse=True)
-    return {"code": 200, "data": files_info}
+    return {"code": 200, "data": db_store.get_history()}
 
 
 @app.post("/api/delete")
@@ -304,10 +265,10 @@ def delete_history(req: DeleteRequest):
     except Exception:
         pass
 
+    deletable = []
     for filename in req.filenames:
-        target_path = get_safe_path(filename)
         safe_name = get_safe_name(filename)
-        if not target_path or not os.path.exists(target_path):
+        if not safe_name:
             fail_count += 1
             fail_reasons.append(f"{filename}(不存在或非法)")
             continue
@@ -317,13 +278,16 @@ def delete_history(req: DeleteRequest):
             fail_reasons.append(f"{filename}(被占用)")
             continue
 
-        try:
-            os.remove(target_path)
-            FILE_COUNT_CACHE.pop(safe_name, None)
-            success_count += 1
-        except OSError:
-            fail_count += 1
-            fail_reasons.append(f"{filename}(系统占用)")
+        deletable.append(safe_name)
+
+    try:
+        deleted, missing = db_store.delete_collections(deletable, DATA_DIR)
+        success_count += len(deleted)
+        fail_count += len(missing)
+        fail_reasons.extend(f"{name}(不存在)" for name in missing)
+    except OSError:
+        fail_count += len(deletable)
+        fail_reasons.append("系统占用")
 
     if fail_count == 0:
         return {"code": 200, "msg": "删除成功"}
@@ -340,12 +304,17 @@ def download_csv(name: str = None):
     if not name:
         return JSONResponse(status_code=400, content={"code": 400, "msg": "未指定文件名参数"})
 
-    file_path = get_safe_path(name)
-    safe_name = get_safe_name(name)
-    if not file_path:
+    try:
+        csv_bytes, safe_name = db_store.export_collection_to_csv_bytes(name)
+    except UnsafeFilenameError:
         return JSONResponse(status_code=400, content={"code": 400, "msg": "文件名非法"})
-    if os.path.exists(file_path):
-        return FileResponse(file_path, media_type="text/csv", filename=safe_name)
+    if csv_bytes is not None:
+        quoted_name = quote(safe_name)
+        return Response(
+            content=csv_bytes,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="download.csv"; filename*=UTF-8\'\'{quoted_name}'},
+        )
     return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到该文件"})
 
 
@@ -373,22 +342,18 @@ def get_magnets(name: str = None):
     if not name:
         return {"code": 400, "msg": "未指定文件名参数"}
 
-    file_path = get_safe_path(name)
-    if not file_path:
+    try:
+        safe_name = normalize_csv_filename(name)
+    except UnsafeFilenameError:
         return {"code": 400, "msg": "文件名非法"}
-    if not os.path.exists(file_path):
+    if not db_store.collection_exists(safe_name):
         return {"code": 404, "msg": "找不到该文件"}
 
-    magnets = []
     try:
-        with open(file_path, "r", encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                if "磁力链接" in row and row["磁力链接"]:
-                    magnets.append(row["磁力链接"])
+        magnets = db_store.get_magnet_links(safe_name)
         return {"code": 200, "data": magnets}
     except Exception as e:
-        return {"code": 500, "msg": f"读取文件出错: {str(e)}"}
+        return {"code": 500, "msg": f"读取数据出错: {str(e)}"}
 
 
 @app.post("/api/clear_logs")
