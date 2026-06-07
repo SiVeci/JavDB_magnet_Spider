@@ -1,9 +1,12 @@
 import os
+import queue
 import secrets
 import threading
+import uuid
 from urllib.parse import parse_qs, quote, urlencode, urlparse, urlunparse
 
 import db_store
+import magnet_checker
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -27,6 +30,9 @@ AUTH_HEADER = "X-JavDB-Token"
 PUBLIC_API_PATHS = {"/api/version"}
 QUEUE_LOCK = threading.RLock()
 QUEUE_THREAD = None
+MAGNET_CHECK_LOCK = threading.RLock()
+MAGNET_CHECK_JOBS = {}
+ACTIVE_MAGNET_CHECK_JOB_ID = None
 
 db_store.configure(DATA_DIR)
 db_store.import_existing_csvs(DATA_DIR)
@@ -48,6 +54,7 @@ class RuntimeConfig(BaseModel):
     remember_cookie: bool = False
     user_agent: str = ""
     proxies: str = ""
+    trackers: list[str] = []
 
 
 class ResumeConfig(BaseModel):
@@ -171,6 +178,120 @@ def runtime_headers(runtime):
         "User-Agent": runtime.get("user_agent") or "",
         "Cookie": runtime.get("cookie") or "",
     }
+
+
+def public_magnet_check_job(job):
+    with job["lock"]:
+        return {
+            "job_id": job["job_id"],
+            "scope": job["scope"],
+            "target": job["target"],
+            "total": job["total"],
+            "completed": job["completed"],
+            "active": job["active"],
+            "weak": job["weak"],
+            "dead": job["dead"],
+            "failed": job["failed"],
+            "running": job["running"],
+            "cancelled": job["cancelled"],
+            "done": job["done"],
+            "message": job.get("message", ""),
+        }
+
+
+def create_magnet_check_job(scope, target, magnets):
+    global ACTIVE_MAGNET_CHECK_JOB_ID
+    with MAGNET_CHECK_LOCK:
+        if ACTIVE_MAGNET_CHECK_JOB_ID:
+            active = MAGNET_CHECK_JOBS.get(ACTIVE_MAGNET_CHECK_JOB_ID)
+            if active and public_magnet_check_job(active)["running"]:
+                return None, active
+        job_id = str(uuid.uuid4())
+        job = {
+            "job_id": job_id,
+            "scope": scope,
+            "target": target,
+            "total": len(magnets),
+            "completed": 0,
+            "active": 0,
+            "weak": 0,
+            "dead": 0,
+            "failed": 0,
+            "running": True,
+            "cancelled": False,
+            "done": False,
+            "message": "",
+            "cancel_event": threading.Event(),
+            "lock": threading.RLock(),
+        }
+        MAGNET_CHECK_JOBS[job_id] = job
+        ACTIVE_MAGNET_CHECK_JOB_ID = job_id
+    thread = threading.Thread(
+        target=run_magnet_check_job,
+        args=(job_id, list(magnets), db_store.get_runtime_config(include_cookie=False).get("trackers", [])),
+        daemon=True,
+    )
+    thread.start()
+    return job, None
+
+
+def failed_magnet_rows(magnets):
+    return [magnet for magnet in magnets if magnet.get("check_error") and not magnet.get("check_status")]
+
+
+def run_magnet_check_job(job_id, magnets, user_trackers):
+    global ACTIVE_MAGNET_CHECK_JOB_ID
+    job = MAGNET_CHECK_JOBS[job_id]
+    work_queue = queue.Queue()
+    for magnet in magnets:
+        work_queue.put(magnet)
+
+    def worker():
+        while not job["cancel_event"].is_set():
+            try:
+                magnet = work_queue.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                result = magnet_checker.check_magnet(magnet.get("link", ""), user_trackers)
+                db_store.update_magnet_check_result(
+                    magnet["id"],
+                    result.get("check_status"),
+                    result.get("seeders", 0),
+                    result.get("leechers", 0),
+                    result.get("check_error"),
+                )
+                key = result.get("check_status") or "failed"
+                if key not in {"active", "weak", "dead"}:
+                    key = "failed"
+            except Exception as exc:
+                db_store.update_magnet_check_result(magnet["id"], None, 0, 0, str(exc))
+                key = "failed"
+            finally:
+                with job["lock"]:
+                    job["completed"] += 1
+                    job[key] += 1
+                work_queue.task_done()
+
+    workers = [
+        threading.Thread(target=worker, daemon=True)
+        for _ in range(min(magnet_checker.CONCURRENCY_LIMIT, max(1, len(magnets))))
+    ]
+    for worker_thread in workers:
+        worker_thread.start()
+    for worker_thread in workers:
+        worker_thread.join()
+    with job["lock"]:
+        job["cancelled"] = job["cancel_event"].is_set()
+        job["running"] = False
+        job["done"] = not job["cancelled"]
+        if job["cancelled"]:
+            job["message"] = "检测已取消"
+        else:
+            job["message"] = "检测完成"
+    with MAGNET_CHECK_LOCK:
+        if ACTIVE_MAGNET_CHECK_JOB_ID == job_id:
+            ACTIVE_MAGNET_CHECK_JOB_ID = None
 
 
 def infer_task_filename(start_url, requested_filename, soup):
@@ -403,6 +524,7 @@ def set_runtime_config(config: RuntimeConfig):
         remember_cookie=config.remember_cookie,
         user_agent=config.user_agent,
         proxies=config.proxies,
+        trackers=config.trackers,
     )
     return {"code": 200, "msg": "运行配置已保存"}
 
@@ -477,6 +599,14 @@ def list_tasks():
 def cleanup_finished_tasks():
     deleted = db_store.cleanup_finished_tasks()
     return {"code": 200, "msg": f"已清理 {deleted} 个已结束任务", "deleted": deleted}
+
+
+@app.delete("/api/tasks/{task_id}")
+def delete_task(task_id: str):
+    db_store.request_task_cancel(task_id)
+    if not db_store.delete_task(task_id):
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到任务"})
+    return {"code": 200, "msg": "任务已删除"}
 
 
 @app.get("/api/tasks/queue_status")
@@ -584,6 +714,101 @@ def select_movie_magnet(movie_id: int, req: SelectMagnetRequest):
     return {"code": 200, "msg": "已更新选中磁力"}
 
 
+@app.post("/api/movies/{movie_id}/check_magnets")
+def check_movie_magnets(movie_id: int, failed_only: bool = False):
+    magnets = db_store.get_movie_magnet_rows(movie_id)
+    if not magnets:
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到候选磁力"})
+    if failed_only:
+        magnets = failed_magnet_rows(magnets)
+        if not magnets:
+            return JSONResponse(status_code=404, content={"code": 404, "msg": "没有检测失败的磁力"})
+    job, active = create_magnet_check_job("movie", str(movie_id), magnets)
+    if active:
+        return JSONResponse(
+            status_code=409,
+            content={"code": 409, "msg": "磁力检测任务正在运行", "data": public_magnet_check_job(active)},
+        )
+    return {"code": 200, "data": public_magnet_check_job(job)}
+
+
+@app.post("/api/collections/{name}/check_magnets")
+def check_collection_magnets(name: str, failed_only: bool = False):
+    try:
+        safe_name = normalize_csv_filename(name)
+    except UnsafeFilenameError:
+        return JSONResponse(status_code=400, content={"code": 400, "msg": "文件名非法"})
+    if not db_store.collection_exists(safe_name):
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到该集合"})
+    magnets = []
+    for movie_id in db_store.get_collection_movie_ids(safe_name):
+        magnets.extend(db_store.get_movie_magnet_rows(movie_id))
+    if not magnets:
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "该集合没有候选磁力"})
+    if failed_only:
+        magnets = failed_magnet_rows(magnets)
+        if not magnets:
+            return JSONResponse(status_code=404, content={"code": 404, "msg": "没有检测失败的磁力"})
+    job, active = create_magnet_check_job("collection", safe_name, magnets)
+    if active:
+        return JSONResponse(
+            status_code=409,
+            content={"code": 409, "msg": "磁力检测任务正在运行", "data": public_magnet_check_job(active)},
+        )
+    return {"code": 200, "data": public_magnet_check_job(job)}
+
+
+@app.post("/api/magnets/check_all")
+def check_all_magnets(failed_only: bool = False):
+    magnets = []
+    for item in db_store.get_history():
+        for movie_id in db_store.get_collection_movie_ids(item["name"]):
+            magnets.extend(db_store.get_movie_magnet_rows(movie_id))
+    if not magnets:
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "没有候选磁力"})
+    if failed_only:
+        magnets = failed_magnet_rows(magnets)
+        if not magnets:
+            return JSONResponse(status_code=404, content={"code": 404, "msg": "没有检测失败的磁力"})
+    job, active = create_magnet_check_job("all", "all", magnets)
+    if active:
+        return JSONResponse(
+            status_code=409,
+            content={"code": 409, "msg": "磁力检测任务正在运行", "data": public_magnet_check_job(active)},
+        )
+    return {"code": 200, "data": public_magnet_check_job(job)}
+
+
+@app.get("/api/magnet_check_jobs/current")
+def get_current_magnet_check_job_route():
+    with MAGNET_CHECK_LOCK:
+        job = MAGNET_CHECK_JOBS.get(ACTIVE_MAGNET_CHECK_JOB_ID) if ACTIVE_MAGNET_CHECK_JOB_ID else None
+    if not job:
+        return {"code": 200, "data": None}
+    data = public_magnet_check_job(job)
+    return {"code": 200, "data": data if data["running"] else None}
+
+
+@app.get("/api/magnet_check_jobs/{job_id}")
+def get_magnet_check_job(job_id: str):
+    job = MAGNET_CHECK_JOBS.get(job_id)
+    if not job:
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到检测任务"})
+    return {"code": 200, "data": public_magnet_check_job(job)}
+
+
+@app.post("/api/magnet_check_jobs/{job_id}/cancel")
+def cancel_magnet_check_job(job_id: str):
+    job = MAGNET_CHECK_JOBS.get(job_id)
+    if not job:
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到检测任务"})
+    job["cancel_event"].set()
+    with job["lock"]:
+        job["cancelled"] = True
+        job["message"] = "正在取消检测"
+    return {"code": 200, "data": public_magnet_check_job(job)}
+
+
 @app.post("/api/delete")
 def delete_history(req: DeleteRequest):
     success_count = 0
@@ -624,6 +849,18 @@ def delete_history(req: DeleteRequest):
         "code": 200 if success_count > 0 else 400,
         "msg": f"成功 {success_count} 个，失败 {fail_count} 个 [{reason_str}]",
     }
+
+
+@app.post("/api/magnets/auto_select")
+def auto_select_magnets(req: DeleteRequest):
+    filenames = []
+    for filename in req.filenames:
+        safe_name = get_safe_name(filename)
+        if not safe_name:
+            return JSONResponse(status_code=400, content={"code": 400, "msg": "集合不存在或非法"})
+        filenames.append(safe_name)
+    updated = db_store.auto_select_collection_magnets(filenames)
+    return {"code": 200, "msg": f"已按评分自动选择 {updated} 部影片的磁力", "data": {"updated": updated}}
 
 
 @app.get("/api/download")
@@ -727,10 +964,10 @@ def get_tags(req: TagConfigRequest):
 def start_server():
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000, access_log=False, log_level="info")
 
 
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, access_log=False, log_level="info")

@@ -75,6 +75,7 @@ chaquopy {
             install "pydantic<2.0.0"
             install "uvicorn"
             install "beautifulsoup4"
+            install "bencodepy"
             // 注意：不安装 curl_cffi，因为我们要改用安卓原生 WebView
         }
     }

@@ -153,24 +153,46 @@ def init_database():
                 remember_cookie INTEGER DEFAULT 0,
                 user_agent TEXT DEFAULT '',
                 proxies TEXT DEFAULT '',
+                tracker_list_json TEXT DEFAULT '[]',
                 updated_at REAL NOT NULL
             );
             """
         )
     _migrate_task_runtime_columns()
     _migrate_tag_columns()
+    _migrate_magnet_check_columns()
+    _migrate_runtime_tracker_column()
 
 
 def _ensure_column(conn, table, column, definition):
     columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
     if column not in columns:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        return True
+    return False
 
 
 def _migrate_tag_columns():
     with connect() as conn:
         _ensure_column(conn, "collections", "tags_json", "TEXT DEFAULT '[]'")
         _ensure_column(conn, "movies", "tags_json", "TEXT DEFAULT '[]'")
+
+
+def _migrate_magnet_check_columns():
+    with connect() as conn:
+        added_base_score = _ensure_column(conn, "magnets", "base_priority_score", "INTEGER DEFAULT 0")
+        _ensure_column(conn, "magnets", "check_status", "TEXT DEFAULT NULL")
+        _ensure_column(conn, "magnets", "seeders", "INTEGER DEFAULT 0")
+        _ensure_column(conn, "magnets", "leechers", "INTEGER DEFAULT 0")
+        _ensure_column(conn, "magnets", "checked_at", "REAL DEFAULT NULL")
+        _ensure_column(conn, "magnets", "check_error", "TEXT DEFAULT NULL")
+        if added_base_score:
+            conn.execute("UPDATE magnets SET base_priority_score = priority_score")
+
+
+def _migrate_runtime_tracker_column():
+    with connect() as conn:
+        _ensure_column(conn, "runtime_config", "tracker_list_json", "TEXT DEFAULT '[]'")
 
 
 def _migrate_task_runtime_columns():
@@ -271,6 +293,33 @@ def _tags_from_json(value):
     except (TypeError, json.JSONDecodeError):
         return []
     return _normalize_tags(data if isinstance(data, list) else [])
+
+
+def _normalize_trackers(trackers):
+    if not trackers:
+        return []
+    normalized = []
+    seen = set()
+    for tracker in trackers:
+        value = str(tracker or "").strip()
+        if value and value not in seen:
+            normalized.append(value)
+            seen.add(value)
+    return normalized
+
+
+def _trackers_to_json(trackers):
+    return json.dumps(_normalize_trackers(trackers), ensure_ascii=False)
+
+
+def _trackers_from_json(value):
+    if not value:
+        return []
+    try:
+        data = json.loads(value)
+    except (TypeError, json.JSONDecodeError):
+        return []
+    return _normalize_trackers(data if isinstance(data, list) else [])
 
 
 def _matches_tags(row_tags_json, required_tags):
@@ -379,6 +428,21 @@ def cleanup_finished_tasks():
         return cursor.rowcount
 
 
+def delete_task(task_id):
+    with connect() as conn:
+        row = conn.execute("SELECT task_id FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+        if not row:
+            return False
+        conn.execute("DELETE FROM task_logs WHERE task_id = ?", (task_id,))
+        checkpoint_table = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'task_checkpoints'"
+        ).fetchone()
+        if checkpoint_table:
+            conn.execute("DELETE FROM task_checkpoints WHERE task_id = ?", (task_id,))
+        conn.execute("DELETE FROM tasks WHERE task_id = ?", (task_id,))
+        return True
+
+
 def get_task_logs(task_id, limit=80):
     with connect() as conn:
         rows = conn.execute(
@@ -404,7 +468,7 @@ def append_task_log(task_id, message):
         conn.execute("UPDATE tasks SET updated_at = ? WHERE task_id = ?", (now, task_id))
 
 
-def save_runtime_config(cookie=None, remember_cookie=False, user_agent=None, proxies=None):
+def save_runtime_config(cookie=None, remember_cookie=False, user_agent=None, proxies=None, trackers=None):
     global _SESSION_COOKIE
     now = _now()
     with connect() as conn:
@@ -421,7 +485,8 @@ def save_runtime_config(cookie=None, remember_cookie=False, user_agent=None, pro
         conn.execute(
             """
             UPDATE runtime_config
-            SET cookie = ?, remember_cookie = ?, user_agent = ?, proxies = ?, updated_at = ?
+            SET cookie = ?, remember_cookie = ?, user_agent = ?, proxies = ?,
+                tracker_list_json = ?, updated_at = ?
             WHERE id = 1
             """,
             (
@@ -429,6 +494,7 @@ def save_runtime_config(cookie=None, remember_cookie=False, user_agent=None, pro
                 1 if remember_cookie else 0,
                 current["user_agent"] if user_agent is None else user_agent or "",
                 current["proxies"] if proxies is None else proxies or "",
+                current["tracker_list_json"] if trackers is None else _trackers_to_json(trackers),
                 now,
             ),
         )
@@ -448,6 +514,7 @@ def get_runtime_config(include_cookie=True):
         "has_cookie": bool(cookie),
         "user_agent": row["user_agent"] or "",
         "proxies": row["proxies"] or "",
+        "trackers": _trackers_from_json(row["tracker_list_json"]),
         "updated_at": row["updated_at"] or 0,
     }
     if include_cookie:
@@ -783,15 +850,16 @@ def save_movie_result(filename, movie, best_magnet, candidates):
             conn.execute(
                 """
                 INSERT INTO magnets(
-                    movie_id, name, link, priority_score, magnet_date, size_mb,
+                    movie_id, name, link, base_priority_score, priority_score, magnet_date, size_mb,
                     is_selected, position, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     movie_id,
                     magnet.get("name", ""),
                     magnet.get("link", ""),
+                    _to_int(magnet.get("rank", 0)),
                     _to_int(magnet.get("rank", 0)),
                     magnet.get("date", ""),
                     _to_float(magnet.get("size_mb", 0)),
@@ -836,7 +904,13 @@ def get_collection_movies(filename):
         rows = conn.execute(
             """
             SELECT m.id, m.code, m.title, m.url, m.best_magnet_name, m.best_magnet_link,
-                   m.priority_score, m.magnet_date, m.size_mb, m.tags_json, COUNT(mg.id) AS candidate_count
+                   m.priority_score, m.magnet_date, m.size_mb, m.tags_json,
+                   COUNT(mg.id) AS candidate_count,
+                   SUM(CASE WHEN mg.check_status = 'active' THEN 1 ELSE 0 END) AS active_count,
+                   SUM(CASE WHEN mg.check_status = 'weak' THEN 1 ELSE 0 END) AS weak_count,
+                   SUM(CASE WHEN mg.check_status = 'dead' THEN 1 ELSE 0 END) AS dead_count,
+                   SUM(CASE WHEN mg.check_error IS NOT NULL AND mg.check_error != '' AND mg.check_status IS NULL THEN 1 ELSE 0 END) AS failed_count,
+                   SUM(CASE WHEN mg.checked_at IS NOT NULL OR (mg.check_error IS NOT NULL AND mg.check_error != '') THEN 1 ELSE 0 END) AS checked_count
             FROM movies m
             JOIN collections c ON c.id = m.collection_id
             LEFT JOIN magnets mg ON mg.movie_id = m.id
@@ -850,6 +924,7 @@ def get_collection_movies(filename):
     for row in rows:
         item = dict(row)
         item["tags"] = _tags_from_json(item.pop("tags_json", ""))
+        item["magnet_health"] = _movie_magnet_health(item)
         movies.append(item)
     return {
         "movies": movies,
@@ -858,12 +933,33 @@ def get_collection_movies(filename):
     }
 
 
+def _movie_magnet_health(movie):
+    candidate_count = int(movie.get("candidate_count") or 0)
+    active_count = int(movie.get("active_count") or 0)
+    weak_count = int(movie.get("weak_count") or 0)
+    dead_count = int(movie.get("dead_count") or 0)
+    failed_count = int(movie.get("failed_count") or 0)
+    checked_count = int(movie.get("checked_count") or 0)
+    if not candidate_count or not checked_count:
+        return None
+    if active_count > 0:
+        return "active"
+    if weak_count > 0:
+        return "weak"
+    if dead_count > 0:
+        return "dead"
+    if failed_count >= candidate_count:
+        return "failed"
+    return None
+
+
 def get_movie_magnets(movie_id):
     with connect() as conn:
         rows = conn.execute(
             """
-            SELECT id, movie_id, name, link, priority_score, magnet_date, size_mb,
-                   is_selected, position, created_at
+            SELECT id, movie_id, name, link, base_priority_score, priority_score,
+                   magnet_date, size_mb, is_selected, position, created_at,
+                   check_status, seeders, leechers, checked_at, check_error
             FROM magnets
             WHERE movie_id = ?
             ORDER BY position ASC, id ASC
@@ -904,6 +1000,142 @@ def select_movie_magnet(movie_id, magnet_id):
         row = conn.execute("SELECT collection_id FROM movies WHERE id = ?", (movie_id,)).fetchone()
         if row:
             conn.execute("UPDATE collections SET updated_at = ? WHERE id = ?", (now, row["collection_id"]))
+    return True
+
+
+def get_movie_magnet_rows(movie_id):
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, movie_id, name, link, base_priority_score, priority_score,
+                   magnet_date, size_mb, is_selected, position, created_at,
+                   check_status, seeders, leechers, checked_at, check_error
+            FROM magnets
+            WHERE movie_id = ?
+            ORDER BY position ASC, id ASC
+            """,
+            (movie_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_collection_movie_ids(filename):
+    safe_name = normalize_csv_filename(filename)
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT m.id
+            FROM movies m
+            JOIN collections c ON c.id = m.collection_id
+            WHERE c.filename = ?
+            ORDER BY m.id
+            """,
+            (safe_name,),
+        ).fetchall()
+    return [row["id"] for row in rows]
+
+
+def _score_from_check(base_score, check_status, check_error):
+    score = _to_int(base_score)
+    if check_status == "dead" or check_error:
+        return score - 200
+    return score
+
+
+def _reselect_movie_magnet(conn, movie_id, now=None):
+    now = now or _now()
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM magnets
+        WHERE movie_id = ?
+        ORDER BY position ASC, id ASC
+        """,
+        (movie_id,),
+    ).fetchall()
+    if not rows:
+        return False
+    viable = [row for row in rows if row["check_status"] in {"active", "weak"}]
+    candidates = viable if viable else rows
+    selected = sorted(
+        candidates,
+        key=lambda row: (-_to_int(row["priority_score"]), _to_int(row["position"]), _to_int(row["id"])),
+    )[0]
+    conn.execute("UPDATE magnets SET is_selected = 0 WHERE movie_id = ?", (movie_id,))
+    conn.execute("UPDATE magnets SET is_selected = 1 WHERE id = ?", (selected["id"],))
+    conn.execute(
+        """
+        UPDATE movies
+        SET best_magnet_name = ?, best_magnet_link = ?, priority_score = ?,
+            magnet_date = ?, size_mb = ?, updated_at = ?
+        WHERE id = ?
+        """,
+        (
+            selected["name"],
+            selected["link"],
+            selected["priority_score"],
+            selected["magnet_date"],
+            selected["size_mb"],
+            now,
+            movie_id,
+        ),
+    )
+    row = conn.execute("SELECT collection_id FROM movies WHERE id = ?", (movie_id,)).fetchone()
+    if row:
+        conn.execute("UPDATE collections SET updated_at = ? WHERE id = ?", (now, row["collection_id"]))
+    return True
+
+
+def auto_select_collection_magnets(filenames):
+    safe_names = [normalize_csv_filename(filename) for filename in filenames]
+    now = _now()
+    updated = 0
+    with connect() as conn:
+        for filename in safe_names:
+            rows = conn.execute(
+                """
+                SELECT m.id
+                FROM movies m
+                JOIN collections c ON c.id = m.collection_id
+                WHERE c.filename = ?
+                ORDER BY m.id
+                """,
+                (filename,),
+            ).fetchall()
+            for row in rows:
+                if _reselect_movie_magnet(conn, row["id"], now):
+                    updated += 1
+    return updated
+
+
+def update_magnet_check_result(magnet_id, check_status, seeders=0, leechers=0, check_error=None):
+    if check_status not in {"active", "weak", "dead", None}:
+        raise ValueError(f"Invalid magnet check status: {check_status}")
+    now = _now()
+    error = (check_error or "").strip()
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM magnets WHERE id = ?", (magnet_id,)).fetchone()
+        if not row:
+            return False
+        priority_score = _score_from_check(row["base_priority_score"], check_status, error)
+        conn.execute(
+            """
+            UPDATE magnets
+            SET check_status = ?, seeders = ?, leechers = ?, checked_at = ?,
+                check_error = ?, priority_score = ?
+            WHERE id = ?
+            """,
+            (
+                check_status,
+                max(0, _to_int(seeders)),
+                max(0, _to_int(leechers)),
+                now,
+                error or None,
+                priority_score,
+                magnet_id,
+            ),
+        )
+        _reselect_movie_magnet(conn, row["movie_id"], now)
     return True
 
 
@@ -1056,15 +1288,16 @@ def import_csv_file(path, filename):
                 conn.execute(
                     """
                     INSERT INTO magnets(
-                        movie_id, name, link, priority_score, magnet_date, size_mb,
+                        movie_id, name, link, base_priority_score, priority_score, magnet_date, size_mb,
                         is_selected, position, created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, 1, 0, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
                     """,
                     (
                         movie_id,
                         best["name"],
                         best["link"],
+                        _to_int(best["rank"]),
                         _to_int(best["rank"]),
                         best["date"],
                         _to_float(best["size_mb"]),

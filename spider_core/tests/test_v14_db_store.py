@@ -2,7 +2,9 @@ import csv
 import io
 import os
 import tempfile
+import time
 import unittest
+from unittest.mock import patch
 
 import sys
 
@@ -175,6 +177,72 @@ class DbStoreTest(unittest.TestCase):
         self.assertEqual([row["影片番号"] for row in rows], ["ABC-002"])
         self.assertNotIn("标签", rows[0])
 
+    def test_collection_movies_include_magnet_health(self):
+        cases = [
+            ("ACTIVE-001", "active", [("active", None), ("dead", None)]),
+            ("WEAK-001", "weak", [("weak", None), ("dead", None)]),
+            ("DEAD-001", "dead", [("dead", None), (None, "timeout")]),
+            ("FAIL-001", "failed", [(None, "timeout"), (None, "down")]),
+            ("NONE-001", None, [(None, None)]),
+        ]
+        for code, _expected, statuses in cases:
+            candidates = [
+                {
+                    "name": f"{code}-{index}.torrent",
+                    "link": f"magnet:?xt=urn:btih:{code.lower()}{index}",
+                    "rank": 100 - index,
+                    "date": "2026-01-01",
+                    "size_mb": 100,
+                }
+                for index, _status in enumerate(statuses)
+            ]
+            db_store.save_movie_result(
+                "health.csv",
+                {"code": code, "title": code, "url": f"https://example.test/v/{code}", "tags": []},
+                candidates[0],
+                candidates,
+            )
+            movie_id = next(row["id"] for row in db_store.get_collection_movies("health.csv")["movies"] if row["code"] == code)
+            rows = db_store.get_movie_magnets(movie_id)
+            for row, (status, error) in zip(rows, statuses):
+                if status or error:
+                    db_store.update_magnet_check_result(
+                        row["id"],
+                        status,
+                        1 if status == "active" else 0,
+                        1 if status == "weak" else 0,
+                        error,
+                    )
+
+        movies = {row["code"]: row["magnet_health"] for row in db_store.get_collection_movies("health.csv")["movies"]}
+        self.assertEqual(
+            {code: movies[code] for code, _expected, _statuses in cases},
+            {code: expected for code, expected, _statuses in cases},
+        )
+
+    def test_auto_select_collection_magnets_uses_highest_score(self):
+        low = {"name": "low.torrent", "link": "magnet:?xt=urn:btih:low", "rank": 10, "date": "2026-01-01", "size_mb": 100}
+        high = {"name": "high.torrent", "link": "magnet:?xt=urn:btih:high", "rank": 200, "date": "2026-01-02", "size_mb": 200}
+        db_store.save_movie_result(
+            "auto.csv",
+            {"code": "AUTO-001", "title": "Auto", "url": "https://example.test/v/auto", "tags": []},
+            low,
+            [low, high],
+        )
+
+        self.assertEqual(db_store.auto_select_collection_magnets(["auto.csv"]), 1)
+        magnets = db_store.get_movie_magnets(db_store.get_collection_movies("auto.csv")["movies"][0]["id"])
+        selected = next(row for row in magnets if row["is_selected"])
+        self.assertEqual(selected["link"], high["link"])
+
+    def test_delete_task_removes_task_record(self):
+        task_id = db_store.create_task("https://example.test", "cookie", "ua", "task.csv", None)
+        db_store.append_task_log(task_id, "log line")
+
+        self.assertTrue(db_store.delete_task(task_id))
+        self.assertIsNone(db_store.get_task(task_id))
+        self.assertEqual(db_store.get_task_logs(task_id), [])
+
     def test_replacing_movie_tags_rebuilds_collection_union(self):
         db_store.ensure_collection("output.csv")
         best = {
@@ -262,6 +330,103 @@ class DbBackedApiTest(unittest.TestCase):
         self.assertIn("filename*=UTF-8''api.csv", response.headers["content-disposition"])
         rows = list(csv.DictReader(io.StringIO(response.body.decode("utf-8-sig"))))
         self.assertEqual(rows[0][db_store.CSV_FIELDNAMES[0]], "API-001")
+
+    def test_movie_check_job_updates_magnet_results(self):
+        movie_id = db_store.get_collection_movies("api.csv")["movies"][0]["id"]
+
+        with patch.object(
+            self.main.magnet_checker,
+            "check_magnet",
+            return_value={"check_status": "active", "seeders": 9, "leechers": 2, "check_error": None},
+        ):
+            response = self.main.check_movie_magnets(movie_id)
+            self.assertEqual(response["code"], 200)
+            job_id = response["data"]["job_id"]
+            for _ in range(100):
+                job = self.main.get_magnet_check_job(job_id)["data"]
+                if not job["running"]:
+                    break
+                time.sleep(0.01)
+
+        self.assertEqual(job["completed"], 1)
+        self.assertEqual(job["active"], 1)
+        magnet = db_store.get_movie_magnets(movie_id)[0]
+        self.assertEqual(magnet["check_status"], "active")
+        self.assertEqual(magnet["seeders"], 9)
+
+    def test_failed_only_movie_check_rechecks_failed_magnets(self):
+        first = {"name": "failed.torrent", "link": "magnet:?xt=urn:btih:failed", "rank": 100, "date": "2026-01-01", "size_mb": 100}
+        second = {"name": "ok.torrent", "link": "magnet:?xt=urn:btih:ok", "rank": 90, "date": "2026-01-02", "size_mb": 200}
+        db_store.save_movie_result(
+            "api.csv",
+            {"code": "API-002", "title": "API Title 2", "url": "https://example.test/v/api-2", "tags": []},
+            first,
+            [first, second],
+        )
+        movie_id = next(row["id"] for row in db_store.get_collection_movies("api.csv")["movies"] if row["code"] == "API-002")
+        magnets = db_store.get_movie_magnets(movie_id)
+        failed_id = next(row["id"] for row in magnets if row["link"] == first["link"])
+        db_store.update_magnet_check_result(failed_id, None, 0, 0, "timeout")
+
+        checked_links = []
+
+        def fake_check(link, _trackers):
+            checked_links.append(link)
+            return {"check_status": "active", "seeders": 3, "leechers": 1, "check_error": None}
+
+        with patch.object(self.main.magnet_checker, "check_magnet", side_effect=fake_check):
+            response = self.main.check_movie_magnets(movie_id, failed_only=True)
+            self.assertEqual(response["code"], 200)
+            job_id = response["data"]["job_id"]
+            for _ in range(100):
+                job = self.main.get_magnet_check_job(job_id)["data"]
+                if not job["running"]:
+                    break
+                time.sleep(0.01)
+
+        self.assertEqual(checked_links, [first["link"]])
+        self.assertEqual(job["completed"], 1)
+
+    def test_all_check_job_updates_magnet_results(self):
+        with patch.object(
+            self.main.magnet_checker,
+            "check_magnet",
+            return_value={"check_status": "active", "seeders": 2, "leechers": 0, "check_error": None},
+        ):
+            response = self.main.check_all_magnets()
+            self.assertEqual(response["code"], 200)
+            job_id = response["data"]["job_id"]
+            for _ in range(100):
+                job = self.main.get_magnet_check_job(job_id)["data"]
+                if not job["running"]:
+                    break
+                time.sleep(0.01)
+
+        self.assertEqual(job["completed"], 1)
+        self.assertEqual(job["active"], 1)
+
+    def test_current_check_job_returns_running_job_only(self):
+        movie_id = db_store.get_collection_movies("api.csv")["movies"][0]["id"]
+
+        def slow_check(_link, _trackers):
+            time.sleep(0.2)
+            return {"check_status": "active", "seeders": 1, "leechers": 0, "check_error": None}
+
+        with patch.object(self.main.magnet_checker, "check_magnet", side_effect=slow_check):
+            response = self.main.check_movie_magnets(movie_id)
+            self.assertEqual(response["code"], 200)
+            job_id = response["data"]["job_id"]
+            current = self.main.get_current_magnet_check_job_route()
+            self.assertEqual(current["code"], 200)
+            self.assertEqual(current["data"]["job_id"], job_id)
+
+            for _ in range(100):
+                job = self.main.get_magnet_check_job(job_id)["data"]
+                if not job["running"]:
+                    break
+                time.sleep(0.01)
+
+        self.assertIsNone(self.main.get_current_magnet_check_job_route()["data"])
 
 
 if __name__ == "__main__":

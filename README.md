@@ -62,8 +62,10 @@ pip install -r requirements.txt
 # 2. 进入核心目录并启动
 # (可选) 设置 JAVDB_AUTH_TOKEN 环境变量启用 API 鉴权保护
 cd spider_core
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --no-access-log
 ```
+
+`--no-access-log` 会保留启动与错误日志，但不打印高频轮询接口的 `GET /api/... 200 OK`；排查请求时可临时去掉。
 
 ---
 

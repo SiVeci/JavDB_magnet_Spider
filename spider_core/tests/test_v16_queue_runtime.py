@@ -130,6 +130,45 @@ class MagnetSelectionTest(unittest.TestCase):
         self.assertEqual(rows[0][db_store.CSV_FIELDNAMES[3]], second["name"])
         self.assertEqual(rows[0][db_store.CSV_FIELDNAMES[4]], second["link"])
 
+    def test_check_result_selects_viable_highest_score(self):
+        db_store.ensure_collection("output.csv")
+        movie = {"code": "ABC-001", "title": "Title", "url": "https://example.test/v/1"}
+        first = {"name": "first.torrent", "link": "magnet:?xt=urn:btih:first", "rank": 300, "date": "2026-01-01", "size_mb": 100}
+        second = {"name": "second.torrent", "link": "magnet:?xt=urn:btih:second", "rank": 250, "date": "2026-01-02", "size_mb": 200}
+        db_store.save_movie_result("output.csv", movie, first, [first, second])
+        movie_id = db_store.get_collection_movies("output.csv")["movies"][0]["id"]
+        magnets = db_store.get_movie_magnets(movie_id)
+        first_id = next(row["id"] for row in magnets if row["link"] == first["link"])
+        second_id = next(row["id"] for row in magnets if row["link"] == second["link"])
+
+        db_store.update_magnet_check_result(first_id, "dead", 0, 0)
+        db_store.update_magnet_check_result(second_id, "weak", 0, 3)
+
+        selected = next(row for row in db_store.get_movie_magnets(movie_id) if row["is_selected"])
+        self.assertEqual(selected["link"], second["link"])
+        self.assertEqual(db_store.get_magnet_links("output.csv"), [second["link"]])
+
+    def test_all_failed_or_dead_selects_penalized_highest_score(self):
+        db_store.ensure_collection("output.csv")
+        movie = {"code": "ABC-001", "title": "Title", "url": "https://example.test/v/1"}
+        first = {"name": "first.torrent", "link": "magnet:?xt=urn:btih:first", "rank": 300, "date": "2026-01-01", "size_mb": 100}
+        second = {"name": "second.torrent", "link": "magnet:?xt=urn:btih:second", "rank": 250, "date": "2026-01-02", "size_mb": 200}
+        db_store.save_movie_result("output.csv", movie, first, [first, second])
+        movie_id = db_store.get_collection_movies("output.csv")["movies"][0]["id"]
+        magnets = db_store.get_movie_magnets(movie_id)
+        first_id = next(row["id"] for row in magnets if row["link"] == first["link"])
+        second_id = next(row["id"] for row in magnets if row["link"] == second["link"])
+
+        db_store.update_magnet_check_result(first_id, "dead", 0, 0)
+        db_store.update_magnet_check_result(first_id, "dead", 0, 0)
+        db_store.update_magnet_check_result(second_id, None, 0, 0, "检测超时")
+
+        rows = db_store.get_movie_magnets(movie_id)
+        selected = next(row for row in rows if row["is_selected"])
+        self.assertEqual(selected["link"], first["link"])
+        self.assertEqual(selected["priority_score"], 100)
+        self.assertEqual(next(row for row in rows if row["id"] == second_id)["priority_score"], 50)
+
 
 if __name__ == "__main__":
     unittest.main()
