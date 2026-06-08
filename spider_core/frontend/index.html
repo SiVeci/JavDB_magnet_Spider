@@ -12,7 +12,24 @@
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen p-4 md:p-8 text-slate-800">
-    <main class="max-w-7xl mx-auto space-y-6">
+    <section id="authGate" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950 text-slate-100 p-4">
+        <div class="w-full max-w-sm space-y-4">
+            <div class="flex flex-col items-center gap-3 text-center">
+                <img src="/favicon.png" alt="Logo" class="w-12 h-12 rounded-lg">
+                <div>
+                    <h1 class="text-2xl font-bold tracking-tight">JavDB Magnet Spider</h1>
+                    <p class="mt-1 text-sm text-slate-400">输入访问令牌后继续</p>
+                </div>
+            </div>
+            <div class="space-y-3">
+                <input id="auth_token" type="password" autocomplete="off" placeholder="访问令牌" onkeydown="handleAuthTokenKeydown(event)" class="w-full border border-slate-700 bg-slate-900 rounded p-3 text-sm text-slate-100 outline-none focus:border-indigo-400">
+                <button id="auth_submit" type="button" onclick="saveAuthToken()" class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-700 disabled:text-slate-400 text-white font-bold px-4 py-3 rounded">验证</button>
+                <div id="auth_error" class="hidden text-sm text-red-300 text-center"></div>
+            </div>
+        </div>
+    </section>
+
+    <main id="appShell" class="hidden max-w-7xl mx-auto space-y-6">
         <header class="flex flex-col items-center gap-2">
             <div class="flex items-center gap-3">
                 <img src="/favicon.png" alt="Logo" class="w-10 h-10 rounded-lg">
@@ -20,17 +37,6 @@
             </div>
             <span id="app_version" class="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded">加载中...</span>
         </header>
-
-        <section id="authPanel" class="hidden bg-amber-50 border border-amber-200 rounded-lg p-4">
-            <div class="flex flex-col md:flex-row gap-3 md:items-center">
-                <div class="flex-1">
-                    <div class="font-bold text-amber-800">访问令牌</div>
-                    <div class="text-xs text-amber-700">启用 JAVDB_AUTH_TOKEN 后需要输入令牌才能调用 API。</div>
-                </div>
-                <input id="auth_token" type="password" autocomplete="off" placeholder="输入访问令牌" class="md:w-72 border border-amber-300 rounded p-2 text-sm">
-                <button type="button" onclick="saveAuthToken()" class="bg-amber-600 hover:bg-amber-700 text-white font-bold px-4 py-2 rounded">保存</button>
-            </div>
-        </section>
 
         <section class="grid grid-cols-1 xl:grid-cols-[430px_1fr] gap-6 items-start">
             <div class="space-y-6">
@@ -234,22 +240,82 @@
         async function apiFetch(url, options = {}) {
             const response = await fetch(url, { ...options, headers: apiHeaders(options.headers || {}) });
             if (response.status === 401) {
-                showAuthPanel(true);
+                lockAppForAuth();
                 throw new Error('访问令牌缺失或无效');
             }
             return response;
         }
 
         function showAuthPanel(show) {
-            document.getElementById('authPanel').classList.toggle('hidden', !show);
+            document.getElementById('authGate').classList.toggle('hidden', !show);
+            document.getElementById('appShell').classList.toggle('hidden', show);
+            if (show) setTimeout(() => document.getElementById('auth_token').focus(), 0);
         }
 
-        function saveAuthToken() {
-            apiToken = document.getElementById('auth_token').value.trim();
-            if (!apiToken) return alert('请输入访问令牌');
-            sessionStorage.setItem('javdb_auth_token', apiToken);
-            showAuthPanel(false);
-            refreshAll();
+        function setAuthError(message = '') {
+            const box = document.getElementById('auth_error');
+            box.innerText = message;
+            box.classList.toggle('hidden', !message);
+        }
+
+        function setAuthSubmitting(submitting) {
+            const button = document.getElementById('auth_submit');
+            const input = document.getElementById('auth_token');
+            button.disabled = submitting;
+            input.disabled = submitting;
+            button.innerText = submitting ? '验证中...' : '验证';
+        }
+
+        function lockAppForAuth(message = '') {
+            apiToken = '';
+            sessionStorage.removeItem('javdb_auth_token');
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+            if (magnetCheckPollInterval) {
+                clearInterval(magnetCheckPollInterval);
+                magnetCheckPollInterval = null;
+            }
+            setAuthError(message);
+            setAuthSubmitting(false);
+            showAuthPanel(true);
+        }
+
+        async function verifyAuthToken(token) {
+            const response = await fetch('/api/status', { headers: { 'X-JavDB-Token': token } });
+            if (response.status === 401) return false;
+            if (!response.ok) throw new Error('验证失败，请稍后重试');
+            return true;
+        }
+
+        function handleAuthTokenKeydown(event) {
+            if (event.key === 'Enter') saveAuthToken();
+        }
+
+        async function saveAuthToken() {
+            const token = document.getElementById('auth_token').value.trim();
+            if (!token) {
+                setAuthError('请输入访问令牌');
+                return;
+            }
+            setAuthError('');
+            setAuthSubmitting(true);
+            try {
+                const ok = await verifyAuthToken(token);
+                if (!ok) {
+                    setAuthError('访问令牌缺失或无效');
+                    return;
+                }
+                apiToken = token;
+                sessionStorage.setItem('javdb_auth_token', apiToken);
+                showAuthPanel(false);
+                await startApp();
+            } catch (err) {
+                setAuthError(err.message || '验证失败，请稍后重试');
+            } finally {
+                setAuthSubmitting(false);
+            }
         }
 
         function escapeHtml(value) {
@@ -1589,6 +1655,12 @@
             await restoreMagnetCheckJob();
         }
 
+        async function startApp() {
+            showAuthPanel(false);
+            await refreshAll();
+            if (!pollInterval) pollInterval = setInterval(refreshMonitor, 2500);
+        }
+
         window.onload = async function() {
             renderRuntimePanelState();
             renderLogPanelState();
@@ -1601,12 +1673,28 @@
                 const version = await fetch('/api/version').then(r => r.json());
                 document.getElementById('app_version').innerText = version.version || 'v?.?.?';
                 authRequired = !!version.auth_required;
-                showAuthPanel(authRequired && !apiToken);
             } catch {
                 document.getElementById('app_version').innerText = 'v?.?.?';
+                lockAppForAuth('无法读取鉴权状态，请刷新重试');
+                return;
             }
-            await refreshAll();
-            pollInterval = setInterval(refreshMonitor, 2500);
+            if (!authRequired) {
+                await startApp();
+                return;
+            }
+            if (!apiToken) {
+                lockAppForAuth();
+                return;
+            }
+            try {
+                if (await verifyAuthToken(apiToken)) {
+                    await startApp();
+                } else {
+                    lockAppForAuth('访问令牌缺失或无效');
+                }
+            } catch (err) {
+                lockAppForAuth(err.message || '验证失败，请稍后重试');
+            }
         };
     </script>
 </body>

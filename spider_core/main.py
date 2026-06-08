@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import queue
 import secrets
@@ -8,6 +9,8 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse, urlunparse
 
 import db_store
 import magnet_checker
+from contextlib import asynccontextmanager
+
 from bs4 import BeautifulSoup
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -24,7 +27,36 @@ from storage_utils import (
 )
 
 
-app = FastAPI()
+class _QuietPollFilter(logging.Filter):
+    """Suppress access-log noise from high-frequency polling endpoints (200 OK)."""
+
+    _POLLING_SIGS = (
+        "GET /api/tasks HTTP/",
+        "GET /api/tasks/queue_status HTTP/",
+        "GET /api/status HTTP/",
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+            if "\" 200" not in msg:
+                return True
+            for sig in self._POLLING_SIGS:
+                if sig in msg:
+                    return False
+        except Exception:
+            pass
+        return True
+
+
+@asynccontextmanager
+async def _lifespan(app):
+    logging.getLogger("uvicorn.access").addFilter(_QuietPollFilter())
+    yield
+
+
+app = FastAPI(lifespan=_lifespan)
+
 
 APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "1.6.0")
 AUTH_HEADER = "X-JavDB-Token"
