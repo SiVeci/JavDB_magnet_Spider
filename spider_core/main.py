@@ -1,3 +1,4 @@
+import json
 import os
 import queue
 import secrets
@@ -364,6 +365,7 @@ def prepare_task_config(config: TaskConfig):
 def task_to_response(task, include_logs=False):
     if not task:
         return None
+    incremental_movie_codes = task_incremental_movie_codes(task)
     data = {
         "task_id": task["task_id"],
         "start_url": task["start_url"],
@@ -380,10 +382,34 @@ def task_to_response(task, include_logs=False):
         "updated_at": task.get("updated_at") or 0,
         "started_at": task.get("started_at") or 0,
         "finished_at": task.get("finished_at") or 0,
+        "incremental_movie_count": len(incremental_movie_codes),
+        "can_copy_incremental_magnets": (
+            task.get("state") == "finished"
+            and task.get("crawl_mode") == "incremental"
+            and bool(incremental_movie_codes)
+        ),
     }
     if include_logs:
         data["logs"] = db_store.get_task_logs(task["task_id"])
     return data
+
+
+def task_incremental_movie_codes(task):
+    try:
+        checkpoint = json.loads(task.get("checkpoint_json") or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return []
+    codes = checkpoint.get("incremental_movie_codes", [])
+    if not isinstance(codes, list):
+        return []
+    normalized = []
+    seen = set()
+    for code in codes:
+        value = str(code or "").strip()
+        if value and value not in seen:
+            normalized.append(value)
+            seen.add(value)
+    return normalized
 
 
 def write_status_mirror(task=None):
@@ -631,6 +657,27 @@ def get_task_detail(task_id: str):
     return {"code": 200, "data": task_to_response(task, include_logs=True)}
 
 
+@app.get("/api/tasks/{task_id}/incremental_magnets")
+def get_task_incremental_magnets(task_id: str):
+    task = db_store.get_task(task_id)
+    if not task:
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到任务"})
+    if task.get("crawl_mode") != "incremental":
+        return JSONResponse(status_code=400, content={"code": 400, "msg": "该任务不是增量任务"})
+    codes = task_incremental_movie_codes(task)
+    if not codes:
+        return {"code": 200, "data": [], "count": 0}
+    filename = task.get("collection_filename") or task.get("final_filename") or task.get("requested_filename") or ""
+    try:
+        safe_name = normalize_csv_filename(filename)
+    except UnsafeFilenameError:
+        return JSONResponse(status_code=400, content={"code": 400, "msg": "任务文件名非法"})
+    if not db_store.collection_exists(safe_name):
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到该集合"})
+    links = db_store.get_magnet_links_for_codes(safe_name, codes)
+    return {"code": 200, "data": links, "count": len(links)}
+
+
 @app.post("/api/tasks/{task_id}/pause")
 def pause_task(task_id: str):
     if db_store.request_task_pause(task_id):
@@ -700,6 +747,26 @@ def get_collection_movies(name: str):
     if not db_store.collection_exists(safe_name):
         return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到该集合"})
     return {"code": 200, "data": db_store.get_collection_movies(safe_name)}
+
+
+@app.post("/api/collections/{name}/incremental_task")
+def create_collection_incremental_task(name: str):
+    try:
+        safe_name = normalize_csv_filename(name)
+    except UnsafeFilenameError:
+        return JSONResponse(status_code=400, content={"code": 400, "msg": "文件名非法"})
+    if not db_store.collection_exists(safe_name):
+        return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到该集合"})
+    source_url = db_store.get_collection_source_url(safe_name)
+    if not source_url:
+        return JSONResponse(status_code=400, content={"code": 400, "msg": "该集合缺少原始爬取 URL，无法快捷增量"})
+    return create_task_from_config(
+        TaskConfig(
+            start_url=source_url,
+            filename=safe_name,
+            crawl_mode="incremental",
+        )
+    )
 
 
 @app.get("/api/movies/{movie_id}/magnets")

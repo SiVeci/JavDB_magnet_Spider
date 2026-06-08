@@ -776,6 +776,16 @@ def collection_exists(filename):
         return row is not None
 
 
+def get_collection_source_url(filename):
+    safe_name = normalize_csv_filename(filename)
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT source_url FROM collections WHERE filename = ?",
+            (safe_name,),
+        ).fetchone()
+    return (row["source_url"] or "").strip() if row else ""
+
+
 def clear_collection(filename):
     safe_name = normalize_csv_filename(filename)
     with connect() as conn:
@@ -875,7 +885,7 @@ def get_history():
     with connect() as conn:
         rows = conn.execute(
             """
-            SELECT c.filename, c.tags_json, c.created_at, c.updated_at, COUNT(m.id) AS count
+            SELECT c.filename, c.source_url, c.tags_json, c.created_at, c.updated_at, COUNT(m.id) AS count
             FROM collections c
             LEFT JOIN movies m ON m.collection_id = c.id
             GROUP BY c.id
@@ -889,6 +899,7 @@ def get_history():
             "tags": _tags_from_json(row["tags_json"]),
             "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(row["created_at"])),
             "timestamp": row["updated_at"],
+            "has_source_url": bool((row["source_url"] or "").strip()),
         }
         for row in rows
     ]
@@ -1197,6 +1208,34 @@ def get_magnet_links(filename, required_tags=None):
             (safe_name,),
         ).fetchall()
     return [row["best_magnet_link"] for row in rows if _matches_tags(row["tags_json"], required_tags)]
+
+
+def get_magnet_links_for_codes(filename, codes):
+    safe_name = normalize_csv_filename(filename)
+    ordered_codes = []
+    seen = set()
+    for code in codes or []:
+        value = str(code or "").strip()
+        if value and value not in seen:
+            ordered_codes.append(value)
+            seen.add(value)
+    if not ordered_codes:
+        return []
+    placeholders = ",".join("?" for _ in ordered_codes)
+    with connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT m.code, m.best_magnet_link
+            FROM movies m
+            JOIN collections c ON c.id = m.collection_id
+            WHERE c.filename = ?
+              AND m.code IN ({placeholders})
+              AND m.best_magnet_link != ''
+            """,
+            [safe_name] + ordered_codes,
+        ).fetchall()
+    links_by_code = {row["code"]: row["best_magnet_link"] for row in rows}
+    return [links_by_code[code] for code in ordered_codes if links_by_code.get(code)]
 
 
 def delete_collections(filenames, data_dir):

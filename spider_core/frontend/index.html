@@ -650,15 +650,22 @@
             }
             box.innerHTML = visibleTasks.map(task => {
                 const rawName = task.final_filename || task.filename || '自动命名';
+                const taskId = escapeJs(task.task_id);
+                const copyIncrementalBtn = task.can_copy_incremental_magnets
+                    ? `<button onclick="copyTaskIncrementalMagnets('${taskId}')" title="复制新增影片磁力" aria-label="复制新增影片磁力" class="inline-flex h-6 w-6 items-center justify-center rounded bg-blue-50 text-sm font-bold text-blue-700 hover:bg-blue-100">⧉</button>`
+                    : '';
                 return `
-                <div class="grid grid-cols-[minmax(0,1fr)_52px_42px_72px_28px] items-center gap-2 px-3 py-2 text-xs ${task.task_id === queueStatus.current_task_id ? 'bg-blue-50' : 'bg-white'}">
+                <div class="grid grid-cols-[minmax(0,1fr)_52px_42px_72px_52px] items-center gap-1 px-3 py-2 text-xs ${task.task_id === queueStatus.current_task_id ? 'bg-blue-50' : 'bg-white'}">
                     <div class="min-w-0 truncate font-bold text-sm" title="${escapeHtml(displayName(rawName))}">${escapeHtml(displayName(rawName))}</div>
                     <div class="font-mono text-[10px] text-slate-400">${escapeHtml((task.task_id || '').slice(0, 8))}</div>
                     <div class="font-mono text-slate-600 text-right">${escapeHtml(task.progress || '0/0')}</div>
                     <div class="text-right">
                         <span class="inline-flex w-[72px] justify-center px-1.5 py-0.5 rounded text-xs font-bold ${stateClass(task.state)}">${stateLabel(task.state)}</span>
                     </div>
-                    <button onclick="deleteTaskById('${escapeJs(task.task_id)}')" title="删除任务" aria-label="删除任务" class="inline-flex h-6 w-6 items-center justify-center rounded bg-red-50 text-sm font-bold text-red-700 hover:bg-red-100">×</button>
+                    <div class="flex justify-end gap-1">
+                        ${copyIncrementalBtn}
+                        <button onclick="deleteTaskById('${taskId}')" title="删除任务" aria-label="删除任务" class="inline-flex h-6 w-6 items-center justify-center rounded bg-red-50 text-sm font-bold text-red-700 hover:bg-red-100">×</button>
+                    </div>
                 </div>
             `}).join('');
         }
@@ -793,6 +800,9 @@
                 const name = escapeHtml(item.name);
                 const shownName = escapeHtml(displayName(item.name));
                 const jsName = escapeJs(item.name);
+                const incrementalButton = item.has_source_url
+                    ? `<button onclick="enqueueCollectionIncremental('${jsName}', event)" title="增量爬取此集合" aria-label="增量爬取此集合" class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-indigo-50 text-sm font-bold text-indigo-700 hover:bg-indigo-100">⟳</button>`
+                    : `<button type="button" disabled title="缺少原始 URL，无法快捷增量" aria-label="缺少原始 URL，无法快捷增量" class="inline-flex h-6 w-6 shrink-0 cursor-not-allowed items-center justify-center rounded bg-slate-50 text-sm font-bold text-slate-300">⟳</button>`;
                 return `
                 <tr class="border-b border-slate-100 bg-white">
                     <td class="px-3 py-3 text-center"><input type="checkbox" class="collection-checkbox" value="${name}" onclick="updateBatchDeleteBtn()"></td>
@@ -800,7 +810,10 @@
                         <div class="flex min-w-0 items-start gap-2">
                             <button onclick="toggleCollection('${jsName}')" title="展开/收起" aria-label="展开或收起数据集合" class="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-slate-50 text-xs font-bold text-slate-700 hover:bg-slate-100"><span id="collection-toggle-${escapeHtml(item.name)}" class="inline-block transition-transform duration-200 ease-out">▾</span></button>
                             <div class="min-w-0">
-                                <div class="truncate font-bold" title="${shownName}">${shownName}</div>
+                                <div class="flex min-w-0 items-center gap-1">
+                                    <div class="min-w-0 flex-1 truncate font-bold" title="${shownName}">${shownName}</div>
+                                    ${incrementalButton}
+                                </div>
                                 <div class="truncate text-xs text-slate-400">${escapeHtml(item.time)} · ${((item.tags || []).length)} 个标签</div>
                             </div>
                         </div>
@@ -1427,6 +1440,13 @@
             URL.revokeObjectURL(url);
         }
 
+        async function copyTaskIncrementalMagnets(taskId) {
+            const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/incremental_magnets`).then(r => r.json());
+            if (res.code !== 200) return alert(res.msg || '读取失败');
+            await copyText((res.data || []).join('\n'));
+            alert(`已复制 ${res.data.length} 条新增影片磁力`);
+        }
+
         async function copyMagnets(name) {
             const res = await apiFetch(`/api/magnets?name=${encodeURIComponent(name)}${tagsQuery(name)}`).then(r => r.json());
             if (res.code !== 200) return alert(res.msg || '读取失败');
@@ -1478,6 +1498,15 @@
             }).then(r => r.json());
             alert(res.msg || '自动选择完成');
             await loadCollections();
+        }
+
+        async function enqueueCollectionIncremental(name, event) {
+            if (event) event.stopPropagation();
+            if (!confirm(`确定对「${displayName(name)}」执行增量爬取吗？`)) return;
+            const res = await apiFetch(`/api/collections/${encodeURIComponent(name)}/incremental_task`, { method: 'POST' }).then(r => r.json());
+            if (res.code !== 200) return alert(res.msg || '添加增量任务失败');
+            alert(res.msg || '任务已加入队列');
+            await refreshMonitor();
         }
 
         async function deleteFiles(names) {

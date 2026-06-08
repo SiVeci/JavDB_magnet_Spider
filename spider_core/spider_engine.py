@@ -245,12 +245,16 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
     page = 1
     movie_links = []
     start_index = 0
+    incremental_movie_codes = []
 
     if is_resume:
         chk = load_checkpoint()
         if chk:
             phase = chk.get('phase', 1)
             movie_links = chk.get('movie_links', [])
+            incremental_movie_codes = chk.get('incremental_movie_codes', [])
+            if not isinstance(incremental_movie_codes, list):
+                incremental_movie_codes = []
             if phase == 1:
                 current_url = chk.get('current_url')
                 page = chk.get('page', 1)
@@ -337,7 +341,7 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
 
         phase = 2
         start_index = 0
-        save_checkpoint({"phase": 2, "movie_links": movie_links, "current_index": 0})
+        save_checkpoint({"phase": 2, "movie_links": movie_links, "current_index": 0, "incremental_movie_codes": incremental_movie_codes})
 
     total_movies = len(movie_links)
     if total_movies == 0:
@@ -359,14 +363,14 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
             db_store.ensure_collection(output_filename, start_url)
 
         existing_codes = db_store.get_existing_codes(output_filename) if crawl_mode == 'incremental' else set()
-        new_added_count = 0
+        new_added_count = len(incremental_movie_codes) if crawl_mode == 'incremental' else 0
 
         for i in range(start_index, total_movies):
                 movie = movie_links[i]
                 if pause_or_cancel_task(
                     f"{i+1}/{total_movies}",
                     movie.get("code", "手动暂停"),
-                    {"phase": 2, "movie_links": movie_links, "current_index": i},
+                    {"phase": 2, "movie_links": movie_links, "current_index": i, "incremental_movie_codes": incremental_movie_codes},
                     "🛑 接收到暂停指令，磁力抓取已保存断点。",
                     "🛑 接收到取消指令，磁力抓取已终止。",
                 ):
@@ -386,7 +390,7 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
                     res = fetch_html(movie['url'], headers=headers, proxies=proxies)
 
                     if res.status_code in [403, 401, 503]:
-                        save_checkpoint({"phase": 2, "movie_links": movie_links, "current_index": i})
+                        save_checkpoint({"phase": 2, "movie_links": movie_links, "current_index": i, "incremental_movie_codes": incremental_movie_codes})
                         update_status("paused_need_cookie", progress_str, movie['code'], f"⚠️ 详情页被拦截(状态码{res.status_code})。任务已挂起，进度安全保存！")
                         return
 
@@ -406,6 +410,9 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
 
                         db_store.save_movie_result(output_filename, movie, best, valid_magnets)
                         new_added_count += 1
+                        if crawl_mode == 'incremental' and movie.get('code') and movie['code'] not in incremental_movie_codes:
+                            incremental_movie_codes.append(movie['code'])
+                            save_checkpoint({"phase": 2, "movie_links": movie_links, "current_index": i + 1, "incremental_movie_codes": incremental_movie_codes})
                         update_status("running", progress_str, movie['code'], f"成功: 获取到最高级资源 (Rank {best['rank']}, {round(best['size_mb'],2)}MB)")
                     else:
                         update_status("running", progress_str, movie['code'], f"跳过: 此页面无有效磁力链。")
@@ -414,6 +421,8 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
                     update_status("error", progress_str, movie['code'], f"提取失败: {str(e)}")
 
                 time.sleep(2)
+    if crawl_mode == 'incremental':
+        save_checkpoint({"phase": "finished", "movie_links": movie_links, "current_index": total_movies, "incremental_movie_codes": incremental_movie_codes})
     update_status("finished", f"{total_movies}/{total_movies}", "全部完成", "🎉 爬取任务圆满结束，文件已保存！", final_filename=output_filename, added_count=new_added_count)
 
 
