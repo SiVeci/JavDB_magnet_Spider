@@ -49,7 +49,7 @@ docker run -d \
   -e JAVDB_AUTH_TOKEN=请替换为你的访问令牌 \
   -v /你的路径/appdata/javdb_spider/data:/app/data \
   --restart=unless-stopped \
-  ghcr.io/你的用户名/javdb_spider:latest
+  ghcr.io/siveci/javdb_spider:latest
 ```
 *访问地址：`http://NAS_IP:8090`*
 
