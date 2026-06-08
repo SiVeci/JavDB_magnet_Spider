@@ -25,7 +25,7 @@ from storage_utils import (
 
 app = FastAPI()
 
-APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "1.5.0")
+APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "1.6.0")
 AUTH_HEADER = "X-JavDB-Token"
 PUBLIC_API_PATHS = {"/api/version"}
 QUEUE_LOCK = threading.RLock()
