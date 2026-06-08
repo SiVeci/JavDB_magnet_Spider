@@ -322,11 +322,18 @@ def _trackers_from_json(value):
     return _normalize_trackers(data if isinstance(data, list) else [])
 
 
-def _matches_tags(row_tags_json, required_tags):
+def _matches_tags(row_tags_json, required_tags, exclude_tags=None):
+    row_tags = set(_tags_from_json(row_tags_json))
+    
+    if exclude_tags:
+        excluded = set(_normalize_tags(exclude_tags))
+        if row_tags.intersection(excluded):
+            return False
+
     required = set(_normalize_tags(required_tags))
     if not required:
         return True
-    return required.issubset(set(_tags_from_json(row_tags_json)))
+    return required.issubset(row_tags)
 
 
 def _rebuild_collection_tags(conn, collection_id, now=None):
@@ -1150,7 +1157,7 @@ def update_magnet_check_result(magnet_id, check_status, seeders=0, leechers=0, c
     return True
 
 
-def _export_rows(conn, filename, required_tags=None):
+def _export_rows(conn, filename, required_tags=None, exclude_tags=None):
     safe_name = normalize_csv_filename(filename)
     rows = conn.execute(
         """
@@ -1163,7 +1170,7 @@ def _export_rows(conn, filename, required_tags=None):
         """,
         (safe_name,),
     ).fetchall()
-    rows = [row for row in rows if _matches_tags(row["tags_json"], required_tags)]
+    rows = [row for row in rows if _matches_tags(row["tags_json"], required_tags, exclude_tags)]
     return [
         {
             "影片番号": row["code"],
@@ -1179,12 +1186,12 @@ def _export_rows(conn, filename, required_tags=None):
     ]
 
 
-def export_collection_to_csv_bytes(filename, required_tags=None):
+def export_collection_to_csv_bytes(filename, required_tags=None, exclude_tags=None):
     safe_name = normalize_csv_filename(filename)
     with connect() as conn:
         if not conn.execute("SELECT 1 FROM collections WHERE filename = ?", (safe_name,)).fetchone():
             return None, safe_name
-        rows = _export_rows(conn, safe_name, required_tags)
+        rows = _export_rows(conn, safe_name, required_tags, exclude_tags)
 
     buffer = io.StringIO(newline="")
     buffer.write("\ufeff")
@@ -1194,7 +1201,7 @@ def export_collection_to_csv_bytes(filename, required_tags=None):
     return buffer.getvalue().encode("utf-8"), safe_name
 
 
-def get_magnet_links(filename, required_tags=None):
+def get_magnet_links(filename, required_tags=None, exclude_tags=None):
     safe_name = normalize_csv_filename(filename)
     with connect() as conn:
         rows = conn.execute(
@@ -1207,7 +1214,7 @@ def get_magnet_links(filename, required_tags=None):
             """,
             (safe_name,),
         ).fetchall()
-    return [row["best_magnet_link"] for row in rows if _matches_tags(row["tags_json"], required_tags)]
+    return [row["best_magnet_link"] for row in rows if _matches_tags(row["tags_json"], required_tags, exclude_tags)]
 
 
 def get_magnet_links_for_codes(filename, codes):

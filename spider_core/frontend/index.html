@@ -226,7 +226,9 @@
         let expandedMovieId = null;
         let collectionMovieCache = {};
         let collectionTagFilters = {};
+        let collectionExcludeFilters = {};
         let openTagDropdown = null;
+        let openExcludeDropdown = null;
         let openMagnetCheckMenu = null;
         let activeMagnetCheckJob = null;
         let magnetCheckPollInterval = null;
@@ -348,19 +350,28 @@
             return collectionTagFilters[filterKey(name)] || [];
         }
 
-        function tagsQuery(name) {
-            const tags = selectedCollectionTags(name);
-            return tags.length ? `&tags=${encodeURIComponent(tags.join(','))}` : '';
+        function selectedExcludeTags(name) {
+            return collectionExcludeFilters[filterKey(name)] || [];
         }
 
-        function movieMatchesTags(movie, selectedTags) {
-            if (!selectedTags.length) return true;
+        function tagsQuery(name) {
+            const tags = selectedCollectionTags(name);
+            const excludes = selectedExcludeTags(name);
+            let query = '';
+            if (tags.length) query += `&tags=${encodeURIComponent(tags.join(','))}`;
+            if (excludes.length) query += `&exclude_tags=${encodeURIComponent(excludes.join(','))}`;
+            return query;
+        }
+
+        function movieMatchesTags(movie, selectedTags, excludeTags) {
             const movieTags = new Set(movie.tags || []);
+            if (excludeTags && excludeTags.length && excludeTags.some(tag => movieTags.has(tag))) return false;
+            if (!selectedTags.length) return true;
             return selectedTags.every(tag => movieTags.has(tag));
         }
 
-        function filterMovies(movies, selectedTags) {
-            return (movies || []).filter(movie => movieMatchesTags(movie, selectedTags));
+        function filterMovies(movies, selectedTags, excludeTags) {
+            return (movies || []).filter(movie => movieMatchesTags(movie, selectedTags, excludeTags));
         }
 
         function collectionHealthCounts(movies) {
@@ -960,7 +971,8 @@
             const body = document.getElementById(`collection-body-${collectionName}`);
             const data = collectionMovieCache[filterKey(collectionName)] || { movies: [], available_tags: [], total_count: 0 };
             const selected = selectedCollectionTags(collectionName);
-            const filtered = filterMovies(data.movies, selected);
+            const excluded = selectedExcludeTags(collectionName);
+            const filtered = filterMovies(data.movies, selected, excluded);
             body.innerHTML = renderCollectionFilter(collectionName, data.available_tags || [], filtered.length, data.movies.length, filtered)
                 + renderMovies(collectionName, filtered);
             fitMovieTags(body);
@@ -968,8 +980,9 @@
 
         function renderCollectionFilter(collectionName, availableTags, filteredCount, totalCount, filteredMovies) {
             const selected = selectedCollectionTags(collectionName);
-            const label = selected.length ? `${selected.length} 个` : '全部';
+            const excluded = selectedExcludeTags(collectionName);
             const isOpen = openTagDropdown === collectionName;
+            const isExcludeOpen = openExcludeDropdown === collectionName;
             return `
                 <div class="mb-3 flex items-center gap-2">
                     <div class="relative min-w-0" data-menu-root="tag-filter">
@@ -980,6 +993,19 @@
                         <div id="tag-dropdown-${escapeHtml(collectionName)}" onclick="event.stopPropagation()" class="${isOpen ? '' : 'hidden'} absolute z-20 mt-1 w-64 max-h-72 overflow-y-auto rounded border border-slate-200 bg-white shadow-lg p-2">
                             ${renderTagOption(collectionName, 'all', '全部', selected.length === 0)}
                             ${(availableTags || []).map(tag => renderTagOption(collectionName, tag, tag, selected.includes(tag))).join('')}
+                        </div>
+                    </div>
+                    <div class="relative shrink-0" data-menu-root="exclude-filter">
+                        <button type="button" onclick="toggleExcludeDropdown('${escapeJs(collectionName)}', event)" class="flex h-9 min-w-[72px] items-center justify-between gap-1 rounded border px-2 text-left text-xs font-bold ${excluded.length ? 'border-red-300 bg-red-50 text-red-700' : 'border-slate-200 bg-white text-slate-500'}">
+                            <span class="min-w-0 truncate">${excluded.length ? `排除: ${excluded.length}个` : '排除'}</span>
+                            <span class="shrink-0">${isExcludeOpen ? '▲' : '▼'}</span>
+                        </button>
+                        <div onclick="event.stopPropagation()" class="${isExcludeOpen ? '' : 'hidden'} absolute z-20 mt-1 w-64 max-h-72 overflow-y-auto rounded border border-slate-200 bg-white shadow-lg p-2">
+                            <label class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 text-xs cursor-pointer text-red-600 font-bold">
+                                <input type="checkbox" ${excluded.length === 0 ? '' : ''} onchange="clearExcludeTags('${escapeJs(collectionName)}')">
+                                <span>清除排除</span>
+                            </label>
+                            ${(availableTags || []).map(tag => renderExcludeOption(collectionName, tag, excluded.includes(tag))).join('')}
                         </div>
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
@@ -1131,8 +1157,41 @@
         function toggleCollectionTagDropdown(collectionName, event = null) {
             if (event) event.stopPropagation();
             openTagDropdown = openTagDropdown === collectionName ? null : collectionName;
+            openExcludeDropdown = null;
             openMagnetCheckMenu = null;
             renderCollectionBody(collectionName);
+        }
+
+        function toggleExcludeDropdown(collectionName, event = null) {
+            if (event) event.stopPropagation();
+            openExcludeDropdown = openExcludeDropdown === collectionName ? null : collectionName;
+            openTagDropdown = null;
+            openMagnetCheckMenu = null;
+            renderCollectionBody(collectionName);
+        }
+
+        function toggleExcludeTag(collectionName, value) {
+            const key = filterKey(collectionName);
+            const current = new Set(selectedExcludeTags(collectionName));
+            if (current.has(value)) current.delete(value);
+            else current.add(value);
+            collectionExcludeFilters[key] = Array.from(current);
+            expandedMovieId = null;
+            renderCollectionBody(collectionName);
+        }
+
+        function clearExcludeTags(collectionName) {
+            collectionExcludeFilters[filterKey(collectionName)] = [];
+            expandedMovieId = null;
+            renderCollectionBody(collectionName);
+        }
+
+        function renderExcludeOption(collectionName, tag, checked) {
+            return `<label class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-red-50 text-xs cursor-pointer">
+                <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleExcludeTag('${escapeJs(collectionName)}', '${escapeJs(tag)}')"
+                    class="accent-red-500">
+                <span class="truncate ${checked ? 'text-red-700 font-bold' : ''}" title="${escapeHtml(tag)}">${escapeHtml(tag)}</span>
+            </label>`;
         }
 
         function toggleCollectionMagnetCheckMenu(collectionName, event = null) {
@@ -1179,17 +1238,18 @@
         }
 
         function closeOpenMenus() {
-            if (!openTagDropdown && !openMagnetCheckMenu) return;
+            if (!openTagDropdown && !openExcludeDropdown && !openMagnetCheckMenu) return;
             const collectionName = expandedCollectionName;
             openTagDropdown = null;
+            openExcludeDropdown = null;
             openMagnetCheckMenu = null;
             if (collectionName) renderCollectionBody(collectionName);
         }
 
         function handleDocumentClick(event) {
-            if (!openTagDropdown && !openMagnetCheckMenu) return;
+            if (!openTagDropdown && !openExcludeDropdown && !openMagnetCheckMenu) return;
             const target = event.target;
-            if (target.closest('[data-menu-root="tag-filter"]') || target.closest('[data-menu-root="magnet-check"]')) return;
+            if (target.closest('[data-menu-root="tag-filter"]') || target.closest('[data-menu-root="exclude-filter"]') || target.closest('[data-menu-root="magnet-check"]')) return;
             closeOpenMenus();
         }
 
