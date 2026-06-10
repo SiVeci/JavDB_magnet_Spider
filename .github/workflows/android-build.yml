@@ -26,7 +26,14 @@ jobs:
         run: chmod +x gradlew
       - name: Inject Version Tag
         run: |
-          sed -i "s/\"dev-local\"/\"${{ github.event.inputs.version }}\"/g" spider_core/main.py
+          sed -i 's/JAVDB_SPIDER_VERSION", "[^"]*"/JAVDB_SPIDER_VERSION", "${{ github.event.inputs.version }}"/' spider_core/main.py
+      - name: Generate signing config (local.properties)
+        run: |
+          {
+            echo "storePassword=${{ secrets.STORE_PASSWORD }}"
+            echo "keyAlias=${{ secrets.KEY_ALIAS }}"
+            echo "keyPassword=${{ secrets.KEY_PASSWORD }}"
+          } >> local.properties
       - name: Build Release APK
         run: ./gradlew assembleRelease
       - name: Rename APK File
