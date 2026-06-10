@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.IBinder;
 import android.os.Looper;
 import android.view.Gravity;
@@ -40,11 +41,19 @@ public class SpiderService extends Service {
     private WebView stealthWebView;
     private Handler mainHandler;
     private Runnable statusUpdater;
+    // 后台线程：用于状态文件 I/O，避免在主线程读 status.json 造成 ANR
+    private HandlerThread statusThread;
+    private Handler statusHandler;
 
     @Override
     public void onCreate() {
         super.onCreate();
         mainHandler = new Handler(Looper.getMainLooper());
+
+        // 后台线程处理状态文件读取，避免主线程 I/O 导致 ANR
+        statusThread = new HandlerThread("spider-status");
+        statusThread.start();
+        statusHandler = new Handler(statusThread.getLooper());
 
         // 1. 注册桥梁，让 Python 认识这个 Service
         WebViewBridge.activeService = this;
@@ -160,10 +169,34 @@ public class SpiderService extends Service {
             } catch (PyException e) {
                 // 如果 Python 内部报错，不仅不会闪退，还会把详细报错打在控制台
                 Log.e("PythonSpider", "❌ Python 引擎崩溃啦:\n" + e.getMessage(), e);
+                onPythonBackendStopped("Python 引擎异常退出");
             } catch (Exception e) {
                 Log.e("PythonSpider", "❌ 安卓系统底层拦截:\n" + e.getMessage(), e);
+                onPythonBackendStopped("引擎被系统中断");
             }
         }).start();
+    }
+
+    /**
+     * Python 后端线程结束（崩溃或 uvicorn 退出）时调用：
+     * 解除桥接引用并更新通知告知用户，避免服务变成无人知晓的僵尸。
+     * 不做自动重启，以免崩溃循环时反复拉起导致死循环。
+     */
+    private void onPythonBackendStopped(String reason) {
+        WebViewBridge.activeService = null;
+        try {
+            NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            Notification.Builder builder = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ?
+                    new Notification.Builder(this, "spider_channel") : new Notification.Builder(this);
+            Notification notification = builder.setContentTitle("❌ 引擎已停止")
+                    .setContentText(reason + "，请回到 App 重新启动引擎")
+                    .setSmallIcon(android.R.drawable.ic_menu_compass)
+                    .setOnlyAlertOnce(true)
+                    .build();
+            nm.notify(1, notification);
+        } catch (Exception ignored) {
+            // 通知失败不应再抛出
+        }
     }
 
     private Notification createNotification() {
@@ -188,10 +221,10 @@ public class SpiderService extends Service {
             @Override
             public void run() {
                 updateNotificationFromJson();
-                mainHandler.postDelayed(this, 2000);
+                statusHandler.postDelayed(this, 2000);
             }
         };
-        mainHandler.postDelayed(statusUpdater, 2000);
+        statusHandler.postDelayed(statusUpdater, 2000);
     }
 
     private void updateNotificationFromJson() {
@@ -260,8 +293,12 @@ public class SpiderService extends Service {
     public void onDestroy() {
         super.onDestroy();
         WebViewBridge.activeService = null;
-        if (statusUpdater != null) {
-            mainHandler.removeCallbacks(statusUpdater);
+        if (statusUpdater != null && statusHandler != null) {
+            statusHandler.removeCallbacks(statusUpdater);
+        }
+        if (statusThread != null) {
+            statusThread.quitSafely();
+            statusThread = null;
         }
         if (windowManager != null && stealthWebView != null) {
             windowManager.removeView(stealthWebView);

@@ -12,9 +12,11 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.graphics.Color;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
 import android.webkit.CookieManager;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -123,8 +125,8 @@ public class MainActivity extends AppCompatActivity {
 
         visibleWebView.setWebViewClient(new WebViewClient() {
             @Override
-            public boolean shouldOverrideUrlLoading(WebView view, String url) {
-                view.loadUrl(url);
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                view.loadUrl(request.getUrl().toString());
                 return true;
             }
         });
@@ -192,14 +194,53 @@ public class MainActivity extends AppCompatActivity {
         setEngineStatusRunning();
     }
 
-    // ================= UI 状态更新 =================
-    private void setEngineStatusRunning() {
-        if (tvEngineStatus != null) {
-            tvEngineStatus.setText("🟢 引擎状态：运行中 (端口 8000)");
-            tvEngineStatus.setTextColor(Color.parseColor("#16A34A")); // Tailwind Green-600
-            if (tvEngineStatus.getParent() instanceof MaterialCardView) {
-                ((MaterialCardView) tvEngineStatus.getParent()).setCardBackgroundColor(Color.parseColor("#DCFCE7")); // Tailwind Green-50
+    // ================= 返回键处理 =================
+    @Override
+    public void onBackPressed() {
+        // 登录页可见时，返回键回到控制台而非直接退出应用
+        if (loginContainer != null && loginContainer.getVisibility() == View.VISIBLE) {
+            loginContainer.setVisibility(View.GONE);
+            if (controlPanel != null) {
+                controlPanel.setVisibility(View.VISIBLE);
             }
+            if (visibleWebView != null) {
+                visibleWebView.loadUrl("about:blank");
+            }
+            return;
         }
+        super.onBackPressed();
+    }
+
+    // ================= WebView 生命周期管理（防内存泄漏） =================
+    @Override
+    protected void onPause() {
+        if (visibleWebView != null) {
+            visibleWebView.onPause();
+        }
+        super.onPause();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (visibleWebView != null) {
+            visibleWebView.onResume();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (visibleWebView != null) {
+            // 先从父容器移除，断开视图树引用，再销毁，彻底避免 WebView 泄漏 Activity
+            ViewGroup parent = (ViewGroup) visibleWebView.getParent();
+            if (parent != null) {
+                parent.removeView(visibleWebView);
+            }
+            visibleWebView.stopLoading();
+            visibleWebView.setWebViewClient(null);
+            visibleWebView.destroy();
+            visibleWebView = null;
+        }
+        super.onDestroy();
     }
 }
