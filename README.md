@@ -29,6 +29,7 @@
 - **标签解析与动态过滤**：爬取时自动提取并保存每部影片的“类别/标签”信息。WebUI 支持基于标签对抓取结果进行多条件组合筛选，实现按需定制 CSV 导出与一键复制。
 - **过盾机制**：采用 `curl_cffi` 模拟 TLS 指纹，稳定穿透 Cloudflare 等网络防护。
 - **系统安全**：严格规范文件路径校验以防止目录穿透，在 PC 及 Docker 端默认启用 `JAVDB_AUTH_TOKEN` 接口鉴权保护。
+- **局域网访问**：Android 端支持开启局域网访问模式，允许同一 WiFi 下的其它设备（电脑、平板等）远程访问 WebUI 控制台，无需在手机上操作。
 
 ---
 
@@ -119,16 +120,25 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --no-access-log
 
 ## 项目结构
 ```text
-├── app/                # Android 原生 Java 代码与资源
-├── spider_core/        # 核心 Python 逻辑 (三端共享)
-│   ├── frontend/       # WebUI 静态资源
-│   ├── main.py         # FastAPI 路由入口
-│   ├── spider_engine.py # 爬虫核心引擎
-│   ├── magnet_checker.py # 磁力链接健康检测模块
-│   └── db_store.py     # 数据库操作与存储层
-├── Dockerfile          # Docker 构建脚本
-├── build.gradle        # 安卓构建配置
-└── requirements.txt    # Python 依赖清单
+├── app/                        # Android 原生 Java 代码与资源
+│   └── src/main/java/.../      # MainActivity, SpiderService, WebViewBridge
+├── spider_core/                # 核心 Python 逻辑 (三端共享)
+│   ├── frontend/               # WebUI 静态资源
+│   │   ├── css/                # 样式文件 (variables, base, components, pages)
+│   │   └── js/                 # 前端模块 (app, movies, magnets, tasks, settings, state, api, utils)
+│   ├── routers/                # FastAPI 路由层 (magnets, movies, settings, storage, tasks)
+│   ├── services/               # 业务服务层 (magnet_service)
+│   ├── main.py                 # FastAPI 入口与中间件
+│   ├── spider_engine.py        # 爬虫核心引擎
+│   ├── magnet_checker.py       # 磁力链接健康检测模块
+│   ├── movie_repo.py           # 影片数据仓库
+│   ├── task_repo.py            # 任务数据仓库
+│   ├── settings_repo.py        # 配置数据仓库
+│   ├── export_service.py       # CSV 导出服务
+│   └── db_store.py             # 数据库连接与基础操作
+├── Dockerfile                  # Docker 构建脚本
+├── build.gradle                # 安卓构建配置
+└── requirements.txt            # Python 依赖清单
 ```
 
 ---
