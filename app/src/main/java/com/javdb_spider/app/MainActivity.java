@@ -194,6 +194,17 @@ public class MainActivity extends AppCompatActivity {
         setEngineStatusRunning();
     }
 
+    // ================= UI 状态更新 =================
+    private void setEngineStatusRunning() {
+        if (tvEngineStatus != null) {
+            tvEngineStatus.setText("🟢 引擎状态：运行中 (端口 8000)");
+            tvEngineStatus.setTextColor(Color.parseColor("#16A34A")); // Tailwind Green-600
+            if (tvEngineStatus.getParent() instanceof MaterialCardView) {
+                ((MaterialCardView) tvEngineStatus.getParent()).setCardBackgroundColor(Color.parseColor("#DCFCE7")); // Tailwind Green-50
+            }
+        }
+    }
+
     // ================= 返回键处理 =================
     @Override
     public void onBackPressed() {
