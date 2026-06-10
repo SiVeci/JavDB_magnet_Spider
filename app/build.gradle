@@ -10,6 +10,11 @@ def keystorePropertiesFile = rootProject.file("local.properties")
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
+// 凭据是否齐全：齐全才启用 release 签名；否则 release 构建回退到默认（未签名/调试签名），
+// 这样在未配置凭据的机器上 debug 构建（Run/Debug）也能直接跑，不被签名卡住。
+def hasReleaseSigning = keystoreProperties['storePassword'] != null &&
+        keystoreProperties['keyAlias'] != null &&
+        keystoreProperties['keyPassword'] != null
 
 android {
     namespace 'com.javdb_spider.app'
@@ -32,22 +37,28 @@ android {
     }
     signingConfigs {
         release {
-            storeFile file("javdb_spider.jks")
-            storePassword keystoreProperties['storePassword']
-            keyAlias keystoreProperties['keyAlias']
-            keyPassword keystoreProperties['keyPassword']
+            // 仅在凭据齐全时填充，避免缺失时 Gradle 校验报 "missing required property"
+            if (hasReleaseSigning) {
+                storeFile file("javdb_spider.jks")
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
         }
     }
 
     buildTypes {
         debug {
-            signingConfig signingConfigs.release
+            // debug 构建使用 Android 默认调试签名，无需任何凭据，Run/Debug 可直接运行
         }
 
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            // 凭据齐全才用 release 签名；否则不指定签名（需自行在 local.properties 配置后再出正式包）
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
     }
     compileOptions {
