@@ -74,7 +74,14 @@ def get_tags(req: TagConfigRequest):
         }
         proxy = req.proxies if req.proxies is not None else runtime.get("proxies")
         proxy_dict = build_proxy_dict(proxy)
-        response = fetch_html(base_url, headers=headers, proxies=proxy_dict)
+        try:
+            response = fetch_html(base_url, headers=headers, proxies=proxy_dict)
+        except Exception as e:
+            # 网络层异常（TLS 握手失败、超时、连接被拒、代理不可用等）。
+            return JSONResponse(
+                status_code=502,
+                content={"code": 502, "msg": f"标签页请求失败：{str(e)}"},
+            )
         if response.status_code != 200:
             return JSONResponse(
                 status_code=response.status_code if response.status_code >= 400 else 400,

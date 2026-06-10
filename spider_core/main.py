@@ -247,11 +247,19 @@ def prepare_task_config(config: TaskConfig):
         )
 
     start_url = ensure_zh_locale(config.start_url)
-    response = fetch_html(
-        start_url,
-        headers=runtime_headers(runtime),
-        proxies=build_proxy_dict(runtime.get("proxies")),
-    )
+    try:
+        response = fetch_html(
+            start_url,
+            headers=runtime_headers(runtime),
+            proxies=build_proxy_dict(runtime.get("proxies")),
+        )
+    except Exception as e:
+        # 网络层异常（TLS 握手失败、超时、连接被拒、代理不可用等）。
+        # 收口为友好响应，避免异常冒泡到 ASGI 层打出整页 traceback。
+        return JSONResponse(
+            status_code=502,
+            content={"code": 502, "msg": f"入队预检查请求失败：{str(e)}"},
+        )
     if response.status_code != 200:
         return JSONResponse(
             status_code=response.status_code if response.status_code >= 400 else 400,

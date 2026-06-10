@@ -288,6 +288,11 @@ class DbBackedApiTest(unittest.TestCase):
 
         import main
 
+        # 首次 import main 会在模块级执行 db_store.configure(DATA_DIR=spider_core/data)，
+        # 抢回 _DB_PATH。这里在 import 之后再次 configure，确保 DB 始终落在隔离的 tempdir，
+        # 不污染项目源码树下的 spider_core/data。
+        db_store.configure(self.tmpdir.name)
+
         self.main = main
         self.old_data_dir = main.DATA_DIR
         main.DATA_DIR = self.tmpdir.name

@@ -55,6 +55,9 @@ class TaskEnqueueTest(unittest.TestCase):
         db_store.configure(self.tmpdir.name)
         import main
 
+        # import main 模块级会 configure(spider_core/data)，import 后再次 configure 确保 DB 隔离在 tempdir。
+        db_store.configure(self.tmpdir.name)
+
         self.main = main
         self.old_data_dir = main.DATA_DIR
         main.DATA_DIR = self.tmpdir.name
