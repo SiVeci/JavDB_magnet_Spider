@@ -1,0 +1,9 @@
+/*
+ * base.css — 基础与全局自定义样式
+ * 页面整体排版与配色由 Tailwind 实用类（HTML 内联）负责，
+ * 此处仅保留无法用实用类表达的全局自定义样式。
+ */
+
+/* 自定义滚动条：任务列表与运行日志区 */
+.log-box::-webkit-scrollbar { width: 6px; }
+.log-box::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }

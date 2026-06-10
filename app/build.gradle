@@ -3,6 +3,14 @@ plugins {
     id 'com.chaquo.python'
 }
 
+// 从 local.properties 读取签名凭据，避免明文写在版本控制的 build.gradle 中。
+// local.properties 已被 .gitignore 忽略，不会提交到仓库。
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("local.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace 'com.javdb_spider.app'
     compileSdk {
@@ -25,9 +33,9 @@ android {
     signingConfigs {
         release {
             storeFile file("javdb_spider.jks")
-            storePassword "123456"
-            keyAlias "javdb"
-            keyPassword "123456"
+            storePassword keystoreProperties['storePassword']
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
         }
     }
 

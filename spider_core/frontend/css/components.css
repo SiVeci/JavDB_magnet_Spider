@@ -1,0 +1,47 @@
+/*
+ * components.css — 通用组件样式
+ * 目前包含 Toast 提示组件（替代阻塞式 alert）。
+ * 其余按钮 / 卡片 / 表格 / 弹层等组件样式仍由 Tailwind 实用类内联实现。
+ */
+
+/* Toast 容器：固定在顶部居中，不参与文档流、不阻塞交互 */
+#toast-container {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 60;                 /* 高于鉴权遮罩(z-50) */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;        /* 不拦截底层点击 */
+    width: max-content;
+    max-width: 90vw;
+}
+
+/* 单条 Toast */
+.toast {
+    pointer-events: auto;
+    max-width: 90vw;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--toast-text);
+    background-color: var(--toast-info-bg);
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
+    word-break: break-word;
+    white-space: pre-wrap;       /* 保留消息中的换行 */
+    opacity: 0;
+    transform: translateY(-8px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.toast-show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.toast-success { background-color: var(--toast-success-bg); }
+.toast-error { background-color: var(--toast-error-bg); }

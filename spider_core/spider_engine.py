@@ -115,7 +115,7 @@ def update_status(state="idle", progress="", current="", log_msg=None, clear_log
             status_data["logs"] = old_data.get("logs", [])[-20:]
             if not final_filename and "final_filename" in old_data:
                 status_data["final_filename"] = normalize_csv_filename(old_data["final_filename"])
-        except:
+        except (json.JSONDecodeError, KeyError, OSError):
             pass
 
     if log_msg:

@@ -9,7 +9,8 @@ public class WebViewBridge {
     private static final long FETCH_TIMEOUT_SECONDS = 45;
 
     // 保存当前正在运行的后台服务实例
-    public static SpiderService activeService = null;
+    // volatile：主线程写入、后台线程读取，保证跨线程可见性
+    public static volatile SpiderService activeService = null;
 
     public interface HtmlCallback {
         void onResult(String html);

@@ -1,0 +1,10 @@
+/*
+ * variables.css — 主题令牌（CSS 自定义属性）
+ * 供自定义组件（如 Toast）引用，颜色取值与页面 Tailwind 配色保持一致。
+ */
+:root {
+    --toast-info-bg: #1e293b;     /* slate-800 */
+    --toast-success-bg: #047857;  /* emerald-700 */
+    --toast-error-bg: #b91c1c;    /* red-700 */
+    --toast-text: #f8fafc;        /* slate-50 */
+}
