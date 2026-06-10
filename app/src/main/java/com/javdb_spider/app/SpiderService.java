@@ -45,6 +45,11 @@ public class SpiderService extends Service {
     private HandlerThread statusThread;
     private Handler statusHandler;
 
+    // 局域网访问模式标志；由 Intent Extra 从 MainActivity 传入
+    private boolean lanMode = false;
+    // 防止服务因系统重启 (START_STICKY) 而重复启动 Python 后端
+    private boolean backendStarted = false;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -64,11 +69,23 @@ public class SpiderService extends Service {
         // 3. 初始化 1x1 像素隐藏浏览器
         initStealthWebView();
 
-        // 4. 启动 Python FastAPI 后端
-        startPythonBackend();
-        
+        // 4. Python 后端在 onStartCommand() 中启动（需要先从 Intent 读取 lan_mode）
+
         // 5. 启动通知栏进度同步
         startStatusUpdater();
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null) {
+            lanMode = intent.getBooleanExtra("lan_mode", false);
+        }
+        // 防止 START_STICKY 重启时重复启动 Python 后端
+        if (!backendStarted) {
+            backendStarted = true;
+            startPythonBackend();
+        }
+        return START_STICKY;
     }
 
     private void initStealthWebView() {
@@ -153,6 +170,7 @@ public class SpiderService extends Service {
     }
 
     private void startPythonBackend() {
+        final String host = lanMode ? "0.0.0.0" : "127.0.0.1";
         new Thread(() -> {
             try {
                 if (!Python.isStarted()) {
@@ -162,8 +180,8 @@ public class SpiderService extends Service {
                 Python py = Python.getInstance();
                 PyObject mainModule = py.getModule("main");
 
-                Log.d("PythonSpider", "正在启动 Uvicorn 服务...");
-                mainModule.callAttr("start_server");
+                Log.d("PythonSpider", "正在启动 Uvicorn 服务，host=" + host);
+                mainModule.callAttr("start_server", host);
                 Log.d("PythonSpider", "Uvicorn 服务安全退出");
 
             } catch (PyException e) {
@@ -210,7 +228,7 @@ public class SpiderService extends Service {
                 new Notification.Builder(this, channelId) : new Notification.Builder(this);
 
         return builder.setContentTitle("JavDB 爬虫引擎运行中")
-                .setContentText("127.0.0.1:8000 已开启，请前往浏览器配置")
+                .setContentText(lanMode ? "局域网访问已开启，端口 8000" : "127.0.0.1:8000 已开启，请前往浏览器配置")
                 .setSmallIcon(android.R.drawable.ic_menu_compass) // 临时用个系统图标
                 .setOnlyAlertOnce(true) // 重要：避免每次更新通知时发出声音或震动
                 .build();
@@ -246,7 +264,7 @@ public class SpiderService extends Service {
             String current = json.optString("current", "");
 
             String title = "JavDB 引擎运行中";
-            String text = "127.0.0.1:8000 已开启，请前往控制台配置";
+            String text = lanMode ? "局域网访问已开启，端口 8000" : "127.0.0.1:8000 已开启，请前往控制台配置";
 
             switch (state) {
                 case "running":

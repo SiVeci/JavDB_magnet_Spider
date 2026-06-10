@@ -414,7 +414,7 @@ function renderMagnetRow(movieId, magnet) {
             <td class="p-2 text-center align-middle whitespace-nowrap">${formatGb(magnet.size_mb)}</td>
             <td class="p-2 text-center align-middle">
                 <div class="flex justify-center gap-1">
-                    <button onclick="copyText('${escapeJs(magnet.link)}')" title="复制磁力链接" aria-label="复制磁力链接" class="inline-flex h-7 w-7 items-center justify-center rounded bg-blue-50 text-blue-700 hover:bg-blue-100">
+                    <button onclick="copyTextWithToast('${escapeJs(magnet.link)}', '已复制磁力链接')" title="复制磁力链接" aria-label="复制磁力链接" class="inline-flex h-7 w-7 items-center justify-center rounded bg-blue-50 text-blue-700 hover:bg-blue-100">
                         <span class="text-sm leading-none">⧉</span>
                     </button>
                 </div>

@@ -115,27 +115,8 @@ function renderGlobalMagnetCheckButton() {
     slot.innerHTML = renderMagnetCheckButton('all', 'all');
 }
 
-function renderMagnetCheckProgress(collectionName) {
-    const job = activeMagnetCheckJob;
-    if (!job || job.scope !== 'collection' || job.target !== collectionName) return '';
-    const total = Number(job.total || 0);
-    const completed = Number(job.completed || 0);
-    const percent = total ? Math.round(completed * 100 / total) : 0;
-    return `
-        <div class="mb-3 rounded border border-emerald-100 bg-emerald-50 p-3 text-xs text-slate-700">
-            <div class="mb-2 flex items-center justify-between gap-3">
-                <div class="font-bold">批量检测磁力: ${completed}/${total} (${percent}%)</div>
-                ${job.running ? `<button type="button" onclick="cancelMagnetCheck('${escapeJs(job.job_id)}')" class="rounded bg-white px-2 py-1 font-bold text-red-700 hover:bg-red-50">取消检测</button>` : `<span class="font-bold text-emerald-700">${escapeHtml(job.message || '检测完成')}</span>`}
-            </div>
-            <div class="mb-2 h-2 rounded-full bg-white"><div class="h-2 rounded-full bg-emerald-600 transition-all" style="width:${percent}%"></div></div>
-            <div class="flex flex-wrap gap-3">
-                <span>🟢 有效: ${job.active || 0}</span>
-                <span>🟡 弱: ${job.weak || 0}</span>
-                <span>🔴 无效: ${job.dead || 0}</span>
-                <span>❌ 失败: ${job.failed || 0}</span>
-            </div>
-        </div>`;
-}
+// 注：批量检测进度条 + “取消检测”按钮 UI（原 renderMagnetCheckProgress）此前从未被渲染调用，
+// 已作为死代码移除以免误导。cancelMagnetCheck() 取消能力保留，待后续把入口正式接入检测按钮区。
 
 /* ===== 检测选项菜单 ===== */
 
@@ -177,6 +158,7 @@ async function startMovieMagnetCheck(movieId, failedOnly = false) {
     if (res.code !== 200 && res.code !== 409) {
         return showToast(res.msg || '检测启动失败');
     }
+    if (res.code === 409) showToast(res.msg || '磁力检测任务正在运行');
     watchMagnetCheckJob(res.data);
     if (expandedCollectionName) {
         updateRenderedMagnetCheckButtons();
@@ -190,6 +172,7 @@ async function startCollectionMagnetCheck(collectionName, failedOnly = false) {
     const suffix = failedOnly ? '?failed_only=1' : '';
     const res = await apiFetch(`/api/collections/${encodeURIComponent(collectionName)}/check_magnets${suffix}`, { method: 'POST' }).then(r => r.json());
     if (res.code !== 200 && res.code !== 409) return showToast(res.msg || '检测启动失败');
+    if (res.code === 409) showToast(res.msg || '磁力检测任务正在运行');
     watchMagnetCheckJob(res.data);
     renderCollectionBody(collectionName);
 }
@@ -200,6 +183,7 @@ async function startAllMagnetCheck(_target = 'all', failedOnly = false) {
     const suffix = failedOnly ? '?failed_only=1' : '';
     const res = await apiFetch(`/api/magnets/check_all${suffix}`, { method: 'POST' }).then(r => r.json());
     if (res.code !== 200 && res.code !== 409) return showToast(res.msg || '检测启动失败');
+    if (res.code === 409) showToast(res.msg || '磁力检测任务正在运行');
     watchMagnetCheckJob(res.data);
     updateRenderedMagnetCheckButtons();
 }

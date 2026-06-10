@@ -87,3 +87,10 @@ async function copyText(text) {
     }
     return copied;
 }
+
+/* 复制并给出 Toast 反馈（用于单条磁力等需要即时提示的场景）。 */
+async function copyTextWithToast(text, okMsg = '已复制') {
+    const copied = await copyText(text);
+    showToast(copied ? okMsg : '自动复制失败，请手动复制');
+    return copied;
+}

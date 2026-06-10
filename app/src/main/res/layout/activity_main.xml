@@ -134,6 +134,31 @@
                             android:textColor="#9CA3AF"
                             android:textSize="13sp"
                             android:layout_marginBottom="12dp"/>
+                        <!-- 局域网访问勾选项 -->
+                        <CheckBox
+                            android:id="@+id/cb_lan_access"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text="开启局域网访问（允许同一 WiFi 下的其它设备访问控制台）"
+                            android:textColor="#6B7280"
+                            android:textSize="13sp"
+                            android:buttonTint="#4F46E5"
+                            android:layout_marginBottom="8dp"/>
+
+                        <!-- 局域网地址展示（引擎启动后显示） -->
+                        <TextView
+                            android:id="@+id/tv_lan_address"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:text=""
+                            android:textColor="#10B981"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:paddingHorizontal="4dp"
+                            android:paddingVertical="6dp"
+                            android:layout_marginBottom="8dp"
+                            android:visibility="gone"/>
+
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_start"
                             android:layout_width="match_parent"

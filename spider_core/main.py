@@ -67,7 +67,7 @@ for _sub in ("css", "js"):
         app.mount(f"/{_sub}", StaticFiles(directory=_static_dir), name=_sub)
 
 
-APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "1.7.0")
+APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "1.8.0")
 AUTH_HEADER = "X-JavDB-Token"
 PUBLIC_API_PATHS = {"/api/version"}
 QUEUE_LOCK = threading.RLock()
@@ -531,10 +531,10 @@ from routers.settings import (  # noqa: E402,F401
 from routers.storage import delete_history, download_csv, get_magnets  # noqa: E402,F401
 
 
-def start_server():
+def start_server(host="127.0.0.1"):
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8000, access_log=False, log_level="info")
+    uvicorn.run(app, host=host, port=8000, access_log=False, log_level="info")
 
 
 if __name__ == "__main__":
