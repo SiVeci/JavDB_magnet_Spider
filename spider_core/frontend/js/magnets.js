@@ -40,8 +40,10 @@ function renderMagnetCheckButton(scope, target) {
     const key = magnetCheckMenuKey(scope, target);
     const isOpen = openMagnetCheckMenu === key;
     const job = activeMagnetCheckJob;
-    const isRunning = !!(job && job.running && job.scope === scope && String(job.target) === String(target));
-    const progress = isRunning ? `${Number(job.completed || 0)}/${Number(job.total || 0)}` : 'check';
+    const hasRunningJob = !!(job && job.running);
+    const isRunningTarget = !!(hasRunningJob && job.scope === scope && String(job.target) === String(target));
+    const isCancelling = !!(isRunningTarget && job.cancelled);
+    const progress = isRunningTarget ? `${Number(job.completed || 0)}/${Number(job.total || 0)}` : 'check';
     const radarIcon = `<svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="9"></circle>
                         <path d="M12 12l6-4"></path>
@@ -51,6 +53,9 @@ function renderMagnetCheckButton(scope, target) {
                         <path d="M19 12h2"></path>
                         <path d="M8.5 8.5a5 5 0 0 1 7 0"></path>
                     </svg>`;
+    const stopIcon = `<svg aria-hidden="true" viewBox="0 0 24 24" class="h-3 w-3" fill="currentColor">
+                        <rect x="6" y="6" width="12" height="12" rx="1.5"></rect>
+                    </svg>`;
     const targetArg = scope === 'collection' || scope === 'all' ? `'${escapeJs(target)}'` : target;
     const startFn = scope === 'collection'
         ? 'startCollectionMagnetCheck'
@@ -59,37 +64,59 @@ function renderMagnetCheckButton(scope, target) {
         ? 'toggleCollectionMagnetCheckMenu'
         : (scope === 'all' ? 'toggleAllMagnetCheckMenu' : 'toggleMovieMagnetCheckMenu');
     const idAttr = scope === 'movie' ? ` id="check-movie-${target}"` : '';
-    const disabledAttr = isRunning ? ' disabled' : '';
+    const primaryDisabledAttr = (hasRunningJob && !isRunningTarget) || isCancelling ? ' disabled' : '';
+    const showProgressWithStop = isRunningTarget && scope !== 'movie';
+    const showStopOnToggle = isRunningTarget;
+    const toggleDisabledAttr = hasRunningJob && !showStopOnToggle ? ' disabled' : '';
+    const cancelAction = isRunningTarget ? `cancelMagnetCheck('${escapeJs(job.job_id)}')` : '';
+    const primaryAction = `${startFn}(${targetArg})`;
+    const primaryTitle = isRunningTarget
+        ? (scope === 'movie' ? (isCancelling ? '正在终止检测' : '检测中') : '检测进度')
+        : '检测磁力';
     const primaryIdleClass = scope === 'movie'
         ? 'h-5 w-6 rounded-l bg-emerald-50 text-[11px] font-bold leading-none text-emerald-700 hover:bg-emerald-100'
         : 'h-9 w-14 rounded-l border border-r-0 border-emerald-200 bg-emerald-50 text-xs font-bold text-emerald-700 shadow-sm hover:bg-emerald-100';
-    const primaryRunningClass = scope === 'movie'
-        ? 'h-5 w-16 cursor-not-allowed rounded-l bg-slate-100 text-[10px] font-bold leading-none text-slate-500'
+    const primaryDisabledClass = scope === 'movie'
+        ? 'h-5 w-6 cursor-not-allowed rounded-l bg-slate-100 text-[10px] font-bold leading-none text-slate-500'
         : 'h-9 w-16 cursor-not-allowed rounded-l border border-r-0 border-slate-200 bg-slate-100 text-xs font-bold text-slate-500 shadow-sm';
+    const primaryRunningClass = scope === 'movie'
+        ? 'h-5 w-6 cursor-not-allowed rounded-l bg-slate-100 text-[10px] font-bold leading-none text-slate-500'
+        : primaryDisabledClass;
     const toggleIdleClass = scope === 'movie'
         ? 'h-5 w-5 rounded-r border-l border-emerald-100 bg-emerald-50 text-[10px] font-bold leading-none text-emerald-700 hover:bg-emerald-100'
         : 'h-9 w-7 rounded-r border border-emerald-200 bg-emerald-50 text-xs font-bold text-emerald-700 shadow-sm hover:bg-emerald-100';
-    const toggleRunningClass = scope === 'movie'
+    const toggleDisabledClass = scope === 'movie'
         ? 'h-5 w-5 cursor-not-allowed rounded-r border-l border-slate-200 bg-slate-100 text-[10px] font-bold leading-none text-slate-400'
         : 'h-9 w-7 cursor-not-allowed rounded-r border border-slate-200 bg-slate-100 text-xs font-bold text-slate-400 shadow-sm';
-    const primaryClass = isRunning
+    const primaryClass = isRunningTarget
         ? primaryRunningClass
-        : primaryIdleClass;
-    const toggleClass = isRunning ? toggleRunningClass : toggleIdleClass;
+        : (hasRunningJob ? primaryDisabledClass : primaryIdleClass);
+    const stopToggleClass = scope === 'movie'
+        ? 'inline-flex h-5 w-5 items-center justify-center rounded-r border-l border-red-100 bg-red-50 text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400'
+        : 'inline-flex h-9 w-7 items-center justify-center rounded-r border border-red-200 bg-red-50 text-red-700 shadow-sm hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400';
+    const toggleClass = showStopOnToggle ? stopToggleClass : (hasRunningJob ? toggleDisabledClass : toggleIdleClass);
     const spinnerClass = scope === 'movie' ? 'h-2.5 w-2.5' : 'h-3 w-3';
-    const primaryContent = scope === 'movie' && !isRunning ? radarIcon : `<span>${progress}</span>`;
+    const primaryContent = isRunningTarget
+        ? (scope === 'movie'
+            ? `<span class="inline-block ${spinnerClass} animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"></span>`
+            : `<span>${progress}</span>`)
+        : (scope === 'movie' ? radarIcon : `<span>${progress}</span>`);
+    const toggleAction = showStopOnToggle ? cancelAction : `${toggleFn}(${targetArg}, event)`;
+    const toggleTitle = showStopOnToggle ? (isCancelling ? '正在终止检测' : '终止检测') : '更多检测选项';
+    const toggleContent = showStopOnToggle
+        ? (isCancelling ? `<span class="inline-block ${spinnerClass} animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"></span>` : stopIcon)
+        : (isOpen ? '▲' : '▼');
     return `
         <div id="${magnetCheckButtonId(scope, target)}" class="relative shrink-0" data-menu-root="magnet-check">
             <div class="inline-flex">
-                <button${idAttr} type="button" onclick="${startFn}(${targetArg})" title="检测磁力" aria-label="检测磁力"${disabledAttr} class="${primaryClass}">
+                <button${idAttr} type="button" onclick="${primaryAction}" title="${primaryTitle}" aria-label="${primaryTitle}"${primaryDisabledAttr} class="${primaryClass}">
                     <span class="inline-flex items-center justify-center gap-1">
-                        ${isRunning ? `<span class="inline-block ${spinnerClass} animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"></span>` : ''}
                         ${primaryContent}
                     </span>
                 </button>
-                <button type="button" onclick="${toggleFn}(${targetArg}, event)" title="更多检测选项" aria-label="更多检测选项"${disabledAttr} class="${toggleClass}">${isOpen ? '▲' : '▼'}</button>
+                <button type="button" onclick="${toggleAction}" title="${toggleTitle}" aria-label="${toggleTitle}"${isCancelling ? ' disabled' : toggleDisabledAttr} class="${toggleClass}">${toggleContent}</button>
             </div>
-            <div onclick="event.stopPropagation()" class="${isOpen && !isRunning ? '' : 'hidden'} absolute right-0 z-30 mt-1 w-28 rounded border border-slate-200 bg-white p-1 text-xs shadow-lg">
+            <div onclick="event.stopPropagation()" class="${isOpen && !hasRunningJob ? '' : 'hidden'} absolute right-0 z-30 mt-1 w-28 rounded border border-slate-200 bg-white p-1 text-xs shadow-lg">
                 <button type="button" onclick="${startFn}(${targetArg}, true)" class="w-full rounded px-2 py-1.5 text-left font-bold text-slate-700 hover:bg-slate-50">check failed</button>
             </div>
         </div>`;
@@ -115,8 +142,19 @@ function renderGlobalMagnetCheckButton() {
     slot.innerHTML = renderMagnetCheckButton('all', 'all');
 }
 
-// 注：批量检测进度条 + “取消检测”按钮 UI（原 renderMagnetCheckProgress）此前从未被渲染调用，
-// 已作为死代码移除以免误导。cancelMagnetCheck() 取消能力保留，待后续把入口正式接入检测按钮区。
+async function renderExpandedCollectionPreservingMovie(movieId = expandedMovieId) {
+    renderGlobalMagnetCheckButton();
+    if (!expandedCollectionName) {
+        return;
+    }
+    renderCollectionBody(expandedCollectionName);
+    if (movieId) {
+        expandedMovieId = movieId;
+        const icon = document.getElementById(`movie-toggle-${movieId}`);
+        if (icon) icon.classList.add('rotate-180');
+        await loadMagnets(movieId, true);
+    }
+}
 
 /* ===== 检测选项菜单 ===== */
 
@@ -161,8 +199,7 @@ async function startMovieMagnetCheck(movieId, failedOnly = false) {
     if (res.code === 409) showToast(res.msg || '磁力检测任务正在运行');
     watchMagnetCheckJob(res.data);
     if (expandedCollectionName) {
-        updateRenderedMagnetCheckButtons();
-        if (expandedMovieId === movieId) await refreshMagnetRows(movieId);
+        await renderExpandedCollectionPreservingMovie(expandedMovieId);
     }
 }
 
@@ -174,7 +211,7 @@ async function startCollectionMagnetCheck(collectionName, failedOnly = false) {
     if (res.code !== 200 && res.code !== 409) return showToast(res.msg || '检测启动失败');
     if (res.code === 409) showToast(res.msg || '磁力检测任务正在运行');
     watchMagnetCheckJob(res.data);
-    renderCollectionBody(collectionName);
+    await renderExpandedCollectionPreservingMovie(expandedMovieId);
 }
 
 async function startAllMagnetCheck(_target = 'all', failedOnly = false) {
@@ -185,7 +222,7 @@ async function startAllMagnetCheck(_target = 'all', failedOnly = false) {
     if (res.code !== 200 && res.code !== 409) return showToast(res.msg || '检测启动失败');
     if (res.code === 409) showToast(res.msg || '磁力检测任务正在运行');
     watchMagnetCheckJob(res.data);
-    updateRenderedMagnetCheckButtons();
+    await renderExpandedCollectionPreservingMovie(expandedMovieId);
 }
 
 /* ===== 检测任务轮询与恢复 ===== */
@@ -243,27 +280,36 @@ async function pollMagnetCheckJob() {
     }
     if (!activeMagnetCheckJob.running) {
         stopMagnetCheckPolling();
-        await refreshMagnetCheckTarget(activeMagnetCheckJob);
+        const finishedJob = activeMagnetCheckJob;
+        activeMagnetCheckJob = null;
+        await refreshMagnetCheckTarget(finishedJob);
     }
 }
 
 async function cancelMagnetCheck(jobId) {
+    if (!confirm('确定终止当前磁力检测吗？已完成的检测结果会保留。')) return;
     const res = await apiFetch(`/api/magnet_check_jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' }).then(r => r.json());
     if (res.code === 200) {
         activeMagnetCheckJob = res.data;
-        if (expandedCollectionName) renderCollectionBody(expandedCollectionName);
+        await renderExpandedCollectionPreservingMovie(expandedMovieId);
+    } else {
+        showToast(res.msg || '终止检测失败');
     }
 }
 
 async function refreshMagnetCheckTarget(job) {
-    if (job.scope === 'collection' && expandedCollectionName === job.target) {
-        const body = document.getElementById(`collection-body-${job.target}`);
-        if (body) body.dataset.loaded = '';
-        await reloadCollectionMovies(job.target);
+    if (job.scope === 'collection') {
+        if (expandedCollectionName === job.target) {
+            const body = document.getElementById(`collection-body-${job.target}`);
+            if (body) body.dataset.loaded = '';
+            await reloadCollectionMovies(job.target);
+        }
+        renderGlobalMagnetCheckButton();
     }
     if (job.scope === 'movie') {
         const movieId = Number(job.target);
         const box = document.getElementById(`magnets-${movieId}`);
+        const previouslyExpandedMovieId = expandedMovieId;
         let magnets = [];
         if (box && !box.classList.contains('hidden')) {
             magnets = await refreshMagnetRows(movieId);
@@ -272,7 +318,7 @@ async function refreshMagnetCheckTarget(job) {
             magnets = res.data || [];
         }
         if (syncSelectedMagnetToMovie(movieId, magnets)) updateMovieSelectedName(movieId, magnets);
-        updateRenderedMagnetCheckButtons();
+        await renderExpandedCollectionPreservingMovie(previouslyExpandedMovieId);
     }
     if (job.scope === 'all') {
         await loadCollections();

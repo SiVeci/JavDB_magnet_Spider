@@ -139,7 +139,7 @@
                             android:id="@+id/cb_lan_access"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="开启局域网访问（允许同一 WiFi 下的其它设备访问控制台）"
+                            android:text="允许局域网访问"
                             android:textColor="#6B7280"
                             android:textSize="13sp"
                             android:buttonTint="#4F46E5"
