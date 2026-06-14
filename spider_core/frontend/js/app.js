@@ -109,7 +109,14 @@ function setActiveView(view) {
         button.classList.toggle('bg-indigo-600', active);
         button.classList.toggle('text-white', active);
         button.classList.toggle('shadow-sm', active);
+        button.classList.toggle('hover:bg-indigo-700', active);
         button.classList.toggle('text-slate-600', !active);
+        button.classList.toggle('hover:bg-slate-50', !active);
+        if (active) {
+            button.setAttribute('aria-current', 'page');
+        } else {
+            button.removeAttribute('aria-current');
+        }
     });
     if (activeView === 'database') {
         if (typeof renderDatabaseRoute === 'function') renderDatabaseRoute();

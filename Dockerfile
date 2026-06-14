@@ -3,7 +3,7 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai \
     JAVDB_AUTH_REQUIRED=1 \
-    JAVDB_SPIDER_VERSION=1.8.0
+    JAVDB_SPIDER_VERSION=1.8.2
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libnss3 \

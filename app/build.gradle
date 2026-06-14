@@ -26,8 +26,8 @@ android {
         applicationId "com.javdb_spider.app"
         minSdk 26
         targetSdk 36
-        versionCode 18
-        versionName "1.8.0"
+        versionCode 20
+        versionName "1.8.2"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // === 新增：配置 NDK，指定手机 CPU 架构 ===
