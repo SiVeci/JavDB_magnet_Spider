@@ -141,9 +141,9 @@
         </section>
 
         <section id="view-database" data-view="database" class="hidden space-y-4">
-            <section class="flex h-[calc(100vh-190px)] min-h-[560px] min-w-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
-                <div id="database-breadcrumb" class="border-b border-slate-100 px-5 py-3 text-sm text-slate-500">数据库</div>
-                <div id="databaseCollectionToolbar" class="border-b border-slate-100 px-5 pb-2 pt-2">
+            <section class="flex h-[calc(100dvh-190px)] min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
+                <div id="database-breadcrumb" class="shrink-0 border-b border-slate-100 px-5 py-3 text-sm text-slate-500">数据库</div>
+                <div id="databaseCollectionToolbar" class="shrink-0 border-b border-slate-100 px-5 pb-2 pt-2">
                     <div id="databaseSummary" class="mb-3 text-xs text-slate-500">加载中...</div>
                     <div class="flex flex-wrap gap-2">
                         <button id="autoSelectBtn" onclick="autoSelectMagnets()" title="按评分自动选择磁力" aria-label="按评分自动选择磁力" class="inline-flex h-9 items-center justify-center rounded bg-amber-50 px-3 text-xs font-bold text-amber-700 hover:bg-amber-100">★ 自动选择</button>
@@ -167,7 +167,7 @@
                     </div>
                 </div>
                 <div id="database-content" class="flex min-h-0 flex-1 flex-col overflow-hidden">
-                    <div class="flex min-h-[520px] items-center justify-center p-8 text-center text-sm text-slate-400">加载中...</div>
+                    <div class="flex min-h-0 flex-1 items-center justify-center p-8 text-center text-sm text-slate-400">加载中...</div>
                 </div>
             </section>
         </section>
@@ -216,7 +216,7 @@
     <script src="/js/api.js?v=20260614-ui31"></script>
     <script src="/js/settings.js?v=20260614-ui31"></script>
     <script src="/js/tasks.js?v=20260614-ui31"></script>
-    <script src="/js/movies.js?v=20260614-ui31"></script>
+    <script src="/js/movies.js?v=20260615-database-height"></script>
     <script src="/js/magnets.js?v=20260614-ui31"></script>
     <script src="/js/app.js?v=20260615-nav-hover"></script>
 </body>

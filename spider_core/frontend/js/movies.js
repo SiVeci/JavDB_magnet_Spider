@@ -174,7 +174,7 @@ function renderDatabaseBreadcrumb(collectionName = null, movie = null) {
 function showDatabaseLoading(label = '加载中...') {
     const content = databaseContent();
     if (!content) return;
-    content.innerHTML = `<div class="flex min-h-[520px] items-center justify-center p-8 text-center text-sm text-slate-400">${escapeHtml(label)}</div>`;
+    content.innerHTML = `<div class="flex min-h-0 flex-1 items-center justify-center p-8 text-center text-sm text-slate-400">${escapeHtml(label)}</div>`;
 }
 
 function setCollectionToolbarVisible(show) {
@@ -316,7 +316,7 @@ function renderCollectionToolbar(collectionName) {
         ? `<button onclick="enqueueCollectionIncremental('${jsName}', event)" title="增量爬取此集合" aria-label="增量爬取此集合" class="inline-flex h-9 w-9 items-center justify-center rounded bg-indigo-50 text-sm font-bold text-indigo-700 hover:bg-indigo-100">⟳</button>`
         : `<button type="button" disabled title="缺少原始 URL，无法快捷增量" aria-label="缺少原始 URL，无法快捷增量" class="inline-flex h-9 w-9 cursor-not-allowed items-center justify-center rounded bg-slate-50 text-sm font-bold text-slate-300">⟳</button>`;
     return `
-        <div class="border-b border-slate-100 px-5 pb-2 pt-2">
+        <div class="shrink-0 border-b border-slate-100 px-5 pb-2 pt-2">
             <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
                 <div class="min-w-0">
                     <div class="text-xs text-slate-500">${escapeHtml(item.time || '-')} · ${Number(item.count || 0)} 部影片 · ${((item.tags || []).length)} 个标签</div>
@@ -370,7 +370,7 @@ async function renderMagnetListPage(collectionName, movieId) {
     if (!content) return;
     const movieTitle = movie.title || movie.code || String(movie.id);
     content.innerHTML = `
-        <div class="border-b border-slate-100 px-5 pb-4 pt-2">
+        <div class="shrink-0 border-b border-slate-100 px-5 pb-4 pt-2">
             <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div class="min-w-0">
                     <div class="truncate text-xs text-slate-500" title="${escapeHtml(movieTitle)}">${escapeHtml(movieTitle)}</div>
@@ -382,7 +382,7 @@ async function renderMagnetListPage(collectionName, movieId) {
                 </div>
             </div>
         </div>
-        <div id="magnets-${movie.id}" class="flex min-h-0 flex-1 flex-col p-4"></div>`;
+        <div id="magnets-${movie.id}" class="flex min-h-0 flex-1 flex-col overflow-hidden p-4"></div>`;
     await loadMagnets(movie.id, true);
     fitMovieTags(content);
 }
