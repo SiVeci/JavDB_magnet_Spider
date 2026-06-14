@@ -11,7 +11,7 @@ function apiHeaders(extraHeaders = {}) {
 
 async function apiFetch(url, options = {}) {
     const response = await fetch(url, { ...options, headers: apiHeaders(options.headers || {}) });
-    if (response.status === 401) {
+    if (response.status === 401 && authRequired) {
         lockAppForAuth();
         throw new Error('访问令牌缺失或无效');
     }

@@ -12,6 +12,7 @@ let magnetCheckPollInterval = null;
 // 鉴权
 let apiToken = sessionStorage.getItem('javdb_auth_token') || '';
 let authRequired = false;
+let activeView = 'tasks';
 
 // 任务与队列
 let tasksCache = [];
@@ -19,6 +20,7 @@ let queueStatus = null;
 
 // 数据库集合
 let collectionsCache = [];
+let collectionSearchQuery = '';
 
 // 任务配置（起始 URL / 标签）
 let actorBaseUrl = '';

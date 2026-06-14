@@ -123,109 +123,316 @@ function renderMagnetStatus(magnet) {
     return `<span title="${escapeHtml(magnet.check_error || '检测失败')}" class="text-slate-500">❌</span>`;
 }
 
-/* ===== 集合列表 ===== */
+/* ===== 数据库面包屑路由与集合列表 ===== */
+
+function databaseContent() {
+    return document.getElementById('database-content');
+}
+
+function databaseBreadcrumb() {
+    return document.getElementById('database-breadcrumb');
+}
+
+function databaseRouteParts() {
+    const hash = window.location.hash || '#/database';
+    const path = hash.replace(/^#\/?/, '');
+    if (!path.startsWith('database')) return [];
+    return path.split('/').slice(1).map(part => decodeURIComponent(part));
+}
+
+function databaseHash(collectionName = null, movieId = null) {
+    let hash = '#/database';
+    if (collectionName) hash += `/${encodeURIComponent(collectionName)}`;
+    if (movieId) hash += `/${encodeURIComponent(String(movieId))}`;
+    return hash;
+}
+
+function setDatabaseHash(collectionName = null, movieId = null) {
+    const hash = databaseHash(collectionName, movieId);
+    if (window.location.hash === hash) {
+        renderDatabaseRoute();
+    } else {
+        window.location.hash = hash;
+    }
+}
+
+function renderDatabaseBreadcrumb(collectionName = null, movie = null) {
+    const box = databaseBreadcrumb();
+    if (!box) return;
+    const items = [
+        `<button type="button" onclick="setDatabaseHash()" class="font-bold text-indigo-700 hover:underline">数据库</button>`
+    ];
+    if (collectionName) {
+        items.push(`<button type="button" onclick="setDatabaseHash('${escapeJs(collectionName)}')" class="max-w-[42vw] truncate font-bold text-indigo-700 hover:underline">${escapeHtml(displayName(collectionName))}</button>`);
+    }
+    if (movie) {
+        items.push(`<span class="max-w-[42vw] truncate font-bold text-slate-700">${escapeHtml(movie.code || String(movie.id))}</span>`);
+    }
+    box.innerHTML = `<div class="flex min-w-0 flex-wrap items-center gap-2">${items.join('<span class="text-slate-300">/</span>')}</div>`;
+}
+
+function showDatabaseLoading(label = '加载中...') {
+    const content = databaseContent();
+    if (!content) return;
+    content.innerHTML = `<div class="flex min-h-[520px] items-center justify-center p-8 text-center text-sm text-slate-400">${escapeHtml(label)}</div>`;
+}
+
+function setCollectionToolbarVisible(show) {
+    const toolbar = document.getElementById('databaseCollectionToolbar');
+    if (toolbar) toolbar.classList.toggle('hidden', !show);
+}
 
 async function loadCollections() {
     const res = await apiFetch('/api/history').then(r => r.json());
     collectionsCache = res.data || [];
+    updateDatabaseSummary();
+    renderGlobalMagnetCheckButton();
+    await renderDatabaseRoute();
+}
+
+function updateDatabaseSummary() {
+    const summary = document.getElementById('databaseSummary');
+    if (!summary) return;
+    const totalCollections = collectionsCache.length;
+    const totalMovies = collectionsCache.reduce((sum, item) => sum + Number(item.count || 0), 0);
+    summary.innerText = `${totalCollections} 个集合 · ${totalMovies} 部影片`;
+}
+
+function filteredCollections() {
+    const query = collectionSearchQuery.trim().toLowerCase();
+    if (!query) return collectionsCache;
+    return collectionsCache.filter(item => displayName(item.name).toLowerCase().includes(query) || String(item.name).toLowerCase().includes(query));
+}
+
+function updateCollectionSearch() {
+    const input = document.getElementById('collectionSearch');
+    collectionSearchQuery = input ? input.value : '';
+    renderCollections();
+}
+
+function renderCollectionListPage() {
     expandedCollectionName = null;
     expandedMovieId = null;
-    renderCollections();
+    openTagDropdown = null;
+    openExcludeDropdown = null;
+    openMagnetCheckMenu = null;
+    setCollectionToolbarVisible(true);
+    renderDatabaseBreadcrumb();
+    const content = databaseContent();
+    if (!content) return;
+    content.innerHTML = `
+        <div class="shrink-0 border-b border-slate-100 px-4 pb-4 pt-3">
+            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <input id="collectionSearch" type="search" oninput="updateCollectionSearch()" value="${escapeHtml(collectionSearchQuery)}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm md:max-w-sm" placeholder="搜索数据集合">
+                <label class="flex items-center gap-2 text-xs font-bold text-slate-600">
+                    <input id="selectAllCheckbox" type="checkbox" onclick="toggleSelectAll()">
+                    <span id="selectAllLabel">全选当前列表</span>
+                </label>
+            </div>
+        </div>
+        <div id="collection-list" class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto"></div>`;
     renderGlobalMagnetCheckButton();
+    renderCollections();
+}
+
+function hideBatchDeleteControls() {
+    const batchBtn = document.getElementById('batchDeleteBtn');
+    if (batchBtn) batchBtn.classList.add('hidden');
 }
 
 function renderCollections() {
-    const tbody = document.getElementById('collection-list');
+    const list = document.getElementById('collection-list');
     const selectAll = document.getElementById('selectAllCheckbox');
+    const selectAllLabel = document.getElementById('selectAllLabel');
     const batchBtn = document.getElementById('batchDeleteBtn');
+    updateDatabaseSummary();
+    if (!list || !selectAll || !batchBtn) {
+        if (batchBtn) batchBtn.classList.add('hidden');
+        return;
+    }
     if (!collectionsCache.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="px-6 py-5 text-center text-slate-400">暂无数据库集合</td></tr>';
+        list.innerHTML = '<div class="px-6 py-10 text-center text-slate-400">暂无数据库集合</div>';
         selectAll.classList.add('hidden');
+        if (selectAllLabel) selectAllLabel.classList.add('hidden');
         batchBtn.classList.add('hidden');
         return;
     }
+    const visibleCollections = filteredCollections();
     selectAll.classList.remove('hidden');
+    if (selectAllLabel) selectAllLabel.classList.remove('hidden');
     batchBtn.classList.remove('hidden');
-    tbody.innerHTML = collectionsCache.map(item => {
+    if (!visibleCollections.length) {
+        list.innerHTML = '<div class="px-6 py-10 text-center text-slate-400">没有匹配的数据集合</div>';
+        updateBatchDeleteBtn();
+        return;
+    }
+    list.innerHTML = visibleCollections.map(item => {
         const name = escapeHtml(item.name);
         const shownName = escapeHtml(displayName(item.name));
         const jsName = escapeJs(item.name);
-        const incrementalButton = item.has_source_url
-            ? `<button onclick="enqueueCollectionIncremental('${jsName}', event)" title="增量爬取此集合" aria-label="增量爬取此集合" class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-indigo-50 text-sm font-bold text-indigo-700 hover:bg-indigo-100">⟳</button>`
-            : `<button type="button" disabled title="缺少原始 URL，无法快捷增量" aria-label="缺少原始 URL，无法快捷增量" class="inline-flex h-6 w-6 shrink-0 cursor-not-allowed items-center justify-center rounded bg-slate-50 text-sm font-bold text-slate-300">⟳</button>`;
         return `
-        <tr class="border-b border-slate-100 bg-white">
-            <td class="px-3 py-3 text-center"><input type="checkbox" class="collection-checkbox" value="${name}" onclick="updateBatchDeleteBtn()"></td>
-            <td class="min-w-0 px-2 py-3">
-                <div class="flex min-w-0 items-start gap-2">
-                    <button onclick="toggleCollection('${jsName}')" title="展开/收起" aria-label="展开或收起数据集合" class="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded bg-slate-50 text-xs font-bold text-slate-700 hover:bg-slate-100"><span id="collection-toggle-${escapeHtml(item.name)}" class="inline-block transition-transform duration-200 ease-out">▾</span></button>
-                    ${incrementalButton}
-                    <div class="min-w-0 flex-1">
-                        <div class="truncate font-bold" title="${shownName}">${shownName}</div>
-                        <div class="truncate text-xs text-slate-400">${escapeHtml(item.time)} · ${((item.tags || []).length)} 个标签</div>
-                    </div>
+        <div class="group flex items-start gap-3 px-4 py-3 hover:bg-slate-50">
+            <input type="checkbox" class="collection-checkbox mt-1" value="${name}" onclick="event.stopPropagation(); updateBatchDeleteBtn()">
+            <button type="button" onclick="selectCollection('${jsName}')" class="min-w-0 flex-1 text-left">
+                <div class="flex min-w-0 items-center justify-between gap-2">
+                    <div class="truncate font-bold text-slate-800" title="${shownName}">${shownName}</div>
+                    <span class="shrink-0 rounded bg-blue-50 px-1.5 py-0.5 text-[11px] font-bold text-blue-700">${item.count}</span>
                 </div>
-            </td>
-            <td class="px-1 py-3 text-center"><span class="inline-flex justify-center whitespace-nowrap rounded bg-blue-50 px-1.5 py-0.5 text-[11px] font-bold text-blue-700">${item.count}</span></td>
-            <td class="px-1 py-3">
-                <div class="flex justify-center gap-1 whitespace-nowrap">
-                    <button onclick="copyMagnets('${jsName}')" title="复制磁力" aria-label="复制磁力" class="inline-flex h-7 w-7 items-center justify-center rounded bg-blue-50 text-sm font-bold text-blue-700 hover:bg-blue-100">⧉</button>
-                    <button onclick="downloadCsv('${jsName}')" title="下载 CSV" aria-label="下载 CSV" class="inline-flex h-7 w-7 items-center justify-center rounded bg-green-50 text-sm font-bold text-green-700 hover:bg-green-100">⇩</button>
-                    <button onclick="deleteFiles(['${jsName}'])" title="删除集合" aria-label="删除集合" class="inline-flex h-7 w-7 items-center justify-center rounded bg-red-50 text-base font-bold text-red-700 hover:bg-red-100">×</button>
-                </div>
-            </td>
-        </tr>
-        <tr id="collection-${escapeHtml(item.name)}" class="hidden bg-slate-50">
-            <td colspan="4" class="p-0"><div id="collection-body-${escapeHtml(item.name)}" class="w-full min-w-0 max-w-full overflow-x-hidden p-4 text-sm text-slate-500">加载中...</div></td>
-        </tr>`;
+                <div class="mt-1 truncate text-xs text-slate-400">${escapeHtml(item.time)} · ${((item.tags || []).length)} 个标签</div>
+            </button>
+        </div>`;
     }).join('');
     updateBatchDeleteBtn();
 }
 
-async function toggleCollection(name) {
-    const row = document.getElementById(`collection-${name}`);
-    const body = document.getElementById(`collection-body-${name}`);
-    if (!row || !body) return;
-
-    const shouldOpen = row.classList.contains('hidden');
-    if (expandedCollectionName && expandedCollectionName !== name) {
-        const previousRow = document.getElementById(`collection-${expandedCollectionName}`);
-        if (previousRow) previousRow.classList.add('hidden');
-        const previousIcon = document.getElementById(`collection-toggle-${expandedCollectionName}`);
-        if (previousIcon) previousIcon.classList.remove('rotate-180');
-    }
-    if (!shouldOpen) {
-        row.classList.add('hidden');
-        const icon = document.getElementById(`collection-toggle-${name}`);
-        if (icon) icon.classList.remove('rotate-180');
-        expandedCollectionName = null;
-        expandedMovieId = null;
-        openTagDropdown = null;
-        openMagnetCheckMenu = null;
-        return;
-    }
-
-    row.classList.remove('hidden');
-    const icon = document.getElementById(`collection-toggle-${name}`);
-    if (icon) icon.classList.add('rotate-180');
-    expandedCollectionName = name;
-    expandedMovieId = null;
-    openTagDropdown = null;
-    openMagnetCheckMenu = null;
-    row.querySelectorAll('[id^="magnets-"]').forEach(item => item.classList.add('hidden'));
-    if (body.dataset.loaded) return;
-    const res = await apiFetch(`/api/collections/${encodeURIComponent(name)}/movies`).then(r => r.json());
+async function ensureCollectionMovies(collectionName, forceReload = false) {
+    if (collectionMovieCache[filterKey(collectionName)] && !forceReload) return true;
+    const res = await apiFetch(`/api/collections/${encodeURIComponent(collectionName)}/movies`).then(r => r.json());
     if (res.code !== 200) {
-        body.innerText = res.msg || '加载失败';
+        showDatabaseLoading(res.msg || '加载失败');
+        return false;
+    }
+    collectionMovieCache[filterKey(collectionName)] = res.data || { movies: [], available_tags: [], total_count: 0 };
+    return true;
+}
+
+function collectionItem(collectionName) {
+    return collectionsCache.find(item => item.name === collectionName);
+}
+
+function collectionData(collectionName) {
+    return collectionMovieCache[filterKey(collectionName)] || { movies: [], available_tags: [], total_count: 0 };
+}
+
+function movieById(collectionName, movieId) {
+    const data = collectionData(collectionName);
+    return (data.movies || []).find(movie => String(movie.id) === String(movieId));
+}
+
+function renderCollectionToolbar(collectionName) {
+    const item = collectionItem(collectionName) || { name: collectionName, count: 0, tags: [], time: '' };
+    const jsName = escapeJs(collectionName);
+    const incrementalButton = item.has_source_url
+        ? `<button onclick="enqueueCollectionIncremental('${jsName}', event)" title="增量爬取此集合" aria-label="增量爬取此集合" class="inline-flex h-9 w-9 items-center justify-center rounded bg-indigo-50 text-sm font-bold text-indigo-700 hover:bg-indigo-100">⟳</button>`
+        : `<button type="button" disabled title="缺少原始 URL，无法快捷增量" aria-label="缺少原始 URL，无法快捷增量" class="inline-flex h-9 w-9 cursor-not-allowed items-center justify-center rounded bg-slate-50 text-sm font-bold text-slate-300">⟳</button>`;
+    return `
+        <div class="border-b border-slate-100 px-5 pb-2 pt-2">
+            <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                <div class="min-w-0">
+                    <div class="text-xs text-slate-500">${escapeHtml(item.time || '-')} · ${Number(item.count || 0)} 部影片 · ${((item.tags || []).length)} 个标签</div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="copyMagnets('${jsName}')" title="复制集合磁力" aria-label="复制集合磁力" class="inline-flex h-9 w-9 items-center justify-center rounded bg-blue-50 text-sm font-bold text-blue-700 hover:bg-blue-100">⧉</button>
+                    <button onclick="downloadCsv('${jsName}')" title="下载 CSV" aria-label="下载 CSV" class="inline-flex h-9 w-9 items-center justify-center rounded bg-green-50 text-sm font-bold text-green-700 hover:bg-green-100">⇩</button>
+                    ${incrementalButton}
+                    ${renderMagnetCheckButton('collection', collectionName)}
+                    <button onclick="deleteFiles(['${jsName}'])" title="删除集合" aria-label="删除集合" class="inline-flex h-9 w-9 items-center justify-center rounded bg-red-50 text-red-700 hover:bg-red-100">
+                        <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 6h18"></path>
+                            <path d="M8 6V4h8v2"></path>
+                            <path d="M6 6l1 15h10l1-15"></path>
+                            <path d="M10 11v6"></path>
+                            <path d="M14 11v6"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>`;
+}
+
+function renderMovieListPage(collectionName) {
+    expandedCollectionName = collectionName;
+    expandedMovieId = null;
+    setCollectionToolbarVisible(false);
+    hideBatchDeleteControls();
+    renderDatabaseBreadcrumb(collectionName);
+    const content = databaseContent();
+    if (!content) return;
+    content.innerHTML = `
+        ${renderCollectionToolbar(collectionName)}
+        <div id="collection-body-${escapeHtml(collectionName)}" data-loaded="1" class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-3 text-sm text-slate-500"></div>`;
+    renderCollectionBody(collectionName);
+}
+
+async function renderMagnetListPage(collectionName, movieId) {
+    expandedCollectionName = collectionName;
+    expandedMovieId = Number(movieId);
+    setCollectionToolbarVisible(false);
+    hideBatchDeleteControls();
+    const movie = movieById(collectionName, movieId);
+    if (!movie) {
+        setDatabaseHash(collectionName);
+        showToast('影片不存在或已被过滤');
         return;
     }
-    body.dataset.loaded = '1';
-    collectionMovieCache[filterKey(name)] = res.data || { movies: [], available_tags: [], total_count: 0 };
-    renderCollectionBody(name);
+    renderDatabaseBreadcrumb(collectionName, movie);
+    const content = databaseContent();
+    if (!content) return;
+    const movieTitle = movie.title || movie.code || String(movie.id);
+    content.innerHTML = `
+        <div class="border-b border-slate-100 px-5 pb-4 pt-2">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div class="min-w-0">
+                    <div class="truncate text-xs text-slate-500" title="${escapeHtml(movieTitle)}">${escapeHtml(movieTitle)}</div>
+                    <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-slate-500">
+                        ${renderMagnetCheckButton('movie', movie.id)}
+                        <div id="movie-selected-name-${movie.id}" class="min-w-0 truncate" title="${escapeHtml(movie.best_magnet_name || '未选中磁力')}">${escapeHtml(movie.best_magnet_name || '未选中磁力')}</div>
+                    </div>
+                    ${renderMovieTags(movie.tags || [])}
+                </div>
+            </div>
+        </div>
+        <div id="magnets-${movie.id}" class="flex min-h-0 flex-1 flex-col p-4"></div>`;
+    await loadMagnets(movie.id, true);
+    fitMovieTags(content);
+}
+
+async function renderDatabaseRoute() {
+    renderGlobalMagnetCheckButton();
+    updateDatabaseSummary();
+    const [collectionName, movieId] = databaseRouteParts();
+    if (!collectionName) {
+        renderCollectionListPage();
+        return;
+    }
+    setCollectionToolbarVisible(false);
+    if (!collectionsCache.length) {
+        showDatabaseLoading();
+        return;
+    }
+    if (!collectionItem(collectionName)) {
+        setDatabaseHash();
+        showToast('数据集合不存在或已被删除');
+        return;
+    }
+    showDatabaseLoading();
+    if (!(await ensureCollectionMovies(collectionName))) return;
+    if (movieId) {
+        await renderMagnetListPage(collectionName, movieId);
+    } else {
+        renderMovieListPage(collectionName);
+    }
+}
+
+async function selectCollection(name, _options = {}) {
+    setDatabaseHash(name);
+}
+
+async function toggleCollection(name) {
+    await selectCollection(name);
+}
+
+function closeCollectionDetail() {
+    setDatabaseHash();
+}
+
+function selectMovie(collectionName, movieId) {
+    setDatabaseHash(collectionName, movieId);
 }
 
 function renderCollectionBody(collectionName) {
     const body = document.getElementById(`collection-body-${collectionName}`);
+    if (!body) return;
     const data = collectionMovieCache[filterKey(collectionName)] || { movies: [], available_tags: [], total_count: 0 };
     const selected = selectedCollectionTags(collectionName);
     const excluded = selectedExcludeTags(collectionName);
@@ -241,7 +448,7 @@ function renderCollectionFilter(collectionName, availableTags, filteredCount, to
     const isOpen = openTagDropdown === collectionName;
     const isExcludeOpen = openExcludeDropdown === collectionName;
     return `
-        <div class="mb-3 flex items-center gap-2">
+        <div class="mb-3 flex shrink-0 flex-wrap items-center gap-2">
             <div class="relative min-w-0" data-menu-root="tag-filter">
                 <button type="button" onclick="toggleCollectionTagDropdown('${escapeJs(collectionName)}', event)" class="flex h-9 min-w-[104px] items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 text-left text-xs font-bold text-slate-700">
                     <span class="min-w-0 truncate">筛选: ${filteredCount}/${totalCount}</span>
@@ -266,7 +473,6 @@ function renderCollectionFilter(collectionName, availableTags, filteredCount, to
                 </div>
             </div>
             <div class="flex shrink-0 items-center gap-2">
-                ${renderMagnetCheckButton('collection', collectionName)}
                 ${renderCollectionHealthTags(filteredMovies)}
             </div>
         </div>`;
@@ -289,23 +495,16 @@ function renderExcludeOption(collectionName, tag, checked) {
 
 function renderMovies(collectionName, movies) {
     if (!movies.length) return '<div class="text-center text-slate-400">暂无匹配影片记录</div>';
-    return `<div class="max-h-[60vh] max-w-full space-y-2 overflow-y-auto overflow-x-hidden pr-2">${movies.map(movie => `
-        <div class="max-w-full overflow-hidden bg-white border border-slate-200 rounded p-3">
-            <div class="min-w-0 overflow-hidden">
-                <div class="truncate font-bold" title="${escapeHtml(`${movie.code} ${movie.title || ''}`)}"><span>${escapeHtml(movie.code)}</span> <span class="font-normal text-slate-500">${escapeHtml(movie.title)}</span></div>
-                <div class="mt-1 grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-2">
-                    <div class="flex min-w-max items-center gap-1">
-                        <button onclick="toggleMagnets(${movie.id})" title="展开/收起候选磁力" aria-label="展开或收起候选磁力" class="inline-flex h-6 w-6 items-center justify-center rounded bg-slate-50 text-xs font-bold text-slate-600 hover:bg-slate-100">
-                            <span id="movie-toggle-${movie.id}" class="inline-block transition-transform duration-200 ease-out">▾</span>
-                        </button>
-                        <div class="whitespace-nowrap rounded bg-indigo-50 px-2 py-1 text-xs font-bold leading-none text-indigo-700">候选 ${movie.candidate_count || 0}</div>
-                        ${renderMagnetCheckButton('movie', movie.id)}
-                    </div>
-                    <div id="movie-selected-name-${movie.id}" class="min-w-0 truncate text-xs text-slate-500" title="${escapeHtml(movie.best_magnet_name || '未选中磁力')}">${escapeHtml(movie.best_magnet_name || '未选中磁力')}</div>
+    return `<div class="min-h-0 flex-1 max-w-full divide-y divide-slate-100 overflow-y-auto rounded border border-slate-200 bg-white">${movies.map(movie => `
+        <div class="p-3">
+            <button type="button" onclick="selectMovie('${escapeJs(collectionName)}', ${movie.id})" class="block w-full min-w-0 text-left">
+                <div class="truncate font-bold" title="${escapeHtml(`${movie.code} ${movie.title || ''}`)}"><span>${escapeHtml(movie.code)}</span> <span class="font-normal text-slate-500">${escapeHtml(movie.title || '')}</span></div>
+                <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-slate-500">
+                    <span class="shrink-0 whitespace-nowrap rounded bg-indigo-50 px-1.5 py-0.5 font-bold text-indigo-700">候选 ${movie.candidate_count || 0}</span>
+                    <span id="movie-selected-name-${movie.id}" class="min-w-0 truncate" title="${escapeHtml(movie.best_magnet_name || '未选中磁力')}">${escapeHtml(movie.best_magnet_name || '未选中磁力')}</span>
                 </div>
                 ${renderMovieTags(movie.tags || [])}
-            </div>
-            <div id="magnets-${movie.id}" class="hidden mt-3"></div>
+            </button>
         </div>
     `).join('')}</div>`;
 }
@@ -366,15 +565,13 @@ async function loadMagnets(movieId, keepOpen = false) {
     if (keepOpen) box.classList.remove('hidden');
     const res = await apiFetch(`/api/movies/${movieId}/magnets`).then(r => r.json());
     const magnets = res.data || [];
-    box.innerHTML = magnets.length ? renderMagnetTable(movieId, magnets) : '<div class="text-slate-400">暂无候选磁力</div>';
+    box.innerHTML = magnets.length ? renderMagnetTable(movieId, magnets) : '<div class="flex min-h-0 flex-1 items-center justify-center text-slate-400">暂无候选磁力</div>';
     return magnets;
 }
 
 function renderMagnetTable(movieId, magnets) {
     return `
-        <div class="mb-2 flex items-center justify-between gap-2">
-        </div>
-        <div class="max-h-[280px] overflow-auto">
+        <div class="min-h-0 flex-1 overflow-auto rounded border border-slate-100">
             <table class="w-full table-fixed text-xs">
                 <colgroup>
                     <col class="w-14"><col><col class="w-10"><col class="w-16"><col class="w-16">
@@ -428,7 +625,7 @@ async function refreshMagnetRows(movieId) {
     const res = await apiFetch(`/api/movies/${movieId}/magnets`).then(r => r.json());
     const magnets = res.data || [];
     if (!box.querySelector('tbody')) {
-        box.innerHTML = magnets.length ? renderMagnetTable(movieId, magnets) : '<div class="text-slate-400">暂无候选磁力</div>';
+        box.innerHTML = magnets.length ? renderMagnetTable(movieId, magnets) : '<div class="flex min-h-0 flex-1 items-center justify-center text-slate-400">暂无候选磁力</div>';
         return magnets;
     }
     for (const magnet of magnets) {
@@ -470,27 +667,8 @@ function updateMovieSelectedName(movieId, magnets) {
 }
 
 async function toggleMagnets(movieId) {
-    const box = document.getElementById(`magnets-${movieId}`);
-    if (!box) return;
-    const shouldOpen = box.classList.contains('hidden');
-    if (expandedMovieId && expandedMovieId !== movieId) {
-        const previousBox = document.getElementById(`magnets-${expandedMovieId}`);
-        if (previousBox) previousBox.classList.add('hidden');
-        const previousIcon = document.getElementById(`movie-toggle-${expandedMovieId}`);
-        if (previousIcon) previousIcon.classList.remove('rotate-180');
-    }
-    if (!shouldOpen) {
-        box.classList.add('hidden');
-        const icon = document.getElementById(`movie-toggle-${movieId}`);
-        if (icon) icon.classList.remove('rotate-180');
-        expandedMovieId = null;
-        openMagnetCheckMenu = null;
-        return;
-    }
-    expandedMovieId = movieId;
-    const icon = document.getElementById(`movie-toggle-${movieId}`);
-    if (icon) icon.classList.add('rotate-180');
-    await loadMagnets(movieId, true);
+    if (!expandedCollectionName) return;
+    selectMovie(expandedCollectionName, movieId);
 }
 
 async function selectMagnet(movieId, magnetId) {
@@ -511,11 +689,10 @@ async function reloadCollectionMovies(collectionName) {
     if (res.code !== 200) return;
     const previousMovieId = expandedMovieId;
     collectionMovieCache[filterKey(collectionName)] = res.data || { movies: [], available_tags: [], total_count: 0 };
-    renderCollectionBody(collectionName);
-    if (previousMovieId) {
-        expandedMovieId = previousMovieId;
-        const box = document.getElementById(`magnets-${previousMovieId}`);
-        if (box) await loadMagnets(previousMovieId, true);
+    if (previousMovieId && movieById(collectionName, previousMovieId)) {
+        await renderMagnetListPage(collectionName, previousMovieId);
+    } else if (expandedCollectionName === collectionName) {
+        renderMovieListPage(collectionName);
     }
 }
 

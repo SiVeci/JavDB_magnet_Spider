@@ -147,12 +147,12 @@ async function renderExpandedCollectionPreservingMovie(movieId = expandedMovieId
     if (!expandedCollectionName) {
         return;
     }
-    renderCollectionBody(expandedCollectionName);
-    if (movieId) {
-        expandedMovieId = movieId;
-        const icon = document.getElementById(`movie-toggle-${movieId}`);
-        if (icon) icon.classList.add('rotate-180');
-        await loadMagnets(movieId, true);
+    await ensureCollectionMovies(expandedCollectionName);
+    const routeMovieId = databaseRouteParts()[1];
+    if (movieId && routeMovieId) {
+        await renderMagnetListPage(expandedCollectionName, movieId);
+    } else {
+        renderMovieListPage(expandedCollectionName);
     }
 }
 
@@ -179,12 +179,7 @@ async function toggleMovieMagnetCheckMenu(movieId, event = null) {
     const key = magnetCheckMenuKey('movie', movieId);
     openMagnetCheckMenu = openMagnetCheckMenu === key ? null : key;
     if (!expandedCollectionName) return;
-    const openedMovieId = expandedMovieId;
-    renderCollectionBody(expandedCollectionName);
-    if (openedMovieId) {
-        expandedMovieId = openedMovieId;
-        await loadMagnets(openedMovieId, true);
-    }
+    await renderDatabaseRoute();
 }
 
 /* ===== 检测任务启动 ===== */
@@ -246,18 +241,12 @@ async function restoreMagnetCheckJob() {
 async function ensureCollectionVisible(collectionName) {
     if (!collectionName) return;
     if (expandedCollectionName !== collectionName) {
-        await toggleCollection(collectionName);
+        setDatabaseHash(collectionName);
+        await ensureCollectionMovies(collectionName);
         return;
     }
-    const body = document.getElementById(`collection-body-${collectionName}`);
-    if (body && !body.dataset.loaded) {
-        const res = await apiFetch(`/api/collections/${encodeURIComponent(collectionName)}/movies`).then(r => r.json());
-        if (res.code === 200) {
-            body.dataset.loaded = '1';
-            collectionMovieCache[filterKey(collectionName)] = res.data || { movies: [], available_tags: [], total_count: 0 };
-        }
-    }
-    renderCollectionBody(collectionName);
+    await ensureCollectionMovies(collectionName);
+    await renderDatabaseRoute();
 }
 
 async function pollMagnetCheckJob() {
@@ -300,8 +289,6 @@ async function cancelMagnetCheck(jobId) {
 async function refreshMagnetCheckTarget(job) {
     if (job.scope === 'collection') {
         if (expandedCollectionName === job.target) {
-            const body = document.getElementById(`collection-body-${job.target}`);
-            if (body) body.dataset.loaded = '';
             await reloadCollectionMovies(job.target);
         }
         renderGlobalMagnetCheckButton();

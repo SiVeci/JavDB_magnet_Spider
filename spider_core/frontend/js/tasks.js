@@ -95,9 +95,192 @@ function toggleTag(value) {
 
 /* ===== 运行日志面板 ===== */
 
+let tasksLayoutFrame = null;
+const TASK_LIST_MIN_HEIGHT = 34;
+const EMPTY_TASK_LIST_MIN_HEIGHT = 44;
+
+function scheduleFitTasksLayout() {
+    if (tasksLayoutFrame) return;
+    tasksLayoutFrame = requestAnimationFrame(() => {
+        tasksLayoutFrame = null;
+        fitTasksLayout();
+    });
+}
+
 function renderLogPanelState() {
-    document.getElementById('logContainer').classList.toggle('hidden', logCollapsed);
+    const logContainer = document.getElementById('logContainer');
+    logContainer.classList.toggle('hidden', logCollapsed);
     document.getElementById('log-toggle-icon').innerText = logCollapsed ? '▼' : '▲';
+    if (!logCollapsed) {
+        logContainer.style.height = '';
+    }
+    scheduleFitTasksLayout();
+}
+
+function pxValue(value) {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function elementHeight(element) {
+    if (!element) return 0;
+    return Math.ceil(element.getBoundingClientRect().height || element.scrollHeight || 0);
+}
+
+function borderBlockSize(element) {
+    if (!element) return 0;
+    const style = window.getComputedStyle(element);
+    return pxValue(style.borderTopWidth) + pxValue(style.borderBottomWidth);
+}
+
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(value, max));
+}
+
+function taskListMinimumHeight(taskList) {
+    const count = Number(taskList?.dataset.visibleTaskCount || 0);
+    const target = taskListTargetHeight(taskList);
+    if (count <= 0) return Math.min(target || EMPTY_TASK_LIST_MIN_HEIGHT, EMPTY_TASK_LIST_MIN_HEIGHT);
+    return Math.min(target || TASK_LIST_MIN_HEIGHT, TASK_LIST_MIN_HEIGHT);
+}
+
+function fitTasksViewHeight() {
+    const view = document.getElementById('view-tasks');
+    if (!view || view.classList.contains('hidden')) return;
+    const rect = view.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    const documentTop = rect.top + (window.scrollY || window.pageYOffset || 0);
+    const bodyStyle = window.getComputedStyle(document.body);
+    const bodyBottomPadding = parseFloat(bodyStyle.paddingBottom) || 0;
+    const guard = 16;
+    const available = Math.floor(viewportHeight - documentTop - bodyBottomPadding - guard);
+    if (available <= 0) return available;
+    view.style.height = `${available}px`;
+    view.style.overflowY = 'hidden';
+    view.style.overflowX = 'hidden';
+    return available;
+}
+
+function fitTaskMonitorHeight() {
+    const view = document.getElementById('view-tasks');
+    if (!view || view.classList.contains('hidden')) return;
+    const viewRect = view.getBoundingClientRect();
+    const configPanel = document.getElementById('taskConfigPanel');
+    const monitor = document.getElementById('taskMonitorCard');
+    if (!configPanel || !monitor) return;
+    const viewSplit = window.matchMedia('(min-width: 1280px)').matches;
+    if (viewSplit) {
+        view.style.gridTemplateRows = '';
+        const monitorRect = monitor.getBoundingClientRect();
+        const available = Math.floor(viewRect.bottom - monitorRect.top);
+        monitor.style.height = `${Math.max(0, available)}px`;
+        return;
+    }
+
+    const viewStyle = window.getComputedStyle(view);
+    const gap = pxValue(viewStyle.rowGap);
+    const configHeight = Math.ceil(Math.max(elementHeight(configPanel), configPanel.scrollHeight || 0));
+    const monitorHeight = Math.max(0, Math.floor(viewRect.height - configHeight - gap));
+    view.style.gridTemplateRows = `${configHeight}px minmax(0, ${monitorHeight}px)`;
+    monitor.style.height = `${monitorHeight}px`;
+}
+
+function taskListTargetHeight(taskList) {
+    const count = Number(taskList.dataset.visibleTaskCount || 0);
+    if (count <= 0) return Math.max(44, Math.min(56, taskList.scrollHeight || 44));
+    const rows = Array.from(taskList.children).slice(0, Math.min(count, 5));
+    const measured = rows.reduce((sum, row) => sum + row.getBoundingClientRect().height, 0);
+    if (measured > 0) return Math.ceil(measured);
+    return Math.min(taskList.scrollHeight || 0, 5 * 44) || 44;
+}
+
+function fitLogPanelHeight() {
+    const logContainer = document.getElementById('logContainer');
+    const monitorBody = document.getElementById('taskMonitorBody');
+    const queuePanel = document.getElementById('taskQueuePanel');
+    const queueToolbar = document.getElementById('taskQueueToolbar');
+    const taskList = document.getElementById('task-list');
+    const logPanel = document.getElementById('taskLogPanel');
+    const logShell = document.getElementById('taskLogShell');
+    const logHeader = logShell?.querySelector('button');
+    const currentActions = document.getElementById('currentActions');
+    if (!logContainer || !monitorBody || !queuePanel || !queueToolbar || !taskList || !logPanel || !logShell || !logHeader) return;
+
+    const bodyHeight = Math.max(0, Math.floor(monitorBody.clientHeight || monitorBody.getBoundingClientRect().height));
+    const isSplitLayout = window.matchMedia('(min-width: 1024px)').matches;
+    const targetListHeight = taskListTargetHeight(taskList);
+    const minListHeight = taskListMinimumHeight(taskList);
+    const queueToolbarHeight = elementHeight(queueToolbar);
+    const logPanelStyle = window.getComputedStyle(logPanel);
+    const logPanelPaddingY = pxValue(logPanelStyle.paddingTop) + pxValue(logPanelStyle.paddingBottom);
+    const logPanelGap = pxValue(logPanelStyle.rowGap || logPanelStyle.gap);
+    const actionVisible = currentActions && !currentActions.classList.contains('hidden');
+    const actionHeight = actionVisible ? elementHeight(currentActions) : 0;
+    const actionGap = actionVisible ? logPanelGap : 0;
+    const logHeaderHeight = elementHeight(logHeader);
+    const logFixedHeight = logPanelPaddingY + actionHeight + actionGap + logHeaderHeight + borderBlockSize(logShell);
+    const logExpanded = !logContainer.classList.contains('hidden');
+
+    taskList.style.maxHeight = 'none';
+    queuePanel.style.overflow = 'hidden';
+    logPanel.style.overflow = 'hidden';
+
+    if (isSplitLayout) {
+        monitorBody.style.gridTemplateRows = '';
+        queuePanel.style.height = `${bodyHeight}px`;
+        logPanel.style.height = `${bodyHeight}px`;
+        taskList.style.height = `${Math.max(0, bodyHeight - queueToolbarHeight)}px`;
+        logContainer.style.height = logExpanded ? `${Math.max(0, bodyHeight - logFixedHeight)}px` : '';
+        return;
+    }
+
+    const desiredListHeight = Math.max(minListHeight, targetListHeight);
+    let listHeight = desiredListHeight;
+    let logContentHeight = 0;
+
+    if (logExpanded) {
+        const flexibleBudget = bodyHeight - queueToolbarHeight - logFixedHeight;
+        if (flexibleBudget >= desiredListHeight) {
+            logContentHeight = flexibleBudget - desiredListHeight;
+        } else if (flexibleBudget >= minListHeight) {
+            listHeight = Math.min(desiredListHeight, flexibleBudget);
+        } else {
+            listHeight = Math.min(minListHeight, Math.max(0, bodyHeight - queueToolbarHeight));
+        }
+    } else {
+        const listBudget = bodyHeight - queueToolbarHeight - logFixedHeight;
+        if (listBudget >= desiredListHeight) {
+            listHeight = desiredListHeight;
+        } else if (listBudget >= minListHeight) {
+            listHeight = Math.min(desiredListHeight, listBudget);
+        } else {
+            listHeight = Math.min(minListHeight, Math.max(0, bodyHeight - queueToolbarHeight));
+        }
+    }
+
+    const queueHeight = clamp(queueToolbarHeight + listHeight, 0, bodyHeight);
+    const logPanelHeight = Math.max(0, bodyHeight - queueHeight);
+    if (logExpanded) {
+        logContentHeight = Math.max(0, Math.min(logContentHeight, logPanelHeight - logFixedHeight));
+    }
+
+    monitorBody.style.gridTemplateRows = `${queueHeight}px minmax(0, ${logPanelHeight}px)`;
+    queuePanel.style.height = `${queueHeight}px`;
+    logPanel.style.height = `${logPanelHeight}px`;
+    taskList.style.maxHeight = 'none';
+    taskList.style.height = `${Math.max(0, queueHeight - queueToolbarHeight)}px`;
+
+    if (!logExpanded) {
+        logContainer.style.height = '';
+        return;
+    }
+    logContainer.style.height = `${logContentHeight}px`;
+}
+
+function fitTasksLayout() {
+    fitTasksViewHeight();
+    fitTaskMonitorHeight();
+    fitLogPanelHeight();
 }
 
 function toggleLogPanel() {
@@ -174,6 +357,18 @@ function stateClass(state) {
     return 'bg-slate-100 text-slate-700';
 }
 
+function progressPercent(progress) {
+    const parts = String(progress || '0/0').split('/');
+    return Number(parts[1]) ? Math.min(100, Math.round(Number(parts[0]) / Number(parts[1]) * 100)) : 0;
+}
+
+function progressBarClass(state) {
+    if (state === 'finished') return 'bg-green-600';
+    if (state === 'failed' || state === 'canceled' || state === 'cancel_requested') return 'bg-red-500';
+    if (state === 'paused' || state === 'pause_requested') return 'bg-amber-500';
+    return 'bg-blue-600';
+}
+
 function isFinishedTask(task) {
     return ['finished', 'canceled', 'failed'].includes(task.state);
 }
@@ -192,19 +387,58 @@ async function loadTasks() {
 function renderQueueControls() {
     const btn = document.getElementById('startQueueBtn');
     btn.disabled = !queueStatus.can_start;
-    btn.innerText = queueStatus.queue_state === 'running' ? '队列运行中' : '开始任务队列';
+    const startTitle = queueStatus.queue_state === 'running' ? '队列运行中' : '开始任务队列';
+    btn.title = startTitle;
+    btn.setAttribute('aria-label', startTitle);
     const activeCount = queueStatus.active_count || 0;
     const finishedCount = queueStatus.finished_count || 0;
-    document.getElementById('queueSummary').innerText = `待处理 ${activeCount} 个 · 已结束 ${finishedCount} 个 · ${queueStatus.queue_state || 'idle'}`;
-    document.getElementById('toggleFinishedBtn').innerText = showFinishedTasks ? '隐藏已结束' : '显示已结束';
+    const queueSummary = document.getElementById('queueSummary');
+    queueSummary.title = `待处理 ${activeCount} 个 · 已结束 ${finishedCount} 个 · ${queueStatus.queue_state || 'idle'}`;
+    queueSummary.innerHTML = `<span>待处理 ${activeCount} 个</span><span>已结束 ${finishedCount} 个</span>`;
+    const toggleFinishedBtn = document.getElementById('toggleFinishedBtn');
+    const toggleTitle = showFinishedTasks ? '隐藏已结束' : '显示已结束';
+    toggleFinishedBtn.title = toggleTitle;
+    toggleFinishedBtn.setAttribute('aria-label', toggleTitle);
     document.getElementById('cleanupFinishedBtn').disabled = finishedCount <= 0;
+    renderQueueTaskControl(currentTask());
 }
 
-function taskActions(task) {
+function renderQueueTaskControl(task) {
+    const slot = document.getElementById('queueTaskControlSlot');
+    if (!slot) return;
+    if (!task) {
+        slot.innerHTML = '';
+        return;
+    }
+    const id = escapeJs(task.task_id);
+    if (['running', 'pending', 'pause_requested'].includes(task.state)) {
+        slot.innerHTML = `
+            <button type="button" onclick="pauseTask('${id}')" title="暂停当前任务" aria-label="暂停当前任务" class="inline-flex h-10 w-10 items-center justify-center rounded bg-amber-50 text-amber-700 hover:bg-amber-100">
+                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="currentColor">
+                    <path d="M7 5h4v14H7z"></path>
+                    <path d="M13 5h4v14h-4z"></path>
+                </svg>
+            </button>`;
+        return;
+    }
+    if (['paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)) {
+        slot.innerHTML = `
+            <button type="button" onclick="resumeTaskById('${id}')" title="恢复当前任务" aria-label="恢复当前任务" class="inline-flex h-10 w-10 items-center justify-center rounded bg-blue-50 text-blue-700 hover:bg-blue-100">
+                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 7v6h6"></path>
+                    <path d="M20 17a8 8 0 0 0-13.66-5.66L4 13"></path>
+                </svg>
+            </button>`;
+        return;
+    }
+    slot.innerHTML = '';
+}
+
+function taskActions(task, options = {}) {
     const id = escapeJs(task.task_id);
     const actions = [];
-    if (['running', 'pending', 'pause_requested'].includes(task.state)) actions.push(`<button onclick="pauseTask('${id}')" class="text-xs px-2 py-1 rounded bg-amber-50 text-amber-700 font-bold">暂停</button>`);
-    if (['paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)) actions.push(`<button onclick="resumeTaskById('${id}')" class="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700 font-bold">恢复</button>`);
+    if (!options.hidePauseResume && ['running', 'pending', 'pause_requested'].includes(task.state)) actions.push(`<button onclick="pauseTask('${id}')" class="text-xs px-2 py-1 rounded bg-amber-50 text-amber-700 font-bold">暂停</button>`);
+    if (!options.hidePauseResume && ['paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)) actions.push(`<button onclick="resumeTaskById('${id}')" class="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700 font-bold">恢复</button>`);
     if (task.state === 'waiting_cookie') actions.push(`<button onclick="refreshCookie('${id}')" class="text-xs px-2 py-1 rounded bg-orange-50 text-orange-700 font-bold">读安卓 Cookie</button>`);
     if (task.state === 'waiting_choice') {
         actions.push(`<button onclick="setTaskModeById('${id}', 'incremental')" class="text-xs px-2 py-1 rounded bg-purple-50 text-purple-700 font-bold">增量</button>`);
@@ -217,18 +451,22 @@ function taskActions(task) {
 function renderTaskList() {
     const box = document.getElementById('task-list');
     const visibleTasks = showFinishedTasks ? tasksCache : tasksCache.filter(task => !isFinishedTask(task));
+    box.dataset.visibleTaskCount = String(visibleTasks.length);
     if (!visibleTasks.length) {
         box.innerHTML = '<div class="p-4 text-center text-slate-400 text-sm">暂无任务</div>';
+        scheduleFitTasksLayout();
         return;
     }
     box.innerHTML = visibleTasks.map(task => {
         const rawName = task.final_filename || task.filename || '自动命名';
         const taskId = escapeJs(task.task_id);
+        const pct = progressPercent(task.progress);
+        const progressClass = progressBarClass(task.state);
         const copyIncrementalBtn = task.can_copy_incremental_magnets
             ? `<button onclick="copyTaskIncrementalMagnets('${taskId}')" title="复制新增影片磁力" aria-label="复制新增影片磁力" class="inline-flex h-6 w-6 items-center justify-center rounded bg-blue-50 text-sm font-bold text-blue-700 hover:bg-blue-100">⧉</button>`
             : '';
         return `
-        <div class="grid grid-cols-[minmax(0,1fr)_42px_72px_52px] items-center gap-1 px-3 py-2 text-xs ${task.task_id === queueStatus.current_task_id ? 'bg-blue-50' : 'bg-white'}">
+        <div class="relative grid grid-cols-[minmax(0,1fr)_42px_72px_52px] items-center gap-1 overflow-hidden px-3 py-1 text-xs ${task.task_id === queueStatus.current_task_id ? 'bg-blue-50' : 'bg-white'}">
             <div class="min-w-0">
                 <div class="truncate font-bold text-xs leading-tight" title="${escapeHtml(displayName(rawName))}">${escapeHtml(displayName(rawName))}</div>
                 <div class="truncate font-mono text-[10px] leading-tight text-slate-400">${escapeHtml((task.task_id || '').slice(0, 8))}</div>
@@ -241,8 +479,12 @@ function renderTaskList() {
                 ${copyIncrementalBtn}
                 <button onclick="deleteTaskById('${taskId}')" title="删除任务" aria-label="删除任务" class="inline-flex h-6 w-6 items-center justify-center rounded bg-red-50 text-sm font-bold text-red-700 hover:bg-red-100">×</button>
             </div>
+            <div class="absolute inset-x-0 bottom-0 h-[2px] bg-slate-100">
+                <div class="h-full ${progressClass} transition-all duration-300" style="width:${pct}%"></div>
+            </div>
         </div>
     `}).join('');
+    scheduleFitTasksLayout();
 }
 
 function toggleFinishedTasks() {
@@ -274,15 +516,6 @@ async function pollStatus() {
 
 function renderCurrentTask(data) {
     const task = currentTask();
-    const title = task ? displayName(task.final_filename || task.filename || '当前任务') : '空闲';
-    document.getElementById('currentTaskTitle').innerText = title;
-    document.getElementById('currentTaskMeta').innerText = task ? `${stateLabel(task.state)} · ${task.start_url || ''}` : '没有正在执行或阻塞的任务';
-    document.getElementById('statusLabel').innerText = `状态: ${stateLabel(data.state)}`;
-    document.getElementById('progressText').innerText = data.progress || '0/0';
-    document.getElementById('currentCode').innerText = data.current || '-';
-    const parts = String(data.progress || '0/0').split('/');
-    const pct = Number(parts[1]) ? Math.min(100, Math.round(Number(parts[0]) / Number(parts[1]) * 100)) : 0;
-    document.getElementById('progressBar').style.width = `${pct}%`;
     const logs = data.logs || [];
     document.getElementById('logContainer').innerHTML = logs.length
         ? logs.map(log => `<div class="mb-1 border-b border-slate-100 pb-1">${escapeHtml(log)}</div>`).join('')
@@ -292,11 +525,19 @@ function renderCurrentTask(data) {
 
 function renderCurrentActions(task) {
     const box = document.getElementById('currentActions');
+    const wasHidden = box.classList.contains('hidden');
     if (!task) {
         box.innerHTML = '';
+        box.classList.add('hidden');
+        renderQueueTaskControl(null);
+        if (!wasHidden) scheduleFitTasksLayout();
         return;
     }
-    box.innerHTML = taskActions(task);
+    box.innerHTML = taskActions(task, { hidePauseResume: true });
+    box.classList.toggle('hidden', !box.innerHTML.trim());
+    renderQueueTaskControl(task);
+    const isHidden = box.classList.contains('hidden');
+    if (wasHidden !== isHidden) scheduleFitTasksLayout();
 }
 
 async function refreshMonitor() {

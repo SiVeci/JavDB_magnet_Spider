@@ -90,6 +90,56 @@ function handleDocumentClick(event) {
     closeOpenMenus();
 }
 
+/* ===== 工作区导航 ===== */
+
+function normalizeView(value) {
+    const root = String(value || '').split('/')[0];
+    return ['tasks', 'database', 'settings'].includes(root) ? root : 'tasks';
+}
+
+function setActiveView(view) {
+    activeView = normalizeView(view);
+    document.querySelectorAll('[data-view]').forEach(section => {
+        section.classList.toggle('hidden', section.dataset.view !== activeView);
+    });
+    ['tasks', 'database', 'settings'].forEach(item => {
+        const button = document.getElementById(`nav-${item}`);
+        if (!button) return;
+        const active = item === activeView;
+        button.classList.toggle('bg-indigo-600', active);
+        button.classList.toggle('text-white', active);
+        button.classList.toggle('shadow-sm', active);
+        button.classList.toggle('text-slate-600', !active);
+    });
+    if (activeView === 'database') {
+        if (typeof renderDatabaseRoute === 'function') renderDatabaseRoute();
+        fitMovieTags();
+    }
+    if (activeView === 'settings') {
+        renderRuntimePanelState();
+    }
+    if (activeView === 'tasks' && typeof fitTasksLayout === 'function') {
+        requestAnimationFrame(fitTasksLayout);
+    }
+}
+
+function viewFromHash() {
+    return normalizeView((window.location.hash || '#/tasks').replace(/^#\/?/, ''));
+}
+
+function navigateToView(view) {
+    const next = normalizeView(view);
+    if (window.location.hash !== `#/${next}`) {
+        window.location.hash = `#/${next}`;
+    } else {
+        setActiveView(next);
+    }
+}
+
+function handleHashChange() {
+    setActiveView(viewFromHash());
+}
+
 /* ===== 初始化与首屏加载 ===== */
 
 async function refreshAll() {
@@ -106,9 +156,15 @@ async function startApp() {
 }
 
 window.onload = async function() {
+    showAuthPanel(false);
+    window.addEventListener('hashchange', handleHashChange);
+    setActiveView(viewFromHash());
     renderRuntimePanelState();
     renderLogPanelState();
-    window.addEventListener('resize', () => fitMovieTags());
+    window.addEventListener('resize', () => {
+        fitMovieTags();
+        if (typeof fitTasksLayout === 'function') fitTasksLayout();
+    });
     document.addEventListener('click', handleDocumentClick);
     document.getElementById('start_url').value = localStorage.getItem('javdb_url') || '';
     document.getElementById('filename').value = localStorage.getItem('javdb_filename') || '';

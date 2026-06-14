@@ -35,12 +35,12 @@ function setTrackerList(trackers) {
 }
 
 function renderRuntimePanelState() {
-    document.getElementById('runtime-config-body').classList.toggle('hidden', runtimeConfigCollapsed);
-    document.getElementById('runtime-toggle-icon').innerText = runtimeConfigCollapsed ? '▼' : '▲';
+    const body = document.getElementById('runtime-config-body');
+    if (!body) return;
+    body.classList.remove('hidden');
 }
 
 function toggleRuntimePanel() {
-    runtimeConfigCollapsed = !runtimeConfigCollapsed;
     renderRuntimePanelState();
 }
 
