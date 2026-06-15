@@ -74,6 +74,26 @@ async function saveAuthToken() {
 
 /* ===== 全局下拉菜单关闭 ===== */
 
+/*
+ * 互斥菜单状态管理：三个菜单变量（标签过滤 / 排除标签 / 磁力检测）在任一时刻至多开一个。
+ * 统一在此切换——先清空全部，再按 kind 设值（若点击的是已开项则保持关闭），最后调用重渲染回调。
+ * 重渲染目标因菜单位置不同而不同，由调用方传入 rerender。
+ */
+function openExclusiveMenu(kind, value, rerender) {
+    const same = (kind === 'tag' && openTagDropdown === value)
+        || (kind === 'exclude' && openExcludeDropdown === value)
+        || (kind === 'check' && openMagnetCheckMenu === value);
+    openTagDropdown = null;
+    openExcludeDropdown = null;
+    openMagnetCheckMenu = null;
+    if (!same) {
+        if (kind === 'tag') openTagDropdown = value;
+        else if (kind === 'exclude') openExcludeDropdown = value;
+        else if (kind === 'check') openMagnetCheckMenu = value;
+    }
+    if (typeof rerender === 'function') rerender();
+}
+
 function closeOpenMenus() {
     if (!openTagDropdown && !openExcludeDropdown && !openMagnetCheckMenu) return;
     const collectionName = expandedCollectionName;
@@ -106,12 +126,7 @@ function setActiveView(view) {
         const button = document.getElementById(`nav-${item}`);
         if (!button) return;
         const active = item === activeView;
-        button.classList.toggle('bg-indigo-600', active);
-        button.classList.toggle('text-white', active);
-        button.classList.toggle('shadow-sm', active);
-        button.classList.toggle('hover:bg-indigo-700', active);
-        button.classList.toggle('text-slate-600', !active);
-        button.classList.toggle('hover:bg-slate-50', !active);
+        button.classList.toggle('nav-seg--active', active);
         if (active) {
             button.setAttribute('aria-current', 'page');
         } else {

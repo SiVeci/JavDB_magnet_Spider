@@ -50,14 +50,8 @@ function renderHealthCount(value) {
 
 function renderCollectionHealthTags(movies) {
     const counts = collectionHealthCounts(movies);
-    const items = [
-        { key: 'active', title: '有效影片', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
-        { key: 'weak', title: '弱影片', className: 'border-amber-200 bg-amber-50 text-amber-700' },
-        { key: 'dead', title: '无效影片', className: 'border-red-200 bg-red-100 text-red-700' },
-        { key: 'failed', title: '检测失败影片', className: 'border-red-100 bg-red-50 text-red-400' },
-    ];
     return `<div class="grid h-9 grid-cols-2 grid-rows-2 gap-0.5" aria-label="磁力检测影片统计">
-        ${items.map(item => `<span title="${item.title}" class="flex min-w-[4ch] items-center justify-center rounded border px-1 text-[10px] font-bold leading-none ${item.className}">${renderHealthCount(counts[item.key])}</span>`).join('')}
+        ${HEALTH_ITEMS.map(item => `<span title="${item.title}" class="badge ${item.badge} min-w-[4ch] px-1 text-[10px]">${renderHealthCount(counts[item.key])}</span>`).join('')}
     </div>`;
 }
 
@@ -67,8 +61,8 @@ function renderMovieTags(tags) {
     const list = tags || [];
     if (!list.length) return '';
     return `<div class="movie-tags mt-2 flex max-w-full flex-nowrap gap-0.5 overflow-hidden" title="${escapeHtml(list.join(', '))}">
-        ${list.map(tag => `<span data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[11px]">${escapeHtml(tag)}</span>`).join('')}
-        <span data-role="more" class="hidden shrink-0 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 text-[11px]">+0</span>
+        ${list.map(tag => `<span data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-[color:var(--c-neutral-soft)] text-[color:var(--c-neutral-text)] text-[11px]">${escapeHtml(tag)}</span>`).join('')}
+        <span data-role="more" class="badge badge-info hidden shrink-0 text-[11px]">+0</span>
     </div>`;
 }
 
@@ -113,14 +107,8 @@ function fitMovieTags(root = document) {
 /* ===== 磁力状态图标 ===== */
 
 function renderMagnetStatus(magnet) {
-    if (magnet.check_error && !magnet.check_status) {
-        return `<span title="${escapeHtml(magnet.check_error)}" class="text-slate-500">❌</span>`;
-    }
-    if (!magnet.checked_at) return '<span title="未检测" class="text-slate-400">⚪</span>';
-    if (magnet.check_status === 'active') return '<span title="有效" class="text-green-600">🟢</span>';
-    if (magnet.check_status === 'weak') return '<span title="弱" class="text-yellow-500">🟡</span>';
-    if (magnet.check_status === 'dead') return `<span title="${escapeHtml(magnet.check_error || '无效')}" class="text-red-600">🔴</span>`;
-    return `<span title="${escapeHtml(magnet.check_error || '检测失败')}" class="text-slate-500">❌</span>`;
+    const meta = magnetStatusMeta(magnet);
+    return `<span title="${escapeHtml(meta.title)}" class="${meta.text}">${meta.icon}</span>`;
 }
 
 /* ===== 数据库面包屑路由与集合列表 ===== */
@@ -160,10 +148,10 @@ function renderDatabaseBreadcrumb(collectionName = null, movie = null) {
     const box = databaseBreadcrumb();
     if (!box) return;
     const items = [
-        `<button type="button" onclick="setDatabaseHash()" class="font-bold text-indigo-700 hover:underline">数据库</button>`
+        `<button type="button" onclick="setDatabaseHash()" class="font-bold text-[color:var(--c-primary-text)] hover:underline">数据库</button>`
     ];
     if (collectionName) {
-        items.push(`<button type="button" onclick="setDatabaseHash('${escapeJs(collectionName)}')" class="max-w-[42vw] truncate font-bold text-indigo-700 hover:underline">${escapeHtml(displayName(collectionName))}</button>`);
+        items.push(`<button type="button" onclick="setDatabaseHash('${escapeJs(collectionName)}')" class="max-w-[42vw] truncate font-bold text-[color:var(--c-primary-text)] hover:underline">${escapeHtml(displayName(collectionName))}</button>`);
     }
     if (movie) {
         items.push(`<span class="max-w-[42vw] truncate font-bold text-slate-700">${escapeHtml(movie.code || String(movie.id))}</span>`);
@@ -174,7 +162,10 @@ function renderDatabaseBreadcrumb(collectionName = null, movie = null) {
 function showDatabaseLoading(label = '加载中...') {
     const content = databaseContent();
     if (!content) return;
-    content.innerHTML = `<div class="flex min-h-0 flex-1 items-center justify-center p-8 text-center text-sm text-slate-400">${escapeHtml(label)}</div>`;
+    content.innerHTML = `<div class="empty-state flex-1 flex-col gap-3">
+        <span class="spinner-ring" aria-hidden="true"></span>
+        <span>${escapeHtml(label)}</span>
+    </div>`;
 }
 
 function setCollectionToolbarVisible(show) {
@@ -223,9 +214,9 @@ function renderCollectionListPage() {
     content.innerHTML = `
         <div class="shrink-0 border-b border-slate-100 px-4 pb-4 pt-3">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <input id="collectionSearch" type="search" oninput="updateCollectionSearch()" value="${escapeHtml(collectionSearchQuery)}" class="w-full rounded border border-slate-300 px-3 py-2 text-sm md:max-w-sm" placeholder="搜索数据集合">
+                <input id="collectionSearch" type="search" oninput="updateCollectionSearch()" value="${escapeHtml(collectionSearchQuery)}" class="input md:max-w-sm" placeholder="搜索数据集合">
                 <label class="flex items-center gap-2 text-xs font-bold text-slate-600">
-                    <input id="selectAllCheckbox" type="checkbox" onclick="toggleSelectAll()">
+                    <input id="selectAllCheckbox" type="checkbox" class="accent-[color:var(--c-primary)]" onclick="toggleSelectAll()">
                     <span id="selectAllLabel">全选当前列表</span>
                 </label>
             </div>
@@ -251,7 +242,7 @@ function renderCollections() {
         return;
     }
     if (!collectionsCache.length) {
-        list.innerHTML = '<div class="px-6 py-10 text-center text-slate-400">暂无数据库集合</div>';
+        list.innerHTML = '<div class="empty-state px-6 py-10">暂无数据库集合</div>';
         selectAll.classList.add('hidden');
         if (selectAllLabel) selectAllLabel.classList.add('hidden');
         batchBtn.classList.add('hidden');
@@ -262,7 +253,7 @@ function renderCollections() {
     if (selectAllLabel) selectAllLabel.classList.remove('hidden');
     batchBtn.classList.remove('hidden');
     if (!visibleCollections.length) {
-        list.innerHTML = '<div class="px-6 py-10 text-center text-slate-400">没有匹配的数据集合</div>';
+        list.innerHTML = '<div class="empty-state px-6 py-10">没有匹配的数据集合</div>';
         updateBatchDeleteBtn();
         return;
     }
@@ -276,7 +267,7 @@ function renderCollections() {
             <button type="button" onclick="selectCollection('${jsName}')" class="min-w-0 flex-1 text-left">
                 <div class="flex min-w-0 items-center justify-between gap-2">
                     <div class="truncate font-bold text-slate-800" title="${shownName}">${shownName}</div>
-                    <span class="shrink-0 rounded bg-blue-50 px-1.5 py-0.5 text-[11px] font-bold text-blue-700">${item.count}</span>
+                    <span class="badge badge-info shrink-0 text-[11px]">${item.count}</span>
                 </div>
                 <div class="mt-1 truncate text-xs text-slate-400">${escapeHtml(item.time)} · ${((item.tags || []).length)} 个标签</div>
             </button>
@@ -313,8 +304,8 @@ function renderCollectionToolbar(collectionName) {
     const item = collectionItem(collectionName) || { name: collectionName, count: 0, tags: [], time: '' };
     const jsName = escapeJs(collectionName);
     const incrementalButton = item.has_source_url
-        ? `<button onclick="enqueueCollectionIncremental('${jsName}', event)" title="增量爬取此集合" aria-label="增量爬取此集合" class="inline-flex h-9 w-9 items-center justify-center rounded bg-indigo-50 text-sm font-bold text-indigo-700 hover:bg-indigo-100">⟳</button>`
-        : `<button type="button" disabled title="缺少原始 URL，无法快捷增量" aria-label="缺少原始 URL，无法快捷增量" class="inline-flex h-9 w-9 cursor-not-allowed items-center justify-center rounded bg-slate-50 text-sm font-bold text-slate-300">⟳</button>`;
+        ? `<button onclick="enqueueCollectionIncremental('${jsName}', event)" title="增量爬取此集合" aria-label="增量爬取此集合" class="btn btn-icon-md btn-info text-sm">⟳</button>`
+        : `<button type="button" disabled title="缺少原始 URL，无法快捷增量" aria-label="缺少原始 URL，无法快捷增量" class="btn btn-icon-md btn-soft text-sm">⟳</button>`;
     return `
         <div class="shrink-0 border-b border-slate-100 px-5 pb-2 pt-2">
             <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
@@ -322,11 +313,11 @@ function renderCollectionToolbar(collectionName) {
                     <div class="text-xs text-slate-500">${escapeHtml(item.time || '-')} · ${Number(item.count || 0)} 部影片 · ${((item.tags || []).length)} 个标签</div>
                 </div>
                 <div class="flex flex-wrap gap-2">
-                    <button onclick="copyMagnets('${jsName}')" title="复制集合磁力" aria-label="复制集合磁力" class="inline-flex h-9 w-9 items-center justify-center rounded bg-blue-50 text-sm font-bold text-blue-700 hover:bg-blue-100">⧉</button>
-                    <button onclick="downloadCsv('${jsName}')" title="下载 CSV" aria-label="下载 CSV" class="inline-flex h-9 w-9 items-center justify-center rounded bg-green-50 text-sm font-bold text-green-700 hover:bg-green-100">⇩</button>
+                    <button onclick="copyMagnets('${jsName}')" title="复制集合磁力" aria-label="复制集合磁力" class="btn btn-icon-md btn-info text-sm">⧉</button>
+                    <button onclick="downloadCsv('${jsName}')" title="下载 CSV" aria-label="下载 CSV" class="btn btn-icon-md btn-success text-sm">⇩</button>
                     ${incrementalButton}
                     ${renderMagnetCheckButton('collection', collectionName)}
-                    <button onclick="deleteFiles(['${jsName}'])" title="删除集合" aria-label="删除集合" class="inline-flex h-9 w-9 items-center justify-center rounded bg-red-50 text-red-700 hover:bg-red-100">
+                    <button onclick="deleteFiles(['${jsName}'])" title="删除集合" aria-label="删除集合" class="btn btn-icon-md btn-danger">
                         <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M3 6h18"></path>
                             <path d="M8 6V4h8v2"></path>
@@ -450,23 +441,23 @@ function renderCollectionFilter(collectionName, availableTags, filteredCount, to
     return `
         <div class="mb-3 flex shrink-0 flex-wrap items-center gap-2">
             <div class="relative min-w-0" data-menu-root="tag-filter">
-                <button type="button" onclick="toggleCollectionTagDropdown('${escapeJs(collectionName)}', event)" class="flex h-9 min-w-[104px] items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 text-left text-xs font-bold text-slate-700">
+                <button type="button" onclick="toggleCollectionTagDropdown('${escapeJs(collectionName)}', event)" class="flex h-9 min-w-[104px] items-center justify-between gap-2 rounded border border-[color:var(--c-border)] bg-surface px-2 text-left text-xs font-bold text-[color:var(--c-neutral-text)] transition-colors hover:bg-[color:var(--c-surface-sunken)]">
                     <span class="min-w-0 truncate">筛选: ${filteredCount}/${totalCount}</span>
                     <span class="shrink-0">${isOpen ? '▲' : '▼'}</span>
                 </button>
-                <div id="tag-dropdown-${escapeHtml(collectionName)}" onclick="event.stopPropagation()" class="${isOpen ? '' : 'hidden'} absolute z-20 mt-1 w-64 max-h-72 overflow-y-auto rounded border border-slate-200 bg-white shadow-lg p-2">
+                <div id="tag-dropdown-${escapeHtml(collectionName)}" onclick="event.stopPropagation()" class="menu ${isOpen ? '' : 'hidden'} w-64 max-h-72 overflow-y-auto">
                     ${renderTagOption(collectionName, 'all', '全部', selected.length === 0)}
                     ${(availableTags || []).map(tag => renderTagOption(collectionName, tag, tag, selected.includes(tag))).join('')}
                 </div>
             </div>
             <div class="relative shrink-0" data-menu-root="exclude-filter">
-                <button type="button" onclick="toggleExcludeDropdown('${escapeJs(collectionName)}', event)" class="flex h-9 min-w-[72px] items-center justify-between gap-1 rounded border px-2 text-left text-xs font-bold ${excluded.length ? 'border-red-300 bg-red-50 text-red-700' : 'border-slate-200 bg-white text-slate-500'}">
+                <button type="button" onclick="toggleExcludeDropdown('${escapeJs(collectionName)}', event)" class="flex h-9 min-w-[72px] items-center justify-between gap-1 rounded border px-2 text-left text-xs font-bold transition-colors ${excluded.length ? 'border-[color:var(--c-danger)] bg-danger-soft text-danger-text' : 'border-[color:var(--c-border)] bg-surface text-[color:var(--c-text-muted)] hover:bg-[color:var(--c-surface-sunken)]'}">
                     <span class="min-w-0 truncate">${excluded.length ? `排除: ${excluded.length}个` : '排除'}</span>
                     <span class="shrink-0">${isExcludeOpen ? '▲' : '▼'}</span>
                 </button>
-                <div onclick="event.stopPropagation()" class="${isExcludeOpen ? '' : 'hidden'} absolute z-20 mt-1 w-64 max-h-72 overflow-y-auto rounded border border-slate-200 bg-white shadow-lg p-2">
-                    <label class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 text-xs cursor-pointer text-red-600 font-bold">
-                        <input type="checkbox" ${excluded.length === 0 ? '' : ''} onchange="clearExcludeTags('${escapeJs(collectionName)}')">
+                <div onclick="event.stopPropagation()" class="menu ${isExcludeOpen ? '' : 'hidden'} w-64 max-h-72 overflow-y-auto">
+                    <label class="menu-item text-danger-text font-bold">
+                        <input type="checkbox" onchange="clearExcludeTags('${escapeJs(collectionName)}')">
                         <span>清除排除</span>
                     </label>
                     ${(availableTags || []).map(tag => renderExcludeOption(collectionName, tag, excluded.includes(tag))).join('')}
@@ -479,28 +470,28 @@ function renderCollectionFilter(collectionName, availableTags, filteredCount, to
 }
 
 function renderTagOption(collectionName, value, label, checked) {
-    return `<label class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 text-xs cursor-pointer">
-        <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleCollectionTag('${escapeJs(collectionName)}', '${escapeJs(value)}')">
+    return `<label class="menu-item">
+        <input type="checkbox" class="accent-[color:var(--c-primary)]" ${checked ? 'checked' : ''} onchange="toggleCollectionTag('${escapeJs(collectionName)}', '${escapeJs(value)}')">
         <span class="truncate" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
     </label>`;
 }
 
 function renderExcludeOption(collectionName, tag, checked) {
-    return `<label class="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-red-50 text-xs cursor-pointer">
+    return `<label class="menu-item hover:bg-danger-soft">
         <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleExcludeTag('${escapeJs(collectionName)}', '${escapeJs(tag)}')"
-            class="accent-red-500">
-        <span class="truncate ${checked ? 'text-red-700 font-bold' : ''}" title="${escapeHtml(tag)}">${escapeHtml(tag)}</span>
+            class="accent-[color:var(--c-danger)]">
+        <span class="truncate ${checked ? 'text-danger-text font-bold' : ''}" title="${escapeHtml(tag)}">${escapeHtml(tag)}</span>
     </label>`;
 }
 
 function renderMovies(collectionName, movies) {
-    if (!movies.length) return '<div class="text-center text-slate-400">暂无匹配影片记录</div>';
-    return `<div class="min-h-0 flex-1 max-w-full divide-y divide-slate-100 overflow-y-auto rounded border border-slate-200 bg-white">${movies.map(movie => `
+    if (!movies.length) return '<div class="empty-state">暂无匹配影片记录</div>';
+    return `<div class="min-h-0 flex-1 max-w-full divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white">${movies.map(movie => `
         <div class="p-3">
             <button type="button" onclick="selectMovie('${escapeJs(collectionName)}', ${movie.id})" class="block w-full min-w-0 text-left">
                 <div class="truncate font-bold" title="${escapeHtml(`${movie.code} ${movie.title || ''}`)}"><span>${escapeHtml(movie.code)}</span> <span class="font-normal text-slate-500">${escapeHtml(movie.title || '')}</span></div>
                 <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-slate-500">
-                    <span class="shrink-0 whitespace-nowrap rounded bg-indigo-50 px-1.5 py-0.5 font-bold text-indigo-700">候选 ${movie.candidate_count || 0}</span>
+                    <span class="badge badge-info shrink-0 whitespace-nowrap">候选 ${movie.candidate_count || 0}</span>
                     <span id="movie-selected-name-${movie.id}" class="min-w-0 truncate" title="${escapeHtml(movie.best_magnet_name || '未选中磁力')}">${escapeHtml(movie.best_magnet_name || '未选中磁力')}</span>
                 </div>
                 ${renderMovieTags(movie.tags || [])}
@@ -513,18 +504,12 @@ function renderMovies(collectionName, movies) {
 
 function toggleCollectionTagDropdown(collectionName, event = null) {
     if (event) event.stopPropagation();
-    openTagDropdown = openTagDropdown === collectionName ? null : collectionName;
-    openExcludeDropdown = null;
-    openMagnetCheckMenu = null;
-    renderCollectionBody(collectionName);
+    openExclusiveMenu('tag', collectionName, () => renderCollectionBody(collectionName));
 }
 
 function toggleExcludeDropdown(collectionName, event = null) {
     if (event) event.stopPropagation();
-    openExcludeDropdown = openExcludeDropdown === collectionName ? null : collectionName;
-    openTagDropdown = null;
-    openMagnetCheckMenu = null;
-    renderCollectionBody(collectionName);
+    openExclusiveMenu('exclude', collectionName, () => renderCollectionBody(collectionName));
 }
 
 function toggleExcludeTag(collectionName, value) {
@@ -565,18 +550,18 @@ async function loadMagnets(movieId, keepOpen = false) {
     if (keepOpen) box.classList.remove('hidden');
     const res = await apiFetch(`/api/movies/${movieId}/magnets`).then(r => r.json());
     const magnets = res.data || [];
-    box.innerHTML = magnets.length ? renderMagnetTable(movieId, magnets) : '<div class="flex min-h-0 flex-1 items-center justify-center text-slate-400">暂无候选磁力</div>';
+    box.innerHTML = magnets.length ? renderMagnetTable(movieId, magnets) : '<div class="empty-state flex-1">暂无候选磁力</div>';
     return magnets;
 }
 
 function renderMagnetTable(movieId, magnets) {
     return `
-        <div class="min-h-0 flex-1 overflow-auto rounded border border-slate-100">
+        <div class="min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200">
             <table class="w-full table-fixed text-xs">
                 <colgroup>
                     <col class="w-14"><col><col class="w-10"><col class="w-16"><col class="w-16">
                 </colgroup>
-                <thead class="sticky top-0 bg-slate-50"><tr><th class="p-2 text-center whitespace-nowrap">状态</th><th class="p-2 text-left">文件名</th><th class="p-2 text-center">分数</th><th class="p-2 text-center">大小</th><th class="p-2 text-center">操作</th></tr></thead>
+                <thead class="sticky top-0 border-b border-slate-200 bg-slate-50 text-slate-500"><tr><th class="p-2 text-center whitespace-nowrap font-bold">状态</th><th class="p-2 text-left font-bold">文件名</th><th class="p-2 text-center font-bold">分数</th><th class="p-2 text-center font-bold">大小</th><th class="p-2 text-center font-bold">操作</th></tr></thead>
                 <tbody>${magnets.map(magnet => renderMagnetRow(movieId, magnet)).join('')}</tbody>
             </table>
         </div>`;
@@ -598,20 +583,20 @@ function magnetRowSignature(magnet) {
 function renderMagnetRow(movieId, magnet) {
     const signature = escapeHtml(magnetRowSignature(magnet));
     return `
-        <tr id="magnet-row-${magnet.id}" data-signature="${signature}" class="border-t border-slate-100">
-            <td class="p-2 text-center align-middle">
+        <tr id="magnet-row-${magnet.id}" data-signature="${signature}" class="border-t border-slate-100 transition-colors ${magnet.is_selected ? 'bg-success-soft' : 'hover:bg-slate-50'}">
+            <td class="p-2 text-center align-middle ${magnet.is_selected ? 'border-l-2 border-[color:var(--c-success)]' : ''}">
                 <div>${renderMagnetStatus(magnet)}</div>
                 <div class="mt-1 text-[10px] leading-none text-slate-400">${magnet.checked_at ? `${magnet.seeders ?? 0}/${magnet.leechers ?? 0}` : '-/-'}</div>
             </td>
-            <td class="min-w-0 cursor-pointer p-2 hover:bg-slate-50" title="${escapeHtml(magnet.link)}" onclick="${magnet.is_selected ? '' : `selectMagnet(${movieId}, ${magnet.id})`}">
-                <div class="truncate">${magnet.is_selected ? '<span class="mr-1 text-green-600">✓</span>' : ''}${escapeHtml(magnet.name)}</div>
-                <div class="mt-1 inline-flex max-w-full rounded bg-slate-100 px-1.5 py-0.5 text-[10px] leading-none text-slate-500">${escapeHtml(magnet.magnet_date || '-')}</div>
+            <td class="min-w-0 cursor-pointer p-2" title="${escapeHtml(magnet.link)}" onclick="${magnet.is_selected ? '' : `selectMagnet(${movieId}, ${magnet.id})`}">
+                <div class="truncate">${magnet.is_selected ? '<span class="mr-1 text-success-text">✓</span>' : ''}${escapeHtml(magnet.name)}</div>
+                <div class="mt-1 inline-flex max-w-full rounded bg-[color:var(--c-neutral-soft)] px-1.5 py-0.5 text-[10px] leading-none text-[color:var(--c-text-muted)]">${escapeHtml(magnet.magnet_date || '-')}</div>
             </td>
             <td class="p-2 text-center align-middle">${magnet.priority_score}</td>
             <td class="p-2 text-center align-middle whitespace-nowrap">${formatGb(magnet.size_mb)}</td>
             <td class="p-2 text-center align-middle">
                 <div class="flex justify-center gap-1">
-                    <button onclick="copyTextWithToast('${escapeJs(magnet.link)}', '已复制磁力链接')" title="复制磁力链接" aria-label="复制磁力链接" class="inline-flex h-7 w-7 items-center justify-center rounded bg-blue-50 text-blue-700 hover:bg-blue-100">
+                    <button onclick="copyTextWithToast('${escapeJs(magnet.link)}', '已复制磁力链接')" title="复制磁力链接" aria-label="复制磁力链接" class="btn btn-icon-sm btn-info">
                         <span class="text-sm leading-none">⧉</span>
                     </button>
                 </div>
@@ -625,7 +610,7 @@ async function refreshMagnetRows(movieId) {
     const res = await apiFetch(`/api/movies/${movieId}/magnets`).then(r => r.json());
     const magnets = res.data || [];
     if (!box.querySelector('tbody')) {
-        box.innerHTML = magnets.length ? renderMagnetTable(movieId, magnets) : '<div class="flex min-h-0 flex-1 items-center justify-center text-slate-400">暂无候选磁力</div>';
+        box.innerHTML = magnets.length ? renderMagnetTable(movieId, magnets) : '<div class="empty-state flex-1">暂无候选磁力</div>';
         return magnets;
     }
     for (const magnet of magnets) {

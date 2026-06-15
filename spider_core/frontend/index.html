@@ -6,10 +6,100 @@
     <title>JavDB Magnet Spider</title>
     <link rel="icon" type="image/png" href="/favicon.png">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="/css/variables.css">
-    <link rel="stylesheet" href="/css/base.css">
-    <link rel="stylesheet" href="/css/components.css">
-    <link rel="stylesheet" href="/css/pages.css">
+    <link rel="stylesheet" href="/css/variables.css?v=20260615-redesign1">
+    <link rel="stylesheet" href="/css/base.css?v=20260615-redesign1">
+    <link rel="stylesheet" href="/css/components.css?v=20260615-redesign1">
+    <link rel="stylesheet" href="/css/pages.css?v=20260615-redesign1">
+    <!--
+      Tailwind 运行时配置（CDN 为 v3.4.17，支持 tailwind.config 内联与 @apply）。
+      必须在 CDN <script> 之后、业务脚本之前同步执行；切勿改为 defer/async。
+      语义色 / 字体 / 圆角 / 阴影 经 var() 指向 css/variables.css，做到单一事实源。
+    -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: { DEFAULT: 'var(--c-primary)', hover: 'var(--c-primary-hover)', soft: 'var(--c-primary-soft)', text: 'var(--c-primary-text)' },
+                        success: { DEFAULT: 'var(--c-success)', soft: 'var(--c-success-soft)', text: 'var(--c-success-text)' },
+                        warning: { DEFAULT: 'var(--c-warning)', soft: 'var(--c-warning-soft)', text: 'var(--c-warning-text)' },
+                        danger:  { DEFAULT: 'var(--c-danger)',  soft: 'var(--c-danger-soft)',  text: 'var(--c-danger-text)' },
+                        info:    { DEFAULT: 'var(--c-info)',    soft: 'var(--c-info-soft)',    text: 'var(--c-info-text)' },
+                        neutral: { DEFAULT: 'var(--c-neutral)', soft: 'var(--c-neutral-soft)', text: 'var(--c-neutral-text)' },
+                        surface: { DEFAULT: 'var(--c-surface)', sunken: 'var(--c-surface-sunken)' },
+                    },
+                    fontFamily: { sans: ['var(--font-sans)'], mono: ['var(--font-mono)'] },
+                    borderRadius: { DEFAULT: 'var(--radius)', lg: 'var(--radius-lg)' },
+                    boxShadow: { DEFAULT: 'var(--shadow)', pop: 'var(--shadow-pop)' },
+                },
+            },
+        };
+    </script>
+    <!--
+      语义组件类：用 @apply 复用设计令牌与 Tailwind 状态变体。
+      只有 v3 CDN 的 <style type="text/tailwindcss"> 块内可用 @apply（普通 .css 文件不可用），
+      故组件类集中于此，JS / HTML 渲染时引用 .btn / .badge / .card 等，替代散落的长串原子类。
+    -->
+    <style type="text/tailwindcss">
+        /* ---- 按钮：基础 + 尺寸 + 语义变体 ---- */
+        .btn { @apply inline-flex items-center justify-center gap-1.5 rounded font-bold
+                      transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed
+                      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--c-primary-ring)]; }
+        .btn-sm { @apply h-7 px-2 text-xs; }
+        .btn-md { @apply h-9 px-3 text-sm; }
+        .btn-lg { @apply h-10 px-4 text-sm; }
+        .btn-icon-sm { @apply h-7 w-7 shrink-0 p-0; }
+        .btn-icon-md { @apply h-9 w-9 shrink-0 p-0; }
+        .btn-icon-lg { @apply h-10 w-10 shrink-0 p-0; }
+
+        .btn-primary { @apply bg-primary text-white hover:bg-primary-hover; }
+        .btn-soft    { @apply bg-surface text-[color:var(--c-text-muted)] ring-1 ring-[color:var(--c-border)] hover:bg-[color:var(--c-surface-sunken)]; }
+        .btn-success { @apply bg-success-soft text-success-text hover:brightness-95; }
+        .btn-warning { @apply bg-warning-soft text-warning-text hover:brightness-95; }
+        .btn-danger  { @apply bg-danger-soft  text-danger-text  hover:brightness-95; }
+        .btn-info    { @apply bg-info-soft     text-info-text    hover:brightness-95; }
+        .btn-neutral { @apply bg-[color:var(--c-neutral-soft)] text-[color:var(--c-neutral-text)] hover:brightness-95; }
+
+        /* ---- 拆分按钮（magnet 检测专用：主按钮 + 副按钮联体） ----
+           颜色 / 圆角 / 过渡 / 禁用态集中于此；高宽尺寸由 JS 侧用原子类拼接
+           （std 档 h-9、mini 档 h-5，见 magnets.js renderMagnetCheckButton）。 */
+        .btn-split-primary { @apply inline-flex items-center justify-center rounded-l border border-r-0 border-[color:var(--c-success)] bg-success-soft font-bold text-success-text transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:border-[color:var(--c-border)] disabled:bg-[color:var(--c-surface-sunken)] disabled:text-[color:var(--c-text-subtle)]; }
+        .btn-split-toggle  { @apply inline-flex items-center justify-center rounded-r border border-[color:var(--c-success)] bg-success-soft font-bold text-success-text transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:border-[color:var(--c-border)] disabled:bg-[color:var(--c-surface-sunken)] disabled:text-[color:var(--c-text-subtle)]; }
+        .btn-split-stop    { @apply inline-flex items-center justify-center rounded-r border border-[color:var(--c-danger)] bg-danger-soft font-bold text-danger-text transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:border-[color:var(--c-border)] disabled:bg-[color:var(--c-surface-sunken)] disabled:text-[color:var(--c-text-subtle)]; }
+        .btn-split-disabled{ @apply cursor-not-allowed border-[color:var(--c-border)] bg-[color:var(--c-surface-sunken)] text-[color:var(--c-text-subtle)]; }
+
+        /* ---- 卡片 / 面板 ---- */
+        .card       { @apply rounded-lg border border-[color:var(--c-border)] bg-surface; }
+        .card-head  { @apply flex items-center justify-between border-b border-[color:var(--c-border-soft)] px-5 py-2; }
+        .card-title { @apply text-base font-semibold; }
+        .toolbar    { @apply border-b border-[color:var(--c-border-soft)] bg-[color:var(--c-surface-sunken)]; }
+
+        /* ---- 徽章（状态标签） ---- */
+        .badge { @apply inline-flex items-center justify-center rounded px-1.5 py-0.5 text-xs font-bold leading-none; }
+        .badge-success { @apply bg-success-soft text-success-text; }
+        .badge-warning { @apply bg-warning-soft text-warning-text; }
+        .badge-danger  { @apply bg-danger-soft  text-danger-text; }
+        .badge-info    { @apply bg-info-soft     text-info-text; }
+        .badge-neutral { @apply bg-[color:var(--c-neutral-soft)] text-[color:var(--c-neutral-text)]; }
+
+        /* ---- 表单 ---- */
+        .input { @apply w-full rounded border border-[color:var(--c-border)] bg-surface px-3 py-2 text-sm
+                        outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-[color:var(--c-primary-ring)]
+                        placeholder:text-[color:var(--c-text-subtle)]; }
+        .input-mono  { @apply font-mono text-xs; }
+        .field-label { @apply mb-1 block text-[color:var(--c-text-muted)]; }
+
+        /* ---- 下拉 / 弹层 ---- */
+        .menu      { @apply absolute z-30 mt-1 rounded-lg border border-[color:var(--c-border)] bg-surface p-1 shadow-pop; }
+        .menu-item { @apply flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-[color:var(--c-surface-sunken)]; }
+
+        /* ---- 导航分段控件 ---- */
+        .nav-seg         { @apply rounded-md px-3 py-2 text-sm font-bold text-[color:var(--c-text-muted)] transition-colors hover:bg-[color:var(--c-surface-sunken)]; }
+        .nav-seg--active { @apply bg-primary text-white shadow-sm hover:bg-primary-hover; }
+
+        /* ---- 空态 ---- */
+        .empty-state { @apply flex items-center justify-center p-8 text-center text-sm text-[color:var(--c-text-subtle)]; }
+    </style>
 </head>
 <body class="bg-slate-100 min-h-screen p-4 md:p-8 text-slate-800">
     <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
@@ -37,30 +127,30 @@
                     <img src="/favicon.png" alt="Logo" class="w-10 h-10 rounded-lg">
                     <h1 class="text-3xl font-bold tracking-tight">JavDB Magnet Spider</h1>
                 </div>
-                <span id="app_version" class="text-xs font-bold text-indigo-700 bg-indigo-50 px-2 py-1 rounded">加载中...</span>
+                <span id="app_version" class="badge badge-info">加载中...</span>
             </div>
-            <nav class="grid grid-cols-3 rounded-lg border border-slate-200 bg-white p-1 text-sm font-bold shadow-sm md:w-80" aria-label="主导航">
-                <button id="nav-tasks" type="button" onclick="navigateToView('tasks')" class="rounded-md px-3 py-2 text-slate-600">任务</button>
-                <button id="nav-database" type="button" onclick="navigateToView('database')" class="rounded-md px-3 py-2 text-slate-600">数据库</button>
-                <button id="nav-settings" type="button" onclick="navigateToView('settings')" class="rounded-md px-3 py-2 text-slate-600">设置</button>
+            <nav class="grid grid-cols-3 rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm font-bold shadow-sm md:w-80" aria-label="主导航">
+                <button id="nav-tasks" type="button" onclick="navigateToView('tasks')" class="nav-seg">任务</button>
+                <button id="nav-database" type="button" onclick="navigateToView('database')" class="nav-seg">数据库</button>
+                <button id="nav-settings" type="button" onclick="navigateToView('settings')" class="nav-seg">设置</button>
             </nav>
         </header>
 
         <section id="view-tasks" data-view="tasks" class="grid min-h-0 grid-cols-1 content-start items-start gap-4 overflow-hidden xl:grid-cols-[430px_1fr] xl:gap-6">
             <div id="taskConfigPanel" class="shrink-0 space-y-2 overflow-visible">
-                <section class="bg-white border border-slate-200 rounded-lg overflow-hidden">
-                    <div class="px-5 py-1.5 border-b border-slate-100">
-                        <h2 class="text-lg font-semibold">任务配置</h2>
+                <section class="card overflow-hidden">
+                    <div class="card-head">
+                        <h2 class="card-title">任务配置</h2>
                     </div>
                     <div class="px-5 py-2 space-y-2 text-sm">
                         <div>
-                            <label class="block mb-1 text-slate-600">起始页面 URL</label>
+                            <label class="field-label">起始页面 URL</label>
                             <div class="flex gap-2">
-                                <input id="start_url" type="text" class="flex-1 border border-slate-300 rounded p-2" placeholder="https://javdb.com/actors/...">
-                                <button type="button" onclick="fetchTags()" class="px-3 py-2 rounded bg-indigo-50 text-indigo-700 font-bold border border-indigo-100">标签</button>
+                                <input id="start_url" type="text" class="input flex-1" placeholder="https://javdb.com/actors/...">
+                                <button type="button" onclick="fetchTags()" class="btn btn-md btn-info shrink-0">标签</button>
                             </div>
-                            <div id="tags-wrapper" class="hidden mt-3 border border-indigo-100 rounded overflow-hidden">
-                                <button type="button" onclick="toggleTagsPanel()" class="w-full bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700 flex items-center justify-between">
+                            <div id="tags-wrapper" class="hidden mt-3 border border-[color:var(--c-primary-soft)] rounded-lg overflow-hidden">
+                                <button type="button" onclick="toggleTagsPanel()" class="w-full bg-[color:var(--c-primary-soft)] px-3 py-2 text-xs font-bold text-[color:var(--c-primary-text)] flex items-center justify-between">
                                     <span>标签过滤</span>
                                     <span id="tags-toggle-icon">▲</span>
                                 </button>
@@ -68,10 +158,10 @@
                             </div>
                         </div>
                         <div>
-                            <label class="block mb-1 text-slate-600">自定义任务/文件名</label>
+                            <label class="field-label">自定义任务/文件名</label>
                             <div class="flex gap-2">
-                                <input id="filename" type="text" class="min-w-0 flex-1 border border-slate-300 rounded p-2" placeholder="留空则入队时自动命名">
-                                <button id="addTaskBtn" type="button" onclick="addTask()" title="添加到任务列表" aria-label="添加到任务列表" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded bg-blue-600 text-white hover:bg-blue-700">
+                                <input id="filename" type="text" class="input min-w-0 flex-1" placeholder="留空则入队时自动命名">
+                                <button id="addTaskBtn" type="button" onclick="addTask()" title="添加到任务列表" aria-label="添加到任务列表" class="btn btn-icon-lg btn-primary">
                                     <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
                                         <path d="M12 5v14"></path>
                                         <path d="M5 12h14"></path>
@@ -84,29 +174,29 @@
 
             </div>
 
-            <section id="taskMonitorCard" class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
-                <div class="px-5 py-1.5 border-b border-slate-100 flex justify-between items-center">
-                    <h2 class="text-lg font-semibold">任务监控</h2>
-                    <button onclick="refreshMonitor()" class="text-xs px-3 py-1.5 bg-slate-50 hover:bg-slate-100 rounded font-bold">刷新</button>
+            <section id="taskMonitorCard" class="card flex min-h-0 flex-col overflow-hidden">
+                <div class="card-head">
+                    <h2 class="card-title">任务监控</h2>
+                    <button onclick="refreshMonitor()" class="btn btn-sm btn-soft">刷新</button>
                 </div>
                 <div id="taskMonitorBody" class="grid min-h-0 flex-1 content-start grid-cols-1 items-start overflow-hidden lg:grid-cols-[280px_1fr]">
                     <aside id="taskQueuePanel" class="min-h-0 self-start overflow-hidden border-r border-slate-100 bg-slate-50">
-                        <div id="taskQueueToolbar" class="px-4 py-1.5 border-b border-slate-200">
+                        <div id="taskQueueToolbar" class="toolbar px-4 py-1.5">
                             <div class="flex items-center gap-2">
-                                <button id="startQueueBtn" onclick="startQueue()" title="开始任务队列" aria-label="开始任务队列" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                                <button id="startQueueBtn" onclick="startQueue()" title="开始任务队列" aria-label="开始任务队列" class="btn btn-icon-lg bg-emerald-600 text-white hover:bg-emerald-700">
                                     <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="currentColor">
                                         <path d="M8 5.5v13l10-6.5-10-6.5z"></path>
                                     </svg>
                                 </button>
                                 <div id="queueTaskControlSlot" class="shrink-0"></div>
-                                <button id="toggleFinishedBtn" type="button" onclick="toggleFinishedTasks()" title="显示已结束" aria-label="显示已结束" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded bg-slate-100 text-slate-700 hover:bg-slate-200">
+                                <button id="toggleFinishedBtn" type="button" onclick="toggleFinishedTasks()" title="显示已结束" aria-label="显示已结束" class="btn btn-icon-lg btn-neutral">
                                     <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <path d="M3 6h18"></path>
                                         <path d="M3 12h18"></path>
                                         <path d="M3 18h18"></path>
                                     </svg>
                                 </button>
-                                <button id="cleanupFinishedBtn" type="button" onclick="cleanupFinishedTasks()" title="清理已结束" aria-label="清理已结束" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed">
+                                <button id="cleanupFinishedBtn" type="button" onclick="cleanupFinishedTasks()" title="清理已结束" aria-label="清理已结束" class="btn btn-icon-lg btn-danger">
                                     <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <path d="M3 6h18"></path>
                                         <path d="M8 6V4h8v2"></path>
@@ -119,14 +209,14 @@
                             </div>
                         </div>
                         <div id="task-list" class="divide-y divide-slate-200 overflow-y-auto log-box">
-                            <div class="p-4 text-center text-slate-400 text-sm">暂无任务</div>
+                            <div class="empty-state">暂无任务</div>
                         </div>
                     </aside>
 
                     <section id="taskLogPanel" class="flex min-h-0 self-start flex-col gap-3 overflow-hidden p-5">
                         <div id="currentActions" class="hidden flex-wrap gap-2"></div>
 
-                        <div id="taskLogShell" class="min-h-0 overflow-hidden rounded border border-slate-200">
+                        <div id="taskLogShell" class="min-h-0 overflow-hidden rounded-lg border border-slate-200">
                             <button type="button" onclick="toggleLogPanel()" class="w-full px-3 py-2 bg-slate-50 border-b border-slate-200 text-sm font-semibold flex items-center justify-between text-left">
                                 <span>运行日志</span>
                                 <span id="log-toggle-icon" class="text-xs text-slate-500">▼</span>
@@ -141,14 +231,14 @@
         </section>
 
         <section id="view-database" data-view="database" class="hidden space-y-4">
-            <section class="flex h-[calc(100dvh-190px)] min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <section class="card flex h-[calc(100dvh-190px)] min-h-0 min-w-0 flex-col overflow-hidden">
                 <div id="database-breadcrumb" class="shrink-0 border-b border-slate-100 px-5 py-3 text-sm text-slate-500">数据库</div>
                 <div id="databaseCollectionToolbar" class="shrink-0 border-b border-slate-100 px-5 pb-2 pt-2">
                     <div id="databaseSummary" class="mb-3 text-xs text-slate-500">加载中...</div>
                     <div class="flex flex-wrap gap-2">
-                        <button id="autoSelectBtn" onclick="autoSelectMagnets()" title="按评分自动选择磁力" aria-label="按评分自动选择磁力" class="inline-flex h-9 items-center justify-center rounded bg-amber-50 px-3 text-xs font-bold text-amber-700 hover:bg-amber-100">★ 自动选择</button>
+                        <button id="autoSelectBtn" onclick="autoSelectMagnets()" title="按评分自动选择磁力" aria-label="按评分自动选择磁力" class="btn btn-md btn-warning">★ 自动选择</button>
                         <div id="globalMagnetCheckSlot"></div>
-                        <button id="batchDeleteBtn" onclick="batchDelete()" title="批量删除" aria-label="批量删除 0 个数据集合" class="hidden relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed">
+                        <button id="batchDeleteBtn" onclick="batchDelete()" title="批量删除" aria-label="批量删除 0 个数据集合" class="btn btn-icon-md btn-danger hidden relative">
                             <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M3 6h18"></path>
                                 <path d="M8 6V4h8v2"></path>
@@ -158,7 +248,7 @@
                             </svg>
                             <span id="batchDeleteCount" class="absolute -right-1 -top-1 min-w-4 rounded-full bg-red-600 px-1 text-center text-[10px] leading-4 text-white">0</span>
                         </button>
-                        <button onclick="loadCollections()" title="刷新" aria-label="刷新数据集合" class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-slate-50">
+                        <button onclick="loadCollections()" title="刷新" aria-label="刷新数据集合" class="btn btn-icon-md btn-soft">
                             <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
                                 <path d="M21 3v6h-6"></path>
@@ -167,57 +257,58 @@
                     </div>
                 </div>
                 <div id="database-content" class="flex min-h-0 flex-1 flex-col overflow-hidden">
-                    <div class="flex min-h-0 flex-1 items-center justify-center p-8 text-center text-sm text-slate-400">加载中...</div>
+                    <div class="empty-state flex-1">加载中...</div>
                 </div>
             </section>
         </section>
 
         <section id="view-settings" data-view="settings" class="hidden max-w-3xl mx-auto">
-            <section class="bg-white border border-slate-200 rounded-lg overflow-hidden">
-                <div class="w-full px-5 py-1.5 border-b border-slate-100">
-                    <h2 class="text-lg font-semibold">全局运行配置</h2>
+            <section class="card overflow-hidden">
+                <div class="card-head">
+                    <h2 class="card-title">全局运行配置</h2>
                 </div>
                 <div id="runtime-config-body" class="p-5 space-y-4 text-sm">
                     <div>
                         <div class="flex justify-between items-center mb-1">
                             <label class="text-slate-600">Cookie</label>
-                            <a href="https://javdb.com" target="_blank" class="text-xs text-blue-600 underline">打开 JavDB</a>
+                            <a href="https://javdb.com" target="_blank" class="text-xs text-info-text underline">打开 JavDB</a>
                         </div>
-                        <textarea id="cookie" rows="4" class="w-full border border-slate-300 rounded p-2 font-mono text-xs" oninput="saveCookieBrowserCache()"></textarea>
+                        <textarea id="cookie" rows="4" class="input input-mono" oninput="saveCookieBrowserCache()"></textarea>
                         <label class="mt-2 flex items-center gap-2 text-xs text-slate-500">
-                            <input id="remember_cookie" type="checkbox" class="w-4 h-4" onchange="saveRuntimeConfig()">
+                            <input id="remember_cookie" type="checkbox" class="w-4 h-4 accent-[color:var(--c-primary)]" onchange="saveRuntimeConfig()">
                             <span>记住 Cookie（写入后端数据库）</span>
                         </label>
                     </div>
                     <div>
-                        <label class="block mb-1 text-slate-600">User-Agent</label>
-                        <input id="user_agent" type="text" class="w-full border border-slate-300 rounded p-2 font-mono text-xs">
+                        <label class="field-label">User-Agent</label>
+                        <input id="user_agent" type="text" class="input input-mono">
                     </div>
                     <div>
-                        <label class="block mb-1 text-slate-600">HTTP 代理</label>
+                        <label class="field-label">HTTP 代理</label>
                         <div class="flex gap-2">
-                            <input id="proxy_host" type="text" class="w-2/3 border border-slate-300 rounded p-2 font-mono text-xs" placeholder="127.0.0.1">
-                            <input id="proxy_port" type="text" class="w-1/3 border border-slate-300 rounded p-2 font-mono text-xs" placeholder="7890">
+                            <input id="proxy_host" type="text" class="input input-mono w-2/3" placeholder="127.0.0.1">
+                            <input id="proxy_port" type="text" class="input input-mono w-1/3" placeholder="7890">
                         </div>
                     </div>
                     <div>
-                        <label class="block mb-1 text-slate-600">Tracker 列表</label>
-                        <textarea id="tracker_list" rows="4" class="w-full border border-slate-300 rounded p-2 font-mono text-xs" placeholder="一行一个 tracker URL"></textarea>
+                        <label class="field-label">Tracker 列表</label>
+                        <textarea id="tracker_list" rows="4" class="input input-mono" placeholder="一行一个 tracker URL"></textarea>
                     </div>
-                    <button type="button" onclick="saveRuntimeConfig(true)" class="w-full bg-slate-700 hover:bg-slate-800 text-white font-bold py-2 rounded">保存全局配置</button>
+                    <button type="button" onclick="saveRuntimeConfig(true)" class="btn btn-lg w-full bg-slate-700 text-white hover:bg-slate-800">保存全局配置</button>
                 </div>
             </section>
         </section>
     </main>
 
     <!-- 前端脚本：以普通脚本顺序加载，保持全局作用域，确保内联 onclick 处理器可用 -->
-    <script src="/js/utils.js?v=20260614-ui31"></script>
-    <script src="/js/state.js?v=20260614-ui31"></script>
-    <script src="/js/api.js?v=20260614-ui31"></script>
-    <script src="/js/settings.js?v=20260614-ui31"></script>
-    <script src="/js/tasks.js?v=20260614-ui31"></script>
-    <script src="/js/movies.js?v=20260615-database-height"></script>
-    <script src="/js/magnets.js?v=20260614-ui31"></script>
-    <script src="/js/app.js?v=20260615-nav-hover"></script>
+    <script src="/js/utils.js?v=20260615-redesign1"></script>
+    <script src="/js/meta.js?v=20260615-redesign1"></script>
+    <script src="/js/state.js?v=20260615-redesign1"></script>
+    <script src="/js/api.js?v=20260615-redesign1"></script>
+    <script src="/js/settings.js?v=20260615-redesign1"></script>
+    <script src="/js/tasks.js?v=20260615-redesign1"></script>
+    <script src="/js/movies.js?v=20260615-redesign1"></script>
+    <script src="/js/magnets.js?v=20260615-redesign1"></script>
+    <script src="/js/app.js?v=20260615-redesign1"></script>
 </body>
 </html>

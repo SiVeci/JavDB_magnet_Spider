@@ -36,15 +36,20 @@ function magnetCheckButtonId(scope, target) {
     return `magnet-check-button-${scope}-${encodeURIComponent(String(target))}`;
 }
 
-function renderMagnetCheckButton(scope, target) {
-    const key = magnetCheckMenuKey(scope, target);
-    const isOpen = openMagnetCheckMenu === key;
-    const job = activeMagnetCheckJob;
-    const hasRunningJob = !!(job && job.running);
-    const isRunningTarget = !!(hasRunningJob && job.scope === scope && String(job.target) === String(target));
-    const isCancelling = !!(isRunningTarget && job.cancelled);
-    const progress = isRunningTarget ? `${Number(job.completed || 0)}/${Number(job.total || 0)}` : 'check';
-    const radarIcon = `<svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+// 各 scope 的差异：启动 / 切换函数名、目标参数是否加引号、按钮尺寸档。
+const MAGNET_CHECK_SCOPE = {
+    movie:      { startFn: 'startMovieMagnetCheck',      toggleFn: 'toggleMovieMagnetCheckMenu',      size: 'mini' },
+    collection: { startFn: 'startCollectionMagnetCheck', toggleFn: 'toggleCollectionMagnetCheckMenu', size: 'std'  },
+    all:        { startFn: 'startAllMagnetCheck',        toggleFn: 'toggleAllMagnetCheckMenu',        size: 'std'  },
+};
+
+// 尺寸档：主按钮 / 副按钮的宽高与字号（配色由 .btn-split-* 组件类负责）。
+const MAGNET_CHECK_SIZE = {
+    mini: { primary: 'h-5 w-6 text-[11px] leading-none', toggle: 'h-5 w-5 text-[10px] leading-none', spinner: 'h-2.5 w-2.5' },
+    std:  { primary: 'h-9 w-14 text-xs shadow-sm',        toggle: 'h-9 w-7 text-xs shadow-sm',         spinner: 'h-3 w-3'    },
+};
+
+const MAGNET_RADAR_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <circle cx="12" cy="12" r="9"></circle>
                         <path d="M12 12l6-4"></path>
                         <path d="M12 3v2"></path>
@@ -53,71 +58,77 @@ function renderMagnetCheckButton(scope, target) {
                         <path d="M19 12h2"></path>
                         <path d="M8.5 8.5a5 5 0 0 1 7 0"></path>
                     </svg>`;
-    const stopIcon = `<svg aria-hidden="true" viewBox="0 0 24 24" class="h-3 w-3" fill="currentColor">
+const MAGNET_STOP_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" class="h-3 w-3" fill="currentColor">
                         <rect x="6" y="6" width="12" height="12" rx="1.5"></rect>
                     </svg>`;
-    const targetArg = scope === 'collection' || scope === 'all' ? `'${escapeJs(target)}'` : target;
-    const startFn = scope === 'collection'
-        ? 'startCollectionMagnetCheck'
-        : (scope === 'all' ? 'startAllMagnetCheck' : 'startMovieMagnetCheck');
-    const toggleFn = scope === 'collection'
-        ? 'toggleCollectionMagnetCheckMenu'
-        : (scope === 'all' ? 'toggleAllMagnetCheckMenu' : 'toggleMovieMagnetCheckMenu');
+
+function magnetSpinner(sizeClass) {
+    return `<span class="inline-block ${sizeClass} animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"></span>`;
+}
+
+// 计算按钮的派生状态（纯函数，无 DOM）。
+function magnetCheckButtonState(scope, target) {
+    const job = activeMagnetCheckJob;
+    const hasRunningJob = !!(job && job.running);
+    const isRunningTarget = !!(hasRunningJob && job.scope === scope && String(job.target) === String(target));
+    const isCancelling = !!(isRunningTarget && job.cancelled);
+    return {
+        key: magnetCheckMenuKey(scope, target),
+        isOpen: openMagnetCheckMenu === magnetCheckMenuKey(scope, target),
+        job,
+        hasRunningJob,
+        isRunningTarget,
+        isCancelling,
+        progress: isRunningTarget ? `${Number(job.completed || 0)}/${Number(job.total || 0)}` : 'check',
+    };
+}
+
+// 主按钮：空闲时启动检测；运行中显示进度（collection/all）或 spinner（movie）。
+function renderMagnetCheckPrimary(scope, target, st) {
+    const cfg = MAGNET_CHECK_SCOPE[scope];
+    const size = MAGNET_CHECK_SIZE[cfg.size];
+    const targetArg = scope === 'movie' ? target : `'${escapeJs(target)}'`;
     const idAttr = scope === 'movie' ? ` id="check-movie-${target}"` : '';
-    const primaryDisabledAttr = (hasRunningJob && !isRunningTarget) || isCancelling ? ' disabled' : '';
-    const showProgressWithStop = isRunningTarget && scope !== 'movie';
-    const showStopOnToggle = isRunningTarget;
-    const toggleDisabledAttr = hasRunningJob && !showStopOnToggle ? ' disabled' : '';
-    const cancelAction = isRunningTarget ? `cancelMagnetCheck('${escapeJs(job.job_id)}')` : '';
-    const primaryAction = `${startFn}(${targetArg})`;
-    const primaryTitle = isRunningTarget
-        ? (scope === 'movie' ? (isCancelling ? '正在终止检测' : '检测中') : '检测进度')
+    const disabledAttr = (st.hasRunningJob && !st.isRunningTarget) || st.isCancelling ? ' disabled' : '';
+    const title = st.isRunningTarget
+        ? (scope === 'movie' ? (st.isCancelling ? '正在终止检测' : '检测中') : '检测进度')
         : '检测磁力';
-    const primaryIdleClass = scope === 'movie'
-        ? 'h-5 w-6 rounded-l bg-emerald-50 text-[11px] font-bold leading-none text-emerald-700 hover:bg-emerald-100'
-        : 'h-9 w-14 rounded-l border border-r-0 border-emerald-200 bg-emerald-50 text-xs font-bold text-emerald-700 shadow-sm hover:bg-emerald-100';
-    const primaryDisabledClass = scope === 'movie'
-        ? 'h-5 w-6 cursor-not-allowed rounded-l bg-slate-100 text-[10px] font-bold leading-none text-slate-500'
-        : 'h-9 w-16 cursor-not-allowed rounded-l border border-r-0 border-slate-200 bg-slate-100 text-xs font-bold text-slate-500 shadow-sm';
-    const primaryRunningClass = scope === 'movie'
-        ? 'h-5 w-6 cursor-not-allowed rounded-l bg-slate-100 text-[10px] font-bold leading-none text-slate-500'
-        : primaryDisabledClass;
-    const toggleIdleClass = scope === 'movie'
-        ? 'h-5 w-5 rounded-r border-l border-emerald-100 bg-emerald-50 text-[10px] font-bold leading-none text-emerald-700 hover:bg-emerald-100'
-        : 'h-9 w-7 rounded-r border border-emerald-200 bg-emerald-50 text-xs font-bold text-emerald-700 shadow-sm hover:bg-emerald-100';
-    const toggleDisabledClass = scope === 'movie'
-        ? 'h-5 w-5 cursor-not-allowed rounded-r border-l border-slate-200 bg-slate-100 text-[10px] font-bold leading-none text-slate-400'
-        : 'h-9 w-7 cursor-not-allowed rounded-r border border-slate-200 bg-slate-100 text-xs font-bold text-slate-400 shadow-sm';
-    const primaryClass = isRunningTarget
-        ? primaryRunningClass
-        : (hasRunningJob ? primaryDisabledClass : primaryIdleClass);
-    const stopToggleClass = scope === 'movie'
-        ? 'inline-flex h-5 w-5 items-center justify-center rounded-r border-l border-red-100 bg-red-50 text-red-700 hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400'
-        : 'inline-flex h-9 w-7 items-center justify-center rounded-r border border-red-200 bg-red-50 text-red-700 shadow-sm hover:bg-red-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400';
-    const toggleClass = showStopOnToggle ? stopToggleClass : (hasRunningJob ? toggleDisabledClass : toggleIdleClass);
-    const spinnerClass = scope === 'movie' ? 'h-2.5 w-2.5' : 'h-3 w-3';
-    const primaryContent = isRunningTarget
-        ? (scope === 'movie'
-            ? `<span class="inline-block ${spinnerClass} animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"></span>`
-            : `<span>${progress}</span>`)
-        : (scope === 'movie' ? radarIcon : `<span>${progress}</span>`);
-    const toggleAction = showStopOnToggle ? cancelAction : `${toggleFn}(${targetArg}, event)`;
-    const toggleTitle = showStopOnToggle ? (isCancelling ? '正在终止检测' : '终止检测') : '更多检测选项';
-    const toggleContent = showStopOnToggle
-        ? (isCancelling ? `<span class="inline-block ${spinnerClass} animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"></span>` : stopIcon)
-        : (isOpen ? '▲' : '▼');
+    const content = st.isRunningTarget
+        ? (scope === 'movie' ? magnetSpinner(size.spinner) : `<span>${st.progress}</span>`)
+        : (scope === 'movie' ? MAGNET_RADAR_ICON : `<span>${st.progress}</span>`);
+    return `<button${idAttr} type="button" onclick="${cfg.startFn}(${targetArg})" title="${title}" aria-label="${title}"${disabledAttr} class="btn-split-primary ${size.primary}">
+                    <span class="inline-flex items-center justify-center gap-1">${content}</span>
+                </button>`;
+}
+
+// 副按钮：运行中变为「终止检测」（红色/spinner）；空闲时为「更多选项」下拉箭头。
+function renderMagnetCheckToggle(scope, target, st) {
+    const cfg = MAGNET_CHECK_SCOPE[scope];
+    const size = MAGNET_CHECK_SIZE[cfg.size];
+    const targetArg = scope === 'movie' ? target : `'${escapeJs(target)}'`;
+    if (st.isRunningTarget) {
+        const action = `cancelMagnetCheck('${escapeJs(st.job.job_id)}')`;
+        const title = st.isCancelling ? '正在终止检测' : '终止检测';
+        const content = st.isCancelling ? magnetSpinner(size.spinner) : MAGNET_STOP_ICON;
+        return `<button type="button" onclick="${action}" title="${title}" aria-label="${title}"${st.isCancelling ? ' disabled' : ''} class="btn-split-stop ${size.toggle}">${content}</button>`;
+    }
+    const disabledAttr = st.hasRunningJob ? ' disabled' : '';
+    const content = st.isOpen ? '▲' : '▼';
+    return `<button type="button" onclick="${cfg.toggleFn}(${targetArg}, event)" title="更多检测选项" aria-label="更多检测选项"${disabledAttr} class="btn-split-toggle ${size.toggle}">${content}</button>`;
+}
+
+function renderMagnetCheckButton(scope, target) {
+    const cfg = MAGNET_CHECK_SCOPE[scope];
+    const st = magnetCheckButtonState(scope, target);
+    const targetArg = scope === 'movie' ? target : `'${escapeJs(target)}'`;
     return `
         <div id="${magnetCheckButtonId(scope, target)}" class="relative shrink-0" data-menu-root="magnet-check">
             <div class="inline-flex">
-                <button${idAttr} type="button" onclick="${primaryAction}" title="${primaryTitle}" aria-label="${primaryTitle}"${primaryDisabledAttr} class="${primaryClass}">
-                    <span class="inline-flex items-center justify-center gap-1">
-                        ${primaryContent}
-                    </span>
-                </button>
-                <button type="button" onclick="${toggleAction}" title="${toggleTitle}" aria-label="${toggleTitle}"${isCancelling ? ' disabled' : toggleDisabledAttr} class="${toggleClass}">${toggleContent}</button>
+                ${renderMagnetCheckPrimary(scope, target, st)}
+                ${renderMagnetCheckToggle(scope, target, st)}
             </div>
-            <div onclick="event.stopPropagation()" class="${isOpen && !hasRunningJob ? '' : 'hidden'} absolute right-0 z-30 mt-1 w-28 rounded border border-slate-200 bg-white p-1 text-xs shadow-lg">
-                <button type="button" onclick="${startFn}(${targetArg}, true)" class="w-full rounded px-2 py-1.5 text-left font-bold text-slate-700 hover:bg-slate-50">check failed</button>
+            <div onclick="event.stopPropagation()" class="menu ${st.isOpen && !st.hasRunningJob ? '' : 'hidden'} right-0 w-28 text-xs">
+                <button type="button" onclick="${cfg.startFn}(${targetArg}, true)" class="menu-item font-bold text-[color:var(--c-neutral-text)]">check failed</button>
             </div>
         </div>`;
 }
@@ -161,23 +172,19 @@ async function renderExpandedCollectionPreservingMovie(movieId = expandedMovieId
 function toggleCollectionMagnetCheckMenu(collectionName, event = null) {
     if (event) event.stopPropagation();
     const key = magnetCheckMenuKey('collection', collectionName);
-    openMagnetCheckMenu = openMagnetCheckMenu === key ? null : key;
-    openTagDropdown = null;
-    renderCollectionBody(collectionName);
+    openExclusiveMenu('check', key, () => renderCollectionBody(collectionName));
 }
 
 function toggleAllMagnetCheckMenu(_target = 'all', event = null) {
     if (event) event.stopPropagation();
     const key = magnetCheckMenuKey('all', 'all');
-    openMagnetCheckMenu = openMagnetCheckMenu === key ? null : key;
-    openTagDropdown = null;
-    renderGlobalMagnetCheckButton();
+    openExclusiveMenu('check', key, () => renderGlobalMagnetCheckButton());
 }
 
 async function toggleMovieMagnetCheckMenu(movieId, event = null) {
     if (event) event.stopPropagation();
     const key = magnetCheckMenuKey('movie', movieId);
-    openMagnetCheckMenu = openMagnetCheckMenu === key ? null : key;
+    openExclusiveMenu('check', key, null);
     if (!expandedCollectionName) return;
     await renderDatabaseRoute();
 }
