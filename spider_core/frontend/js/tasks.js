@@ -382,24 +382,40 @@ function renderQueueTaskControl(task) {
         return;
     }
     const id = escapeJs(task.task_id);
+    const cancelButton = ['pending', 'running', 'pause_requested', 'paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)
+        ? `
+            <button type="button" onclick="cancelTask('${id}')" title="取消当前任务" aria-label="取消当前任务" class="btn btn-icon-lg btn-danger">
+                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <path d="M9 9l6 6"></path>
+                    <path d="M15 9l-6 6"></path>
+                </svg>
+            </button>`
+        : '';
     if (['running', 'pending', 'pause_requested'].includes(task.state)) {
         slot.innerHTML = `
-            <button type="button" onclick="pauseTask('${id}')" title="暂停当前任务" aria-label="暂停当前任务" class="btn btn-icon-lg btn-warning">
-                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="currentColor">
-                    <path d="M7 5h4v14H7z"></path>
-                    <path d="M13 5h4v14h-4z"></path>
-                </svg>
-            </button>`;
+            <div class="flex gap-2">
+                <button type="button" onclick="pauseTask('${id}')" title="暂停当前任务" aria-label="暂停当前任务" class="btn btn-icon-lg btn-warning">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="currentColor">
+                        <path d="M7 5h4v14H7z"></path>
+                        <path d="M13 5h4v14h-4z"></path>
+                    </svg>
+                </button>
+                ${cancelButton}
+            </div>`;
         return;
     }
     if (['paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)) {
         slot.innerHTML = `
-            <button type="button" onclick="resumeTaskById('${id}')" title="恢复当前任务" aria-label="恢复当前任务" class="btn btn-icon-lg btn-info">
-                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 7v6h6"></path>
-                    <path d="M20 17a8 8 0 0 0-13.66-5.66L4 13"></path>
-                </svg>
-            </button>`;
+            <div class="flex gap-2">
+                <button type="button" onclick="resumeTaskById('${id}')" title="恢复当前任务" aria-label="恢复当前任务" class="btn btn-icon-lg btn-info">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 7v6h6"></path>
+                        <path d="M20 17a8 8 0 0 0-13.66-5.66L4 13"></path>
+                    </svg>
+                </button>
+                ${cancelButton}
+            </div>`;
         return;
     }
     slot.innerHTML = '';
@@ -415,7 +431,7 @@ function taskActions(task, options = {}) {
         actions.push(`<button onclick="setTaskModeById('${id}', 'incremental')" class="btn btn-sm btn-info">增量</button>`);
         actions.push(`<button onclick="setTaskModeById('${id}', 'overwrite')" class="btn btn-sm btn-danger">覆盖</button>`);
     }
-    if (['pending', 'running', 'pause_requested', 'paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)) actions.push(`<button onclick="cancelTask('${id}')" class="btn btn-sm btn-danger">取消</button>`);
+    if (!options.hideCancel && ['pending', 'running', 'pause_requested', 'paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)) actions.push(`<button onclick="cancelTask('${id}')" class="btn btn-sm btn-danger">取消</button>`);
     return actions.join(' ');
 }
 
@@ -504,7 +520,7 @@ function renderCurrentActions(task) {
         if (!wasHidden) scheduleFitTasksLayout();
         return;
     }
-    box.innerHTML = taskActions(task, { hidePauseResume: true });
+    box.innerHTML = taskActions(task, { hidePauseResume: true, hideCancel: true });
     box.classList.toggle('hidden', !box.innerHTML.trim());
     renderQueueTaskControl(task);
     const isHidden = box.classList.contains('hidden');
