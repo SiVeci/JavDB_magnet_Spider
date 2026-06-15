@@ -159,7 +159,7 @@ async function renderExpandedCollectionPreservingMovie(movieId = expandedMovieId
         return;
     }
     await ensureCollectionMovies(expandedCollectionName);
-    const routeMovieId = databaseRouteParts()[1];
+    const routeMovieId = currentDatabaseMovieId();
     if (movieId && routeMovieId) {
         await renderMagnetListPage(expandedCollectionName, movieId);
     } else {

@@ -101,6 +101,7 @@ function closeOpenMenus() {
     openExcludeDropdown = null;
     openMagnetCheckMenu = null;
     if (collectionName) renderCollectionBody(collectionName);
+    else if (activeView === 'database' && typeof renderDatabaseRoute === 'function') renderDatabaseRoute();
 }
 
 function handleDocumentClick(event) {

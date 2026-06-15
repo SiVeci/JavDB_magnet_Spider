@@ -121,6 +121,38 @@ function databaseBreadcrumb() {
     return document.getElementById('database-breadcrumb');
 }
 
+const DATABASE_TYPE_ACTOR = 'actor';
+const DATABASE_TYPE_RANKING = 'ranking';
+const RANKING_CATEGORIES = [
+    { key: 'censored', label: '有码' },
+    { key: 'uncensored', label: '无码' },
+    { key: 'western', label: '欧美' },
+    { key: 'fc2', label: 'FC2' },
+];
+const RANKING_PERIODS = [
+    { key: 'daily', label: '日榜' },
+    { key: 'weekly', label: '周榜' },
+    { key: 'monthly', label: '月榜' },
+];
+
+function databaseTypeLabel(type) {
+    if (type === DATABASE_TYPE_ACTOR) return '演员';
+    if (type === DATABASE_TYPE_RANKING) return '排行榜';
+    return '';
+}
+
+function isDatabaseType(type) {
+    return [DATABASE_TYPE_ACTOR, DATABASE_TYPE_RANKING].includes(type);
+}
+
+function rankingCategoryMeta(key) {
+    return RANKING_CATEGORIES.find(item => item.key === key) || null;
+}
+
+function rankingPeriodMeta(key) {
+    return RANKING_PERIODS.find(item => item.key === key) || null;
+}
+
 function databaseRouteParts() {
     const hash = window.location.hash || '#/database';
     const path = hash.replace(/^#\/?/, '');
@@ -128,15 +160,49 @@ function databaseRouteParts() {
     return path.split('/').slice(1).map(part => decodeURIComponent(part));
 }
 
-function databaseHash(collectionName = null, movieId = null) {
-    let hash = '#/database';
+function databaseRouteInfo() {
+    const parts = databaseRouteParts();
+    if (!parts.length) {
+        return { type: null, collectionName: null, movieId: null, legacy: false };
+    }
+    const [first, second, third] = parts;
+    if (isDatabaseType(first)) {
+        if (first === DATABASE_TYPE_ACTOR) {
+            return { type: first, collectionName: second || null, movieId: third || null, legacy: false };
+        }
+        return { type: first, category: second || null, period: third || null, collectionName: null, movieId: null, legacy: false };
+    }
+    return { type: DATABASE_TYPE_ACTOR, collectionName: first, movieId: second || null, legacy: true };
+}
+
+function currentDatabaseMovieId() {
+    return databaseRouteInfo().movieId;
+}
+
+function databaseHash() {
+    return '#/database';
+}
+
+function databaseActorHash(collectionName = null, movieId = null) {
+    let hash = `#/database/${DATABASE_TYPE_ACTOR}`;
     if (collectionName) hash += `/${encodeURIComponent(collectionName)}`;
     if (movieId) hash += `/${encodeURIComponent(String(movieId))}`;
     return hash;
 }
 
+function databaseTypeHash(type) {
+    return `#/database/${encodeURIComponent(type)}`;
+}
+
+function databaseRankingHash(category = null, period = null) {
+    let hash = `#/database/${DATABASE_TYPE_RANKING}`;
+    if (category) hash += `/${encodeURIComponent(category)}`;
+    if (period) hash += `/${encodeURIComponent(period)}`;
+    return hash;
+}
+
 function setDatabaseHash(collectionName = null, movieId = null) {
-    const hash = databaseHash(collectionName, movieId);
+    const hash = collectionName ? databaseActorHash(collectionName, movieId) : databaseHash();
     if (window.location.hash === hash) {
         renderDatabaseRoute();
     } else {
@@ -144,14 +210,43 @@ function setDatabaseHash(collectionName = null, movieId = null) {
     }
 }
 
-function renderDatabaseBreadcrumb(collectionName = null, movie = null) {
+function setDatabaseTypeHash(type) {
+    const hash = databaseTypeHash(type);
+    if (window.location.hash === hash) {
+        renderDatabaseRoute();
+    } else {
+        window.location.hash = hash;
+    }
+}
+
+function setRankingHash(category = null, period = null) {
+    const hash = databaseRankingHash(category, period);
+    if (window.location.hash === hash) {
+        renderDatabaseRoute();
+    } else {
+        window.location.hash = hash;
+    }
+}
+
+function renderDatabaseBreadcrumb(collectionName = null, movie = null, options = {}) {
     const box = databaseBreadcrumb();
     if (!box) return;
+    const type = options.type || (collectionName ? DATABASE_TYPE_ACTOR : null);
     const items = [
         `<button type="button" onclick="setDatabaseHash()" class="font-bold text-[color:var(--c-primary-text)] hover:underline">数据库</button>`
     ];
+    if (type) {
+        items.push(`<button type="button" onclick="setDatabaseTypeHash('${escapeJs(type)}')" class="font-bold text-[color:var(--c-primary-text)] hover:underline">${databaseTypeLabel(type)}</button>`);
+    }
     if (collectionName) {
         items.push(`<button type="button" onclick="setDatabaseHash('${escapeJs(collectionName)}')" class="max-w-[42vw] truncate font-bold text-[color:var(--c-primary-text)] hover:underline">${escapeHtml(displayName(collectionName))}</button>`);
+    }
+    if (options.rankingCategory) {
+        const category = options.rankingCategory;
+        items.push(`<button type="button" onclick="setRankingHash('${escapeJs(category.key)}')" class="font-bold text-[color:var(--c-primary-text)] hover:underline">${escapeHtml(category.label)}</button>`);
+    }
+    if (options.rankingPeriod) {
+        items.push(`<span class="font-bold text-slate-700">${escapeHtml(options.rankingPeriod.label)}</span>`);
     }
     if (movie) {
         items.push(`<span class="max-w-[42vw] truncate font-bold text-slate-700">${escapeHtml(movie.code || String(movie.id))}</span>`);
@@ -171,6 +266,165 @@ function showDatabaseLoading(label = '加载中...') {
 function setCollectionToolbarVisible(show) {
     const toolbar = document.getElementById('databaseCollectionToolbar');
     if (toolbar) toolbar.classList.toggle('hidden', !show);
+}
+
+function renderDatabaseTypePage() {
+    expandedCollectionName = null;
+    expandedMovieId = null;
+    openTagDropdown = null;
+    openExcludeDropdown = null;
+    openMagnetCheckMenu = null;
+    setCollectionToolbarVisible(false);
+    hideBatchDeleteControls();
+    renderDatabaseBreadcrumb();
+    const content = databaseContent();
+    if (!content) return;
+    const totalCollections = collectionsCache.length;
+    const totalMovies = collectionsCache.reduce((sum, item) => sum + Number(item.count || 0), 0);
+    content.innerHTML = `
+        <div class="shrink-0 border-b border-slate-100 px-5 py-3">
+            <div class="text-sm font-bold text-[color:var(--c-text)]">类型</div>
+        </div>
+        <div class="min-h-0 flex-1 overflow-y-auto p-4">
+            <div class="grid gap-3 md:grid-cols-2">
+                <button type="button" onclick="setDatabaseTypeHash('${DATABASE_TYPE_RANKING}')" class="group flex min-h-[92px] flex-col items-start justify-between rounded-[var(--radius)] border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-[color:var(--c-primary-soft)]">
+                    <span class="text-base font-bold text-slate-800">排行榜</span>
+                    <span class="text-xs font-bold text-slate-400 group-hover:text-[color:var(--c-primary-text)]">4 个分类</span>
+                </button>
+                <button type="button" onclick="setDatabaseTypeHash('${DATABASE_TYPE_ACTOR}')" class="group flex min-h-[92px] flex-col items-start justify-between rounded-[var(--radius)] border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-[color:var(--c-primary-soft)]">
+                    <span class="text-base font-bold text-slate-800">演员</span>
+                    <span class="text-xs font-bold text-slate-400 group-hover:text-[color:var(--c-primary-text)]">${totalCollections} 个集合 · ${totalMovies} 部影片</span>
+                </button>
+            </div>
+        </div>`;
+}
+
+function resetDatabasePageState(options = {}) {
+    expandedCollectionName = null;
+    expandedMovieId = null;
+    openTagDropdown = null;
+    openExcludeDropdown = null;
+    if (!options.preserveMagnetCheckMenu) openMagnetCheckMenu = null;
+    setCollectionToolbarVisible(false);
+    hideBatchDeleteControls();
+}
+
+function renderRankingCategoryPage() {
+    resetDatabasePageState();
+    renderDatabaseBreadcrumb(null, null, { type: DATABASE_TYPE_RANKING });
+    const content = databaseContent();
+    if (!content) return;
+    content.innerHTML = `
+        <div class="shrink-0 border-b border-slate-100 px-5 py-3">
+            <div class="text-sm font-bold text-[color:var(--c-text)]">排行榜分类</div>
+        </div>
+        <div class="min-h-0 flex-1 overflow-y-auto p-4">
+            <div class="grid gap-3 md:grid-cols-2">
+                ${RANKING_CATEGORIES.map(category => `
+                <button type="button" onclick="setRankingHash('${escapeJs(category.key)}')" class="group flex min-h-[92px] flex-col items-start justify-between rounded-[var(--radius)] border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-[color:var(--c-primary-soft)]">
+                    <span class="text-base font-bold text-slate-800">${escapeHtml(category.label)}</span>
+                    <span class="text-xs font-bold text-slate-400 group-hover:text-[color:var(--c-primary-text)]">日榜 · 周榜 · 月榜</span>
+                </button>`).join('')}
+            </div>
+        </div>`;
+}
+
+function renderRankingPeriodPage(category) {
+    resetDatabasePageState();
+    renderDatabaseBreadcrumb(null, null, { type: DATABASE_TYPE_RANKING, rankingCategory: category });
+    const content = databaseContent();
+    if (!content) return;
+    content.innerHTML = `
+        <div class="shrink-0 border-b border-slate-100 px-5 py-3">
+            <div class="text-sm font-bold text-[color:var(--c-text)]">${escapeHtml(category.label)}</div>
+        </div>
+        <div class="min-h-0 flex-1 overflow-y-auto p-4">
+            <div class="grid gap-3 md:grid-cols-3">
+                ${RANKING_PERIODS.map(period => `
+                <button type="button" onclick="setRankingHash('${escapeJs(category.key)}', '${escapeJs(period.key)}')" class="group flex min-h-[92px] flex-col items-start justify-between rounded-[var(--radius)] border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-[color:var(--c-primary-soft)]">
+                    <span class="text-base font-bold text-slate-800">${escapeHtml(period.label)}</span>
+                    <span class="text-xs font-bold text-slate-400 group-hover:text-[color:var(--c-primary-text)]">影片列表</span>
+                </button>`).join('')}
+            </div>
+        </div>`;
+}
+
+function notifyRankingFeaturePending(feature) {
+    showToast(`${feature}功能后续添加`);
+}
+
+function rankingMagnetCheckMenuKey(category, period) {
+    return `ranking:${category.key}:${period.key}`;
+}
+
+function startRankingMagnetCheck(categoryKey, periodKey, failedOnly = false) {
+    openMagnetCheckMenu = null;
+    renderDatabaseRoute();
+    notifyRankingFeaturePending(failedOnly ? '检测失败磁力' : '磁力检测');
+}
+
+function toggleRankingMagnetCheckMenu(categoryKey, periodKey, event = null) {
+    if (event) event.stopPropagation();
+    const category = rankingCategoryMeta(categoryKey);
+    const period = rankingPeriodMeta(periodKey);
+    if (!category || !period) return;
+    openExclusiveMenu('check', rankingMagnetCheckMenuKey(category, period), () => renderDatabaseRoute());
+}
+
+function renderRankingMagnetCheckButton(category, period) {
+    const key = rankingMagnetCheckMenuKey(category, period);
+    const isOpen = openMagnetCheckMenu === key;
+    return `
+        <div class="relative shrink-0" data-menu-root="magnet-check">
+            <div class="inline-flex">
+                <button type="button" onclick="startRankingMagnetCheck('${escapeJs(category.key)}', '${escapeJs(period.key)}')" title="检测磁力" aria-label="检测磁力" class="btn-split-primary h-9 w-9 text-xs shadow-sm">
+                    <span class="inline-flex items-center justify-center gap-1">${MAGNET_RADAR_ICON}</span>
+                </button>
+                <button type="button" onclick="toggleRankingMagnetCheckMenu('${escapeJs(category.key)}', '${escapeJs(period.key)}', event)" title="更多检测选项" aria-label="更多检测选项" class="btn-split-toggle h-9 w-7 text-xs shadow-sm">${isOpen ? '▲' : '▼'}</button>
+            </div>
+            <div onclick="event.stopPropagation()" class="menu ${isOpen ? '' : 'hidden'} right-0 w-28 text-xs">
+                <button type="button" onclick="startRankingMagnetCheck('${escapeJs(category.key)}', '${escapeJs(period.key)}', true)" class="menu-item font-bold text-[color:var(--c-neutral-text)]">check failed</button>
+            </div>
+        </div>`;
+}
+
+function renderRankingToolbarActions(category, period) {
+    return `
+        <div class="ml-auto flex shrink-0 items-center gap-2">
+            <button type="button" onclick="notifyRankingFeaturePending('复制榜单磁力')" title="复制榜单磁力" aria-label="复制榜单磁力" class="btn btn-icon-md btn-info text-sm">⧉</button>
+            <button type="button" onclick="notifyRankingFeaturePending('下载榜单 CSV')" title="下载榜单 CSV" aria-label="下载榜单 CSV" class="btn btn-icon-md btn-success text-sm">⇩</button>
+            <button type="button" onclick="notifyRankingFeaturePending('更新榜单')" title="更新榜单" aria-label="更新榜单" class="btn btn-icon-md btn-info text-sm">⟳</button>
+            ${renderRankingMagnetCheckButton(category, period)}
+            <button type="button" onclick="notifyRankingFeaturePending('清空榜单')" title="清空榜单" aria-label="清空榜单" class="btn btn-icon-md btn-danger">
+                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 6h18"></path>
+                    <path d="M8 6V4h8v2"></path>
+                    <path d="M6 6l1 15h10l1-15"></path>
+                    <path d="M10 11v6"></path>
+                    <path d="M14 11v6"></path>
+                </svg>
+            </button>
+        </div>`;
+}
+
+function renderRankingMovieListPage(category, period) {
+    resetDatabasePageState({ preserveMagnetCheckMenu: true });
+    renderDatabaseBreadcrumb(null, null, { type: DATABASE_TYPE_RANKING, rankingCategory: category, rankingPeriod: period });
+    const content = databaseContent();
+    if (!content) return;
+    content.innerHTML = `
+        <div class="shrink-0 border-b border-slate-100 px-5 pb-2 pt-2">
+            <div class="text-xs text-slate-500">${escapeHtml(category.label)} · ${escapeHtml(period.label)} · 0 部影片</div>
+        </div>
+        <div class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-3 text-sm text-slate-500">
+            <div class="mb-3 flex shrink-0 flex-wrap items-center gap-2">
+                <span class="badge badge-info text-[11px]">榜单影片 0/0</span>
+                ${renderRankingToolbarActions(category, period)}
+            </div>
+            <div class="min-h-0 flex-1 max-w-full divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white">
+                <div class="empty-state px-6 py-10">暂无榜单影片</div>
+            </div>
+        </div>`;
 }
 
 async function loadCollections() {
@@ -208,7 +462,7 @@ function renderCollectionListPage() {
     openExcludeDropdown = null;
     openMagnetCheckMenu = null;
     setCollectionToolbarVisible(true);
-    renderDatabaseBreadcrumb();
+    renderDatabaseBreadcrumb(null, null, { type: DATABASE_TYPE_ACTOR });
     const content = databaseContent();
     if (!content) return;
     content.innerHTML = `
@@ -381,8 +635,36 @@ async function renderMagnetListPage(collectionName, movieId) {
 async function renderDatabaseRoute() {
     renderGlobalMagnetCheckButton();
     updateDatabaseSummary();
-    const [collectionName, movieId] = databaseRouteParts();
-    if (!collectionName) {
+    const route = databaseRouteInfo();
+    if (!route.type) {
+        renderDatabaseTypePage();
+        return;
+    }
+    if (route.type === DATABASE_TYPE_RANKING) {
+        if (!route.category) {
+            renderRankingCategoryPage();
+            return;
+        }
+        const category = rankingCategoryMeta(route.category);
+        if (!category) {
+            setDatabaseTypeHash(DATABASE_TYPE_RANKING);
+            showToast('排行榜分类不存在');
+            return;
+        }
+        if (!route.period) {
+            renderRankingPeriodPage(category);
+            return;
+        }
+        const period = rankingPeriodMeta(route.period);
+        if (!period) {
+            setRankingHash(category.key);
+            showToast('榜单周期不存在');
+            return;
+        }
+        renderRankingMovieListPage(category, period);
+        return;
+    }
+    if (!route.collectionName) {
         renderCollectionListPage();
         return;
     }
@@ -391,17 +673,21 @@ async function renderDatabaseRoute() {
         showDatabaseLoading();
         return;
     }
-    if (!collectionItem(collectionName)) {
+    if (!collectionItem(route.collectionName)) {
         setDatabaseHash();
         showToast('数据集合不存在或已被删除');
         return;
     }
+    if (route.legacy) {
+        setDatabaseHash(route.collectionName, route.movieId);
+        return;
+    }
     showDatabaseLoading();
-    if (!(await ensureCollectionMovies(collectionName))) return;
-    if (movieId) {
-        await renderMagnetListPage(collectionName, movieId);
+    if (!(await ensureCollectionMovies(route.collectionName))) return;
+    if (route.movieId) {
+        await renderMagnetListPage(route.collectionName, route.movieId);
     } else {
-        renderMovieListPage(collectionName);
+        renderMovieListPage(route.collectionName);
     }
 }
 
