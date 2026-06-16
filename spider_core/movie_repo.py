@@ -23,6 +23,7 @@ from db_store import (
     _score_from_check,
     _reselect_movie_magnet,
 )
+from ranking_utils import COLLECTION_TYPE_ACTOR, COLLECTION_TYPE_RANKING, is_valid_ranking, ranking_filename
 from storage_utils import UnsafeFilenameError, get_safe_csv_path, normalize_csv_filename
 
 __all__ = [
@@ -33,6 +34,11 @@ __all__ = [
     "get_existing_codes",
     "save_movie_result",
     "get_history",
+    "get_ranking_collection_filename",
+    "resolve_ranking_collection_filename",
+    "get_ranking_movies",
+    "get_ranking_movie_ids",
+    "get_ranking_magnet_links",
     "get_collection_movies",
     "get_movie_magnets",
     "select_movie_magnet",
@@ -47,9 +53,15 @@ __all__ = [
 ]
 
 
-def ensure_collection(filename, source_url=""):
+def ensure_collection(
+    filename,
+    source_url="",
+    collection_type=COLLECTION_TYPE_ACTOR,
+    ranking_category="",
+    ranking_period="",
+):
     with connect() as conn:
-        return _collection_id(conn, filename, source_url)
+        return _collection_id(conn, filename, source_url, collection_type, ranking_category, ranking_period)
 
 
 def collection_exists(filename):
@@ -164,21 +176,32 @@ def save_movie_result(filename, movie, best_magnet, candidates):
         _rebuild_collection_tags(conn, collection_id, now)
 
 
-def get_history():
+def get_history(collection_type=COLLECTION_TYPE_ACTOR):
+    where_sql = ""
+    params = []
+    if collection_type is not None:
+        where_sql = "WHERE c.collection_type = ?"
+        params.append(collection_type)
     with connect() as conn:
         rows = conn.execute(
-            """
-            SELECT c.filename, c.source_url, c.tags_json, c.created_at, c.updated_at, COUNT(m.id) AS count
+            f"""
+            SELECT c.filename, c.source_url, c.collection_type, c.ranking_category,
+                   c.ranking_period, c.tags_json, c.created_at, c.updated_at, COUNT(m.id) AS count
             FROM collections c
             LEFT JOIN movies m ON m.collection_id = c.id
+            {where_sql}
             GROUP BY c.id
             ORDER BY c.updated_at DESC
-            """
+            """,
+            params,
         ).fetchall()
     return [
         {
             "name": row["filename"],
             "count": row["count"],
+            "collection_type": row["collection_type"] or COLLECTION_TYPE_ACTOR,
+            "ranking_category": row["ranking_category"] or "",
+            "ranking_period": row["ranking_period"] or "",
             "tags": _tags_from_json(row["tags_json"]),
             "time": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(row["created_at"])),
             "timestamp": row["updated_at"],
@@ -186,6 +209,50 @@ def get_history():
         }
         for row in rows
     ]
+
+
+def get_ranking_collection_filename(category, period):
+    if not is_valid_ranking(category, period):
+        return ""
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT filename
+            FROM collections
+            WHERE collection_type = ?
+              AND ranking_category = ?
+              AND ranking_period = ?
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (COLLECTION_TYPE_RANKING, category, period),
+        ).fetchone()
+    return row["filename"] if row else ""
+
+
+def resolve_ranking_collection_filename(category, period):
+    return get_ranking_collection_filename(category, period) or ranking_filename(category, period)
+
+
+def get_ranking_movies(category, period):
+    filename = get_ranking_collection_filename(category, period)
+    if not filename:
+        return {"movies": [], "available_tags": [], "total_count": 0}
+    return get_collection_movies(filename)
+
+
+def get_ranking_movie_ids(category, period):
+    filename = get_ranking_collection_filename(category, period)
+    if not filename:
+        return []
+    return get_collection_movie_ids(filename)
+
+
+def get_ranking_magnet_links(category, period, required_tags=None, exclude_tags=None):
+    filename = get_ranking_collection_filename(category, period)
+    if not filename:
+        return []
+    return get_magnet_links(filename, required_tags, exclude_tags)
 
 
 def get_collection_movies(filename):

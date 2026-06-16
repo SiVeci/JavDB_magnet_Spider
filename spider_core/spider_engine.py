@@ -6,6 +6,7 @@ import os
 import json
 import threading
 import db_store
+from ranking_utils import COLLECTION_TYPE_ACTOR, COLLECTION_TYPE_RANKING, ranking_filename
 from storage_utils import (
     UnsafeFilenameError,
     atomic_write_json,
@@ -221,7 +222,19 @@ def parse_movie_tags(soup):
         return tags
     return []
 
-def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=None, is_resume=False, crawl_mode=None, task_id=None):
+def run_spider(
+    start_url,
+    cookie,
+    user_agent,
+    output_filename,
+    proxies_config=None,
+    is_resume=False,
+    crawl_mode=None,
+    task_id=None,
+    collection_type=COLLECTION_TYPE_ACTOR,
+    ranking_category="",
+    ranking_period="",
+):
     TASK_CONTEXT.task_id = task_id
     if not task_id:
         STOP_EVENT.clear()
@@ -309,17 +322,20 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
 
                 # ======== 新增：动态命名与模式选择 ========
                 if not output_filename:
-                    actor_name = ""
-                    if "/actors/" in current_url:
-                        actor_tag = soup.select_one('.actor-section-name')
-                        if actor_tag:
-                            actor_name = actor_tag.text.strip()
-                    
-                    if actor_name:
-                        output_filename = make_csv_filename_from_label(actor_name)
+                    if collection_type == COLLECTION_TYPE_RANKING:
+                        output_filename = ranking_filename(ranking_category, ranking_period)
                     else:
-                        timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
-                        output_filename = make_csv_filename_from_label(f"javdb_{timestamp}")
+                        actor_name = ""
+                        if "/actors/" in current_url:
+                            actor_tag = soup.select_one('.actor-section-name')
+                            if actor_tag:
+                                actor_name = actor_tag.text.strip()
+
+                        if actor_name:
+                            output_filename = make_csv_filename_from_label(actor_name)
+                        else:
+                            timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+                            output_filename = make_csv_filename_from_label(f"javdb_{timestamp}")
                     
                     update_status("running", f"第 {page} 页", "生成文件名", f"已自动命名为: {output_filename}", final_filename=output_filename)
 
@@ -354,13 +370,15 @@ def run_spider(start_url, cookie, user_agent, output_filename, proxies_config=No
     # === 阶段二：提取磁力 ===
     if phase == 2:
         if not output_filename:
-            timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
-            output_filename = make_csv_filename_from_label(f"javdb_{timestamp}")
+            if collection_type == COLLECTION_TYPE_RANKING:
+                output_filename = ranking_filename(ranking_category, ranking_period)
+            else:
+                timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+                output_filename = make_csv_filename_from_label(f"javdb_{timestamp}")
         final_csv_path, output_filename = get_safe_csv_path(DATA_DIR, output_filename)
         if crawl_mode == 'overwrite' and start_index == 0:
             db_store.clear_collection(output_filename)
-        else:
-            db_store.ensure_collection(output_filename, start_url)
+        db_store.ensure_collection(output_filename, start_url, collection_type, ranking_category, ranking_period)
 
         existing_codes = db_store.get_existing_codes(output_filename) if crawl_mode == 'incremental' else set()
         new_added_count = len(incremental_movie_codes) if crawl_mode == 'incremental' else 0
@@ -443,6 +461,9 @@ def run_task(task_id):
             bool(checkpoint),
             task.get("crawl_mode") or None,
             task_id=task_id,
+            collection_type=task.get("collection_type") or COLLECTION_TYPE_ACTOR,
+            ranking_category=task.get("ranking_category") or "",
+            ranking_period=task.get("ranking_period") or "",
         )
     finally:
         TASK_CONTEXT.task_id = None

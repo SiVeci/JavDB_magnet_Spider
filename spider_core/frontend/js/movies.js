@@ -165,12 +165,12 @@ function databaseRouteInfo() {
     if (!parts.length) {
         return { type: null, collectionName: null, movieId: null, legacy: false };
     }
-    const [first, second, third] = parts;
+    const [first, second, third, fourth] = parts;
     if (isDatabaseType(first)) {
         if (first === DATABASE_TYPE_ACTOR) {
             return { type: first, collectionName: second || null, movieId: third || null, legacy: false };
         }
-        return { type: first, category: second || null, period: third || null, collectionName: null, movieId: null, legacy: false };
+        return { type: first, category: second || null, period: third || null, collectionName: null, movieId: fourth || null, legacy: false };
     }
     return { type: DATABASE_TYPE_ACTOR, collectionName: first, movieId: second || null, legacy: true };
 }
@@ -194,10 +194,11 @@ function databaseTypeHash(type) {
     return `#/database/${encodeURIComponent(type)}`;
 }
 
-function databaseRankingHash(category = null, period = null) {
+function databaseRankingHash(category = null, period = null, movieId = null) {
     let hash = `#/database/${DATABASE_TYPE_RANKING}`;
     if (category) hash += `/${encodeURIComponent(category)}`;
     if (period) hash += `/${encodeURIComponent(period)}`;
+    if (movieId) hash += `/${encodeURIComponent(String(movieId))}`;
     return hash;
 }
 
@@ -219,8 +220,8 @@ function setDatabaseTypeHash(type) {
     }
 }
 
-function setRankingHash(category = null, period = null) {
-    const hash = databaseRankingHash(category, period);
+function setRankingHash(category = null, period = null, movieId = null) {
+    const hash = databaseRankingHash(category, period, movieId);
     if (window.location.hash === hash) {
         renderDatabaseRoute();
     } else {
@@ -246,7 +247,13 @@ function renderDatabaseBreadcrumb(collectionName = null, movie = null, options =
         items.push(`<button type="button" onclick="setRankingHash('${escapeJs(category.key)}')" class="font-bold text-[color:var(--c-primary-text)] hover:underline">${escapeHtml(category.label)}</button>`);
     }
     if (options.rankingPeriod) {
-        items.push(`<span class="font-bold text-slate-700">${escapeHtml(options.rankingPeriod.label)}</span>`);
+        const period = options.rankingPeriod;
+        if (options.rankingCategory) {
+            const category = options.rankingCategory;
+            items.push(`<button type="button" onclick="setRankingHash('${escapeJs(category.key)}', '${escapeJs(period.key)}')" class="font-bold text-[color:var(--c-primary-text)] hover:underline">${escapeHtml(period.label)}</button>`);
+        } else {
+            items.push(`<span class="font-bold text-slate-700">${escapeHtml(period.label)}</span>`);
+        }
     }
     if (movie) {
         items.push(`<span class="max-w-[42vw] truncate font-bold text-slate-700">${escapeHtml(movie.code || String(movie.id))}</span>`);
@@ -349,18 +356,61 @@ function renderRankingPeriodPage(category) {
         </div>`;
 }
 
-function notifyRankingFeaturePending(feature) {
-    showToast(`${feature}功能后续添加`);
+function rankingCacheKey(category, period) {
+    return `${category.key}:${period.key}`;
+}
+
+function rankingApiPath(categoryKey, periodKey, tail = '') {
+    return `/api/rankings/${encodeURIComponent(categoryKey)}/${encodeURIComponent(periodKey)}${tail}`;
+}
+
+function rankingData(category, period) {
+    return rankingMovieCache[rankingCacheKey(category, period)] || { movies: [], available_tags: [], total_count: 0, collection_filename: '' };
+}
+
+function currentRankingRouteMeta() {
+    const route = databaseRouteInfo();
+    if (route.type !== DATABASE_TYPE_RANKING || !route.category || !route.period) return null;
+    const category = rankingCategoryMeta(route.category);
+    const period = rankingPeriodMeta(route.period);
+    if (!category || !period) return null;
+    return { route, category, period, movieId: route.movieId || null };
+}
+
+function rankingMovieById(category, period, movieId) {
+    const data = rankingData(category, period);
+    return (data.movies || []).find(movie => Number(movie.id) === Number(movieId)) || null;
+}
+
+async function ensureRankingMovies(category, period, forceReload = false) {
+    const key = rankingCacheKey(category, period);
+    if (rankingMovieCache[key] && !forceReload) return true;
+    const res = await apiFetch(rankingApiPath(category.key, period.key, '/movies')).then(r => r.json());
+    if (res.code !== 200) {
+        showDatabaseLoading(res.msg || '加载失败');
+        return false;
+    }
+    rankingMovieCache[key] = res.data || { movies: [], available_tags: [], total_count: 0, collection_filename: '' };
+    return true;
+}
+
+function rankingMagnetCheckTarget(category, period) {
+    return `${category.key}:${period.key}`;
 }
 
 function rankingMagnetCheckMenuKey(category, period) {
-    return `ranking:${category.key}:${period.key}`;
+    return `ranking:${rankingMagnetCheckTarget(category, period)}`;
 }
 
-function startRankingMagnetCheck(categoryKey, periodKey, failedOnly = false) {
+async function startRankingMagnetCheck(categoryKey, periodKey, failedOnly = false) {
     openMagnetCheckMenu = null;
-    renderDatabaseRoute();
-    notifyRankingFeaturePending(failedOnly ? '检测失败磁力' : '磁力检测');
+    await renderDatabaseRoute();
+    const suffix = failedOnly ? '?failed_only=1' : '';
+    const res = await apiFetch(rankingApiPath(categoryKey, periodKey, `/check_magnets${suffix}`), { method: 'POST' }).then(r => r.json());
+    if (res.code !== 200 && res.code !== 409) return showToast(res.msg || '检测启动失败');
+    if (res.code === 409) showToast(res.msg || '磁力检测任务正在运行');
+    watchMagnetCheckJob(res.data);
+    await renderDatabaseRoute();
 }
 
 function toggleRankingMagnetCheckMenu(categoryKey, periodKey, event = null) {
@@ -372,17 +422,30 @@ function toggleRankingMagnetCheckMenu(categoryKey, periodKey, event = null) {
 }
 
 function renderRankingMagnetCheckButton(category, period) {
+    const target = rankingMagnetCheckTarget(category, period);
     const key = rankingMagnetCheckMenuKey(category, period);
+    const job = activeMagnetCheckJob;
+    const hasRunningJob = !!(job && job.running);
+    const isRunningTarget = !!(hasRunningJob && job.scope === 'ranking' && String(job.target) === target);
+    const isCancelling = !!(isRunningTarget && job.cancelled);
     const isOpen = openMagnetCheckMenu === key;
+    const disabledAttr = (hasRunningJob && !isRunningTarget) || isCancelling ? ' disabled' : '';
+    const primaryContent = isRunningTarget ? magnetSpinner('h-3 w-3') : MAGNET_RADAR_ICON;
+    const primaryTitle = isRunningTarget ? '检测中' : '检测磁力';
+    const toggleContent = isRunningTarget ? (isCancelling ? magnetSpinner('h-3 w-3') : MAGNET_STOP_ICON) : (isOpen ? '▲' : '▼');
+    const toggleClass = isRunningTarget ? 'btn-split-stop' : 'btn-split-toggle';
+    const toggleAction = isRunningTarget
+        ? `cancelMagnetCheck('${escapeJs(job.job_id)}')`
+        : `toggleRankingMagnetCheckMenu('${escapeJs(category.key)}', '${escapeJs(period.key)}', event)`;
     return `
         <div class="relative shrink-0" data-menu-root="magnet-check">
             <div class="inline-flex">
-                <button type="button" onclick="startRankingMagnetCheck('${escapeJs(category.key)}', '${escapeJs(period.key)}')" title="检测磁力" aria-label="检测磁力" class="btn-split-primary h-9 w-9 text-xs shadow-sm">
-                    <span class="inline-flex items-center justify-center gap-1">${MAGNET_RADAR_ICON}</span>
+                <button type="button" onclick="startRankingMagnetCheck('${escapeJs(category.key)}', '${escapeJs(period.key)}')" title="${primaryTitle}" aria-label="${primaryTitle}"${disabledAttr} class="btn-split-primary h-7 w-7 text-[11px] leading-none">
+                    <span class="inline-flex items-center justify-center gap-1">${primaryContent}</span>
                 </button>
-                <button type="button" onclick="toggleRankingMagnetCheckMenu('${escapeJs(category.key)}', '${escapeJs(period.key)}', event)" title="更多检测选项" aria-label="更多检测选项" class="btn-split-toggle h-9 w-7 text-xs shadow-sm">${isOpen ? '▲' : '▼'}</button>
+                <button type="button" onclick="${toggleAction}" title="更多检测选项" aria-label="更多检测选项"${isCancelling ? ' disabled' : ''} class="${toggleClass} h-7 w-6 text-[10px] leading-none">${toggleContent}</button>
             </div>
-            <div onclick="event.stopPropagation()" class="menu ${isOpen ? '' : 'hidden'} right-0 w-28 text-xs">
+            <div onclick="event.stopPropagation()" class="menu ${isOpen && !hasRunningJob ? '' : 'hidden'} right-0 w-28 text-xs">
                 <button type="button" onclick="startRankingMagnetCheck('${escapeJs(category.key)}', '${escapeJs(period.key)}', true)" class="menu-item font-bold text-[color:var(--c-neutral-text)]">check failed</button>
             </div>
         </div>`;
@@ -390,13 +453,13 @@ function renderRankingMagnetCheckButton(category, period) {
 
 function renderRankingToolbarActions(category, period) {
     return `
-        <div class="ml-auto flex shrink-0 items-center gap-2">
-            <button type="button" onclick="notifyRankingFeaturePending('复制榜单磁力')" title="复制榜单磁力" aria-label="复制榜单磁力" class="btn btn-icon-md btn-info text-sm">⧉</button>
-            <button type="button" onclick="notifyRankingFeaturePending('下载榜单 CSV')" title="下载榜单 CSV" aria-label="下载榜单 CSV" class="btn btn-icon-md btn-success text-sm">⇩</button>
-            <button type="button" onclick="notifyRankingFeaturePending('更新榜单')" title="更新榜单" aria-label="更新榜单" class="btn btn-icon-md btn-info text-sm">⟳</button>
+        <div class="ml-auto flex shrink-0 items-center gap-1">
+            <button type="button" onclick="copyRankingMagnets('${escapeJs(category.key)}', '${escapeJs(period.key)}')" title="复制榜单磁力" aria-label="复制榜单磁力" class="btn btn-icon-sm btn-info text-xs">⧉</button>
+            <button type="button" onclick="downloadRankingCsv('${escapeJs(category.key)}', '${escapeJs(period.key)}')" title="下载榜单 CSV" aria-label="下载榜单 CSV" class="btn btn-icon-sm btn-success text-xs">⇩</button>
+            <button type="button" onclick="updateRankingList('${escapeJs(category.key)}', '${escapeJs(period.key)}')" title="更新榜单" aria-label="更新榜单" class="btn btn-icon-sm btn-info text-xs">⟳</button>
             ${renderRankingMagnetCheckButton(category, period)}
-            <button type="button" onclick="notifyRankingFeaturePending('清空榜单')" title="清空榜单" aria-label="清空榜单" class="btn btn-icon-md btn-danger">
-                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <button type="button" onclick="clearRankingList('${escapeJs(category.key)}', '${escapeJs(period.key)}')" title="清空榜单" aria-label="清空榜单" class="btn btn-icon-sm btn-danger">
+                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 6h18"></path>
                     <path d="M8 6V4h8v2"></path>
                     <path d="M6 6l1 15h10l1-15"></path>
@@ -407,24 +470,96 @@ function renderRankingToolbarActions(category, period) {
         </div>`;
 }
 
-function renderRankingMovieListPage(category, period) {
+async function copyRankingMagnets(categoryKey, periodKey) {
+    try {
+        const res = await apiFetch(rankingApiPath(categoryKey, periodKey, '/magnets')).then(r => r.json());
+        if (res.code !== 200) return showToast(res.msg || '读取失败');
+        const links = res.data || [];
+        if (!links.length) return showToast('暂无磁力链接可复制');
+        const copied = await copyText(links.join('\n'));
+        showToast(copied ? `已复制 ${links.length} 条磁力链接` : '自动复制失败，请在弹窗中手动复制磁力链接');
+    } catch (err) {
+        console.error(err);
+        showToast(err.message || '复制失败');
+    }
+}
+
+async function downloadRankingCsv(categoryKey, periodKey) {
+    const response = await apiFetch(rankingApiPath(categoryKey, periodKey, '/download'));
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        return showToast(data.msg || '下载失败');
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ranking_${categoryKey}_${periodKey}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+async function updateRankingList(categoryKey, periodKey) {
+    const res = await apiFetch(rankingApiPath(categoryKey, periodKey, '/update'), { method: 'POST' }).then(r => r.json());
+    if (res.code !== 200) return showToast(res.msg || '添加更新任务失败');
+    showToast(res.msg || '榜单更新任务已加入队列');
+    await refreshMonitor();
+}
+
+async function clearRankingList(categoryKey, periodKey) {
+    if (!confirm('确定清空当前榜单吗？')) return;
+    const res = await apiFetch(rankingApiPath(categoryKey, periodKey, '/clear'), { method: 'POST' }).then(r => r.json());
+    if (res.code !== 200) return showToast(res.msg || '清空失败');
+    showToast(res.msg || '清空成功');
+    const category = rankingCategoryMeta(categoryKey);
+    const period = rankingPeriodMeta(periodKey);
+    if (category && period) {
+        delete rankingMovieCache[rankingCacheKey(category, period)];
+    }
+    await renderDatabaseRoute();
+}
+
+function renderRankingMovies(category, period, movies) {
+    if (!movies.length) {
+        return '<div class="min-h-0 flex-1 max-w-full overflow-y-auto rounded-lg border border-slate-200 bg-white"><div class="empty-state px-6 py-10">暂无榜单影片</div></div>';
+    }
+    return `<div class="min-h-0 flex-1 max-w-full divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white">${movies.map(movie => `
+        <div class="p-3">
+            <button type="button" onclick="selectRankingMovie('${escapeJs(category.key)}', '${escapeJs(period.key)}', ${Number(movie.id)})" class="block w-full min-w-0 text-left transition-colors hover:text-[color:var(--c-primary-text)]">
+                <div class="truncate font-bold" title="${escapeHtml(`${movie.code} ${movie.title || ''}`)}"><span>${escapeHtml(movie.code)}</span> <span class="font-normal text-slate-500">${escapeHtml(movie.title || '')}</span></div>
+                <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-slate-500">
+                    <span class="badge badge-info shrink-0 whitespace-nowrap">候选 ${movie.candidate_count || 0}</span>
+                    <span id="movie-selected-name-${movie.id}" class="min-w-0 truncate" title="${escapeHtml(movie.best_magnet_name || '未选中磁力')}">${escapeHtml(movie.best_magnet_name || '未选中磁力')}</span>
+                </div>
+                ${renderMovieTags(movie.tags || [])}
+            </button>
+        </div>
+    `).join('')}</div>`;
+}
+
+async function renderRankingMovieListPage(category, period) {
     resetDatabasePageState({ preserveMagnetCheckMenu: true });
     renderDatabaseBreadcrumb(null, null, { type: DATABASE_TYPE_RANKING, rankingCategory: category, rankingPeriod: period });
     const content = databaseContent();
     if (!content) return;
+    if (!rankingMovieCache[rankingCacheKey(category, period)]) showDatabaseLoading();
+    if (!(await ensureRankingMovies(category, period))) return;
+    const data = rankingData(category, period);
+    const movies = data.movies || [];
     content.innerHTML = `
         <div class="shrink-0 border-b border-slate-100 px-5 pb-2 pt-2">
-            <div class="text-xs text-slate-500">${escapeHtml(category.label)} · ${escapeHtml(period.label)} · 0 部影片</div>
+            <div class="text-xs text-slate-500">${escapeHtml(category.label)} · ${escapeHtml(period.label)} · ${Number(data.total_count || movies.length)} 部影片</div>
         </div>
         <div class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-3 text-sm text-slate-500">
             <div class="mb-3 flex shrink-0 flex-wrap items-center gap-2">
-                <span class="badge badge-info text-[11px]">榜单影片 0/0</span>
+                <span class="badge badge-info text-[11px]">榜单影片 ${movies.length}/${Number(data.total_count || movies.length)}</span>
                 ${renderRankingToolbarActions(category, period)}
             </div>
-            <div class="min-h-0 flex-1 max-w-full divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white">
-                <div class="empty-state px-6 py-10">暂无榜单影片</div>
-            </div>
+            ${renderRankingMovies(category, period, movies)}
         </div>`;
+    fitMovieTags(content);
 }
 
 async function loadCollections() {
@@ -632,6 +767,40 @@ async function renderMagnetListPage(collectionName, movieId) {
     fitMovieTags(content);
 }
 
+async function renderRankingMagnetListPage(category, period, movieId) {
+    expandedCollectionName = null;
+    expandedMovieId = Number(movieId);
+    setCollectionToolbarVisible(false);
+    hideBatchDeleteControls();
+    if (!(await ensureRankingMovies(category, period))) return;
+    const movie = rankingMovieById(category, period, movieId);
+    if (!movie) {
+        setRankingHash(category.key, period.key);
+        showToast('影片不存在或已被过滤');
+        return;
+    }
+    renderDatabaseBreadcrumb(null, movie, { type: DATABASE_TYPE_RANKING, rankingCategory: category, rankingPeriod: period });
+    const content = databaseContent();
+    if (!content) return;
+    const movieTitle = movie.title || movie.code || String(movie.id);
+    content.innerHTML = `
+        <div class="shrink-0 border-b border-slate-100 px-5 pb-4 pt-2">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div class="min-w-0">
+                    <div class="truncate text-xs text-slate-500" title="${escapeHtml(movieTitle)}">${escapeHtml(movieTitle)}</div>
+                    <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-slate-500">
+                        ${renderMagnetCheckButton('movie', movie.id)}
+                        <div id="movie-selected-name-${movie.id}" class="min-w-0 truncate" title="${escapeHtml(movie.best_magnet_name || '未选中磁力')}">${escapeHtml(movie.best_magnet_name || '未选中磁力')}</div>
+                    </div>
+                    ${renderMovieTags(movie.tags || [])}
+                </div>
+            </div>
+        </div>
+        <div id="magnets-${movie.id}" class="flex min-h-0 flex-1 flex-col overflow-hidden p-4"></div>`;
+    await loadMagnets(movie.id, true);
+    fitMovieTags(content);
+}
+
 async function renderDatabaseRoute() {
     renderGlobalMagnetCheckButton();
     updateDatabaseSummary();
@@ -661,7 +830,11 @@ async function renderDatabaseRoute() {
             showToast('榜单周期不存在');
             return;
         }
-        renderRankingMovieListPage(category, period);
+        if (route.movieId) {
+            await renderRankingMagnetListPage(category, period, route.movieId);
+        } else {
+            await renderRankingMovieListPage(category, period);
+        }
         return;
     }
     if (!route.collectionName) {
@@ -928,6 +1101,22 @@ function syncSelectedMagnetToMovie(movieId, magnets) {
     return true;
 }
 
+function syncSelectedMagnetToRankingMovie(movieId, magnets) {
+    const meta = currentRankingRouteMeta();
+    if (!meta) return false;
+    const data = rankingMovieCache[rankingCacheKey(meta.category, meta.period)];
+    const selected = (magnets || []).find(magnet => magnet.is_selected);
+    if (!data || !selected) return false;
+    const movie = (data.movies || []).find(item => Number(item.id) === Number(movieId));
+    if (!movie) return false;
+    movie.best_magnet_name = selected.name || '';
+    movie.best_magnet_link = selected.link || '';
+    movie.priority_score = selected.priority_score || 0;
+    movie.magnet_date = selected.magnet_date || '';
+    movie.size_mb = selected.size_mb || 0;
+    return true;
+}
+
 function updateMovieSelectedName(movieId, magnets) {
     const selected = (magnets || []).find(magnet => magnet.is_selected);
     const target = document.getElementById(`movie-selected-name-${movieId}`);
@@ -942,6 +1131,10 @@ async function toggleMagnets(movieId) {
     selectMovie(expandedCollectionName, movieId);
 }
 
+function selectRankingMovie(categoryKey, periodKey, movieId) {
+    setRankingHash(categoryKey, periodKey, movieId);
+}
+
 async function selectMagnet(movieId, magnetId) {
     const res = await apiFetch(`/api/movies/${movieId}/select_magnet`, {
         method: 'POST',
@@ -950,7 +1143,9 @@ async function selectMagnet(movieId, magnetId) {
     }).then(r => r.json());
     if (res.code !== 200) return showToast(res.msg || '更新失败');
     const magnets = await loadMagnets(movieId, true);
-    if (syncSelectedMagnetToMovie(movieId, magnets)) {
+    const actorSynced = syncSelectedMagnetToMovie(movieId, magnets);
+    const rankingSynced = syncSelectedMagnetToRankingMovie(movieId, magnets);
+    if (actorSynced || rankingSynced) {
         updateMovieSelectedName(movieId, magnets);
     }
 }
@@ -968,6 +1163,17 @@ async function reloadCollectionMovies(collectionName) {
 }
 
 /* ===== 复制 / 下载 / 删除 / 自动选择 ===== */
+
+async function reloadRankingMovies(category, period) {
+    await ensureRankingMovies(category, period, true);
+    const route = databaseRouteInfo();
+    if (route.type !== DATABASE_TYPE_RANKING || route.category !== category.key || route.period !== period.key) return;
+    if (route.movieId && rankingMovieById(category, period, route.movieId)) {
+        await renderRankingMagnetListPage(category, period, route.movieId);
+    } else {
+        await renderRankingMovieListPage(category, period);
+    }
+}
 
 async function downloadCsv(name) {
     const response = await apiFetch(`/api/download?name=${encodeURIComponent(name)}${tagsQuery(name)}`);

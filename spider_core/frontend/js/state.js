@@ -38,6 +38,7 @@ let showFinishedTasks = false;
 let expandedCollectionName = null;
 let expandedMovieId = null;
 let collectionMovieCache = {};
+let rankingMovieCache = {};
 let collectionTagFilters = {};
 let collectionExcludeFilters = {};
 

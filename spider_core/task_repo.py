@@ -9,6 +9,7 @@ import uuid
 
 import db_store
 from db_store import connect, _now, _row_to_task, _normalize_state
+from ranking_utils import COLLECTION_TYPE_ACTOR, COLLECTION_TYPE_RANKING, is_valid_ranking
 from storage_utils import normalize_csv_filename
 
 __all__ = [
@@ -38,20 +39,38 @@ __all__ = [
 ]
 
 
-def create_task(start_url, cookie="", user_agent="", filename="", proxies=None, crawl_mode=""):
+def create_task(
+    start_url,
+    cookie="",
+    user_agent="",
+    filename="",
+    proxies=None,
+    crawl_mode="",
+    collection_type=COLLECTION_TYPE_ACTOR,
+    ranking_category="",
+    ranking_period="",
+):
     now = _now()
     task_id = uuid.uuid4().hex
     requested_filename = normalize_csv_filename(filename, allow_empty=True)
     if crawl_mode and crawl_mode not in {"incremental", "overwrite"}:
         raise ValueError(f"Invalid crawl mode: {crawl_mode}")
+    collection_type = (collection_type or COLLECTION_TYPE_ACTOR).strip()
+    ranking_category = (ranking_category or "").strip()
+    ranking_period = (ranking_period or "").strip()
+    if collection_type != COLLECTION_TYPE_RANKING or not is_valid_ranking(ranking_category, ranking_period):
+        collection_type = COLLECTION_TYPE_ACTOR
+        ranking_category = ""
+        ranking_period = ""
     with connect() as conn:
         conn.execute(
             """
             INSERT INTO tasks(
                 task_id, start_url, requested_filename, final_filename,
-                collection_filename, crawl_mode, state, created_at, updated_at
+                collection_filename, crawl_mode, collection_type, ranking_category,
+                ranking_period, state, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
             """,
             (
                 task_id,
@@ -60,6 +79,9 @@ def create_task(start_url, cookie="", user_agent="", filename="", proxies=None, 
                 requested_filename,
                 requested_filename,
                 crawl_mode or "",
+                collection_type,
+                ranking_category,
+                ranking_period,
                 now,
                 now,
             ),

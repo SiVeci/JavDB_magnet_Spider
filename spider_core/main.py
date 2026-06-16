@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from ranking_utils import COLLECTION_TYPE_ACTOR, parse_ranking_url
 from spider_engine import DATA_DIR, STATUS_FILE, fetch_html, get_android_javdb_cookie, run_task
 from storage_utils import (
     UnsafeFilenameError,
@@ -85,6 +86,9 @@ class TaskConfig(BaseModel):
     filename: str = ""
     proxies: str = None
     crawl_mode: str = ""
+    collection_type: str = COLLECTION_TYPE_ACTOR
+    ranking_category: str = ""
+    ranking_period: str = ""
     remember_cookie: bool = False
 
 
@@ -247,6 +251,7 @@ def prepare_task_config(config: TaskConfig):
         )
 
     start_url = ensure_zh_locale(config.start_url)
+    ranking_meta = parse_ranking_url(start_url)
     try:
         response = fetch_html(
             start_url,
@@ -268,7 +273,16 @@ def prepare_task_config(config: TaskConfig):
 
     soup = BeautifulSoup(response.text, "html.parser")
     try:
-        final_filename = infer_task_filename(start_url, requested_filename, soup)
+        if ranking_meta:
+            final_filename = (
+                db_store.get_ranking_collection_filename(
+                    ranking_meta["ranking_category"],
+                    ranking_meta["ranking_period"],
+                )
+                or ranking_meta["filename"]
+            )
+        else:
+            final_filename = infer_task_filename(start_url, requested_filename, soup)
     except UnsafeFilenameError as e:
         return JSONResponse(status_code=400, content={"code": 400, "msg": f"文件名非法: {str(e)}"})
 
@@ -287,6 +301,9 @@ def prepare_task_config(config: TaskConfig):
         "start_url": start_url,
         "filename": final_filename,
         "crawl_mode": config.crawl_mode or "",
+        "collection_type": ranking_meta["collection_type"] if ranking_meta else COLLECTION_TYPE_ACTOR,
+        "ranking_category": ranking_meta["ranking_category"] if ranking_meta else "",
+        "ranking_period": ranking_meta["ranking_period"] if ranking_meta else "",
     }
 
 
@@ -301,6 +318,9 @@ def task_to_response(task, include_logs=False):
         "final_filename": task.get("final_filename") or task.get("requested_filename") or "",
         "collection_filename": task.get("collection_filename") or "",
         "crawl_mode": task.get("crawl_mode") or "",
+        "collection_type": task.get("collection_type") or COLLECTION_TYPE_ACTOR,
+        "ranking_category": task.get("ranking_category") or "",
+        "ranking_period": task.get("ranking_period") or "",
         "state": task["state"],
         "progress": task.get("progress") or "0/0",
         "current": task.get("current") or "-",
@@ -446,6 +466,9 @@ def create_task_from_config(config: TaskConfig):
         prepared["start_url"],
         filename=prepared["filename"],
         crawl_mode=prepared["crawl_mode"],
+        collection_type=prepared["collection_type"],
+        ranking_category=prepared["ranking_category"],
+        ranking_period=prepared["ranking_period"],
     )
     return {"code": 200, "msg": "任务已加入队列", "task_id": task_id, "filename": prepared["filename"]}
 
@@ -477,12 +500,14 @@ def get_favicon():
 from routers import tasks as _tasks_router      # noqa: E402
 from routers import movies as _movies_router    # noqa: E402
 from routers import magnets as _magnets_router  # noqa: E402
+from routers import rankings as _rankings_router  # noqa: E402
 from routers import settings as _settings_router  # noqa: E402
 from routers import storage as _storage_router  # noqa: E402
 
 app.include_router(_tasks_router.router)
 app.include_router(_movies_router.router)
 app.include_router(_magnets_router.router)
+app.include_router(_rankings_router.router)
 app.include_router(_settings_router.router)
 app.include_router(_storage_router.router)
 
@@ -519,6 +544,14 @@ from routers.magnets import (  # noqa: E402,F401
     check_movie_magnets,
     get_current_magnet_check_job_route,
     get_magnet_check_job,
+)
+from routers.rankings import (  # noqa: E402,F401
+    check_ranking_magnets,
+    clear_ranking_collection,
+    create_ranking_update_task,
+    download_ranking_csv,
+    get_ranking_magnets,
+    get_ranking_movies as get_ranking_movies_route,
 )
 from routers.settings import (  # noqa: E402,F401
     clear_logs,

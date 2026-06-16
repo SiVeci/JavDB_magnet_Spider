@@ -135,9 +135,10 @@ function renderMagnetCheckButton(scope, target) {
 
 function updateRenderedMagnetCheckButtons() {
     renderGlobalMagnetCheckButton();
-    if (!expandedCollectionName) return;
-    const collectionButton = document.getElementById(magnetCheckButtonId('collection', expandedCollectionName));
-    if (collectionButton) collectionButton.outerHTML = renderMagnetCheckButton('collection', expandedCollectionName);
+    if (expandedCollectionName) {
+        const collectionButton = document.getElementById(magnetCheckButtonId('collection', expandedCollectionName));
+        if (collectionButton) collectionButton.outerHTML = renderMagnetCheckButton('collection', expandedCollectionName);
+    }
     const movieButtonTarget = activeMagnetCheckJob && activeMagnetCheckJob.scope === 'movie'
         ? activeMagnetCheckJob.target
         : expandedMovieId;
@@ -151,6 +152,18 @@ function renderGlobalMagnetCheckButton() {
     const slot = document.getElementById('globalMagnetCheckSlot');
     if (!slot) return;
     slot.innerHTML = renderMagnetCheckButton('all', 'all');
+}
+
+function currentRankingMagnetCheckTarget() {
+    const route = databaseRouteInfo();
+    if (route.type !== DATABASE_TYPE_RANKING || !route.category || !route.period) return '';
+    return `${route.category}:${route.period}`;
+}
+
+function currentRankingMovieCheckTarget() {
+    const route = databaseRouteInfo();
+    if (route.type !== DATABASE_TYPE_RANKING || !route.movieId) return '';
+    return String(route.movieId);
 }
 
 async function renderExpandedCollectionPreservingMovie(movieId = expandedMovieId) {
@@ -185,8 +198,7 @@ async function toggleMovieMagnetCheckMenu(movieId, event = null) {
     if (event) event.stopPropagation();
     const key = magnetCheckMenuKey('movie', movieId);
     openExclusiveMenu('check', key, null);
-    if (!expandedCollectionName) return;
-    await renderDatabaseRoute();
+    if (activeView === 'database') await renderDatabaseRoute();
 }
 
 /* ===== 检测任务启动 ===== */
@@ -202,6 +214,8 @@ async function startMovieMagnetCheck(movieId, failedOnly = false) {
     watchMagnetCheckJob(res.data);
     if (expandedCollectionName) {
         await renderExpandedCollectionPreservingMovie(expandedMovieId);
+    } else if (activeView === 'database' && currentRankingMovieCheckTarget() === String(movieId)) {
+        await renderDatabaseRoute();
     }
 }
 
@@ -273,6 +287,13 @@ async function pollMagnetCheckJob() {
         if (expandedMovieId && String(expandedMovieId) === String(activeMagnetCheckJob.target)) {
             await refreshMagnetRows(expandedMovieId);
         }
+    } else if (runningJob && activeView === 'database' && activeMagnetCheckJob.scope === 'movie' && currentRankingMovieCheckTarget() === String(activeMagnetCheckJob.target)) {
+        updateRenderedMagnetCheckButtons();
+        await refreshMagnetRows(activeMagnetCheckJob.target);
+    } else if (runningJob && activeView === 'database' && activeMagnetCheckJob.scope === 'ranking') {
+        if (currentRankingMagnetCheckTarget() === activeMagnetCheckJob.target) {
+            await renderDatabaseRoute();
+        }
     }
     if (!activeMagnetCheckJob.running) {
         stopMagnetCheckPolling();
@@ -287,7 +308,11 @@ async function cancelMagnetCheck(jobId) {
     const res = await apiFetch(`/api/magnet_check_jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' }).then(r => r.json());
     if (res.code === 200) {
         activeMagnetCheckJob = res.data;
-        await renderExpandedCollectionPreservingMovie(expandedMovieId);
+        if (activeMagnetCheckJob.scope === 'ranking' || (activeMagnetCheckJob.scope === 'movie' && currentRankingMovieCheckTarget() === String(activeMagnetCheckJob.target))) {
+            await renderDatabaseRoute();
+        } else {
+            await renderExpandedCollectionPreservingMovie(expandedMovieId);
+        }
     } else {
         showToast(res.msg || '终止检测失败');
     }
@@ -311,11 +336,29 @@ async function refreshMagnetCheckTarget(job) {
             const res = await apiFetch(`/api/movies/${movieId}/magnets`).then(r => r.json());
             magnets = res.data || [];
         }
-        if (syncSelectedMagnetToMovie(movieId, magnets)) updateMovieSelectedName(movieId, magnets);
-        await renderExpandedCollectionPreservingMovie(previouslyExpandedMovieId);
+        const actorSynced = syncSelectedMagnetToMovie(movieId, magnets);
+        const rankingSynced = syncSelectedMagnetToRankingMovie(movieId, magnets);
+        if (actorSynced || rankingSynced) updateMovieSelectedName(movieId, magnets);
+        const rankingMeta = currentRankingRouteMeta();
+        if (activeView === 'database' && rankingMeta && rankingMeta.movieId && String(rankingMeta.movieId) === String(movieId)) {
+            await reloadRankingMovies(rankingMeta.category, rankingMeta.period);
+        } else {
+            await renderExpandedCollectionPreservingMovie(previouslyExpandedMovieId);
+        }
     }
     if (job.scope === 'all') {
         await loadCollections();
         updateRenderedMagnetCheckButtons();
+    }
+    if (job.scope === 'ranking') {
+        const parts = String(job.target || '').split(':');
+        const category = rankingCategoryMeta(parts[0]);
+        const period = rankingPeriodMeta(parts[1]);
+        if (category && period) {
+            delete rankingMovieCache[rankingCacheKey(category, period)];
+        }
+        if (activeView === 'database' && currentRankingMagnetCheckTarget() === job.target) {
+            await renderDatabaseRoute();
+        }
     }
 }
