@@ -19,6 +19,7 @@
 ## 核心特性
 
 - **多任务队列**：支持批量下发爬取任务，系统自动进行后台排队与调度。Web 控制台提供实时进度监控，并支持对运行任务进行安全暂停、恢复与取消。
+- **排行榜集成**：支持浏览与提取 JavDB 排行榜数据，支持一键将排行榜下发为爬取任务。
 - **Android支持**：基于 Chaquopy 框架在手机端运行完整后端。集成原生 WebView 机制进行验证拦截与 Cookie 自动同步，支持通过端侧无缝接管并恢复需要身份验证的任务。
 - **增量爬取与智能断点续传**：支持增量爬取模式，自动跳过已存在的数据以提升效率；任务启动前自动执行页面预检与本地冲突检测；爬取过程提供精准的断点记录与救援机制，确保增量去重与覆盖操作的数据一致性。
 - **数据库化管理**：底层采用 SQLite 实现可靠的数据持久化。内置基于 Web 的可视化数据管理中心，支持浏览抓取集合、查看影片的全部候选磁力，并允许手动切换单部影片的最终生效链接，动态关联 CSV 导出与单任务磁力一键复制功能。
@@ -126,10 +127,11 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --no-access-log
 │   ├── frontend/               # WebUI 静态资源
 │   │   ├── css/                # 样式文件 (variables, base, components, pages)
 │   │   └── js/                 # 前端模块 (app, movies, magnets, tasks, settings, state, api, utils)
-│   ├── routers/                # FastAPI 路由层 (magnets, movies, settings, storage, tasks)
+│   ├── routers/                # FastAPI 路由层 (magnets, movies, rankings, settings, storage, tasks)
 │   ├── services/               # 业务服务层 (magnet_service)
 │   ├── main.py                 # FastAPI 入口与中间件
 │   ├── spider_engine.py        # 爬虫核心引擎
+│   ├── ranking_utils.py        # 排行榜解析与路由工具
 │   ├── magnet_checker.py       # 磁力链接健康检测模块
 │   ├── movie_repo.py           # 影片数据仓库
 │   ├── task_repo.py            # 任务数据仓库
