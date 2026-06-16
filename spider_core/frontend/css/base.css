@@ -1,8 +1,23 @@
 /*
  * base.css — 基础与全局自定义样式
- * 页面整体排版与配色由 Tailwind 实用类（HTML 内联）负责，
- * 此处仅保留无法用实用类表达的全局自定义样式。
+ * 页面整体排版与配色由 Tailwind 实用类（HTML 内联）与设计令牌（variables.css）负责，
+ * 此处保留无法用实用类优雅表达的全局基线与自定义样式。
  */
+
+/* 全局排版基线：系统字体栈 + 字形平滑 + 等宽数字（让进度 12/34、分数列对齐） */
+html {
+    -webkit-text-size-adjust: 100%;  /* 防止移动端横屏字号被放大 */
+}
+body {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-variant-numeric: tabular-nums;
+}
+code, pre, textarea.font-mono, .font-mono {
+    font-family: var(--font-mono);
+}
 
 /* 自定义滚动条：任务列表与运行日志区 */
 .log-box::-webkit-scrollbar { width: 6px; }

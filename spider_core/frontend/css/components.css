@@ -45,3 +45,29 @@
 
 .toast-success { background-color: var(--toast-success-bg); }
 .toast-error { background-color: var(--toast-error-bg); }
+
+/*
+ * 下拉/弹层入场动画：菜单由 innerHTML 重渲染产生（移除 .hidden 后首次出现），
+ * 这里用一次性 animation 实现轻量淡入+轻微上移，无需 JS 配合。
+ * 只用 opacity/transform，避免旧 WebView 不稳的特性。
+ */
+@keyframes menu-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+.menu:not(.hidden) {
+    animation: menu-in var(--t, 160ms) var(--ease, ease) both;
+}
+
+/* 加载态旋转圈：用于数据库等异步区域的加载占位 */
+.spinner-ring {
+    display: inline-block;
+    width: 1.5rem;
+    height: 1.5rem;
+    border: 2px solid var(--c-border);
+    border-top-color: var(--c-primary);
+    border-radius: 9999px;
+    animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+

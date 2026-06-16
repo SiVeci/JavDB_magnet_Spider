@@ -72,7 +72,7 @@ function renderTags() {
     const box = document.getElementById('tags-list');
     box.innerHTML = availableTags.map(tag => {
         const selected = selectedTags.has(tag.value);
-        return `<button type="button" onclick="toggleTag('${escapeJs(tag.value)}')" class="px-3 py-1.5 rounded text-xs border ${selected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-300'}">${escapeHtml(tag.name)}</button>`;
+        return `<button type="button" onclick="toggleTag('${escapeJs(tag.value)}')" class="px-3 py-1.5 rounded text-xs border transition-colors ${selected ? 'bg-primary text-white border-primary' : 'bg-surface text-[color:var(--c-text-muted)] border-[color:var(--c-border)] hover:bg-[color:var(--c-surface-sunken)]'}">${escapeHtml(tag.name)}</button>`;
     }).join('');
 }
 
@@ -195,6 +195,7 @@ function taskListTargetHeight(taskList) {
 }
 
 function fitLogPanelHeight() {
+    // —— 1. 取元素引用 ——
     const logContainer = document.getElementById('logContainer');
     const monitorBody = document.getElementById('taskMonitorBody');
     const queuePanel = document.getElementById('taskQueuePanel');
@@ -206,6 +207,7 @@ function fitLogPanelHeight() {
     const currentActions = document.getElementById('currentActions');
     if (!logContainer || !monitorBody || !queuePanel || !queueToolbar || !taskList || !logPanel || !logShell || !logHeader) return;
 
+    // —— 2. 测量：可用高度、布局模式、列表目标/最小高度、日志面板固定开销 ——
     const bodyHeight = Math.max(0, Math.floor(monitorBody.clientHeight || monitorBody.getBoundingClientRect().height));
     const isSplitLayout = window.matchMedia('(min-width: 1024px)').matches;
     const targetListHeight = taskListTargetHeight(taskList);
@@ -225,6 +227,7 @@ function fitLogPanelHeight() {
     queuePanel.style.overflow = 'hidden';
     logPanel.style.overflow = 'hidden';
 
+    // —— 3a. 宽屏（lg+）：左右分栏，两栏各占满 body 高度 ——
     if (isSplitLayout) {
         monitorBody.style.gridTemplateRows = '';
         queuePanel.style.height = `${bodyHeight}px`;
@@ -234,6 +237,7 @@ function fitLogPanelHeight() {
         return;
     }
 
+    // —— 3b. 窄屏：上下堆叠，在队列列表与日志面板间分配高度预算 ——
     const desiredListHeight = Math.max(minListHeight, targetListHeight);
     let listHeight = desiredListHeight;
     let logContentHeight = 0;
@@ -331,42 +335,9 @@ async function startQueue() {
     await refreshMonitor();
 }
 
-function stateLabel(state) {
-    return {
-        pending: '排队中',
-        running: '运行中',
-        pause_requested: '暂停中',
-        paused: '已暂停',
-        waiting_cookie: '等待 Cookie',
-        waiting_choice: '等待模式',
-        cancel_requested: '取消中',
-        canceled: '已取消',
-        finished: '已完成',
-        failed: '失败'
-    }[state] || state || '-';
-}
-
-function stateClass(state) {
-    if (state === 'running') return 'bg-blue-50 text-blue-700';
-    if (state === 'pending') return 'bg-slate-100 text-slate-700';
-    if (state === 'finished') return 'bg-green-50 text-green-700';
-    if (state === 'waiting_cookie') return 'bg-orange-50 text-orange-700';
-    if (state === 'waiting_choice') return 'bg-purple-50 text-purple-700';
-    if (state === 'paused' || state === 'pause_requested') return 'bg-amber-50 text-amber-700';
-    if (state === 'failed' || state === 'canceled' || state === 'cancel_requested') return 'bg-red-50 text-red-700';
-    return 'bg-slate-100 text-slate-700';
-}
-
 function progressPercent(progress) {
     const parts = String(progress || '0/0').split('/');
     return Number(parts[1]) ? Math.min(100, Math.round(Number(parts[0]) / Number(parts[1]) * 100)) : 0;
-}
-
-function progressBarClass(state) {
-    if (state === 'finished') return 'bg-green-600';
-    if (state === 'failed' || state === 'canceled' || state === 'cancel_requested') return 'bg-red-500';
-    if (state === 'paused' || state === 'pause_requested') return 'bg-amber-500';
-    return 'bg-blue-600';
 }
 
 function isFinishedTask(task) {
@@ -411,24 +382,40 @@ function renderQueueTaskControl(task) {
         return;
     }
     const id = escapeJs(task.task_id);
+    const cancelButton = ['pending', 'running', 'pause_requested', 'paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)
+        ? `
+            <button type="button" onclick="cancelTask('${id}')" title="取消当前任务" aria-label="取消当前任务" class="btn btn-icon-lg btn-danger">
+                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="9"></circle>
+                    <path d="M9 9l6 6"></path>
+                    <path d="M15 9l-6 6"></path>
+                </svg>
+            </button>`
+        : '';
     if (['running', 'pending', 'pause_requested'].includes(task.state)) {
         slot.innerHTML = `
-            <button type="button" onclick="pauseTask('${id}')" title="暂停当前任务" aria-label="暂停当前任务" class="inline-flex h-10 w-10 items-center justify-center rounded bg-amber-50 text-amber-700 hover:bg-amber-100">
-                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="currentColor">
-                    <path d="M7 5h4v14H7z"></path>
-                    <path d="M13 5h4v14h-4z"></path>
-                </svg>
-            </button>`;
+            <div class="flex gap-2">
+                <button type="button" onclick="pauseTask('${id}')" title="暂停当前任务" aria-label="暂停当前任务" class="btn btn-icon-lg btn-warning">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="currentColor">
+                        <path d="M7 5h4v14H7z"></path>
+                        <path d="M13 5h4v14h-4z"></path>
+                    </svg>
+                </button>
+                ${cancelButton}
+            </div>`;
         return;
     }
     if (['paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)) {
         slot.innerHTML = `
-            <button type="button" onclick="resumeTaskById('${id}')" title="恢复当前任务" aria-label="恢复当前任务" class="inline-flex h-10 w-10 items-center justify-center rounded bg-blue-50 text-blue-700 hover:bg-blue-100">
-                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 7v6h6"></path>
-                    <path d="M20 17a8 8 0 0 0-13.66-5.66L4 13"></path>
-                </svg>
-            </button>`;
+            <div class="flex gap-2">
+                <button type="button" onclick="resumeTaskById('${id}')" title="恢复当前任务" aria-label="恢复当前任务" class="btn btn-icon-lg btn-info">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 7v6h6"></path>
+                        <path d="M20 17a8 8 0 0 0-13.66-5.66L4 13"></path>
+                    </svg>
+                </button>
+                ${cancelButton}
+            </div>`;
         return;
     }
     slot.innerHTML = '';
@@ -437,14 +424,14 @@ function renderQueueTaskControl(task) {
 function taskActions(task, options = {}) {
     const id = escapeJs(task.task_id);
     const actions = [];
-    if (!options.hidePauseResume && ['running', 'pending', 'pause_requested'].includes(task.state)) actions.push(`<button onclick="pauseTask('${id}')" class="text-xs px-2 py-1 rounded bg-amber-50 text-amber-700 font-bold">暂停</button>`);
-    if (!options.hidePauseResume && ['paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)) actions.push(`<button onclick="resumeTaskById('${id}')" class="text-xs px-2 py-1 rounded bg-blue-50 text-blue-700 font-bold">恢复</button>`);
-    if (task.state === 'waiting_cookie') actions.push(`<button onclick="refreshCookie('${id}')" class="text-xs px-2 py-1 rounded bg-orange-50 text-orange-700 font-bold">读安卓 Cookie</button>`);
+    if (!options.hidePauseResume && ['running', 'pending', 'pause_requested'].includes(task.state)) actions.push(`<button onclick="pauseTask('${id}')" class="btn btn-sm btn-warning">暂停</button>`);
+    if (!options.hidePauseResume && ['paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)) actions.push(`<button onclick="resumeTaskById('${id}')" class="btn btn-sm btn-info">恢复</button>`);
+    if (task.state === 'waiting_cookie') actions.push(`<button onclick="refreshCookie('${id}')" class="btn btn-sm btn-warning">读安卓 Cookie</button>`);
     if (task.state === 'waiting_choice') {
-        actions.push(`<button onclick="setTaskModeById('${id}', 'incremental')" class="text-xs px-2 py-1 rounded bg-purple-50 text-purple-700 font-bold">增量</button>`);
-        actions.push(`<button onclick="setTaskModeById('${id}', 'overwrite')" class="text-xs px-2 py-1 rounded bg-red-50 text-red-700 font-bold">覆盖</button>`);
+        actions.push(`<button onclick="setTaskModeById('${id}', 'incremental')" class="btn btn-sm btn-info">增量</button>`);
+        actions.push(`<button onclick="setTaskModeById('${id}', 'overwrite')" class="btn btn-sm btn-danger">覆盖</button>`);
     }
-    if (['pending', 'running', 'pause_requested', 'paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)) actions.push(`<button onclick="cancelTask('${id}')" class="text-xs px-2 py-1 rounded bg-red-50 text-red-700 font-bold">取消</button>`);
+    if (!options.hideCancel && ['pending', 'running', 'pause_requested', 'paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)) actions.push(`<button onclick="cancelTask('${id}')" class="btn btn-sm btn-danger">取消</button>`);
     return actions.join(' ');
 }
 
@@ -453,7 +440,7 @@ function renderTaskList() {
     const visibleTasks = showFinishedTasks ? tasksCache : tasksCache.filter(task => !isFinishedTask(task));
     box.dataset.visibleTaskCount = String(visibleTasks.length);
     if (!visibleTasks.length) {
-        box.innerHTML = '<div class="p-4 text-center text-slate-400 text-sm">暂无任务</div>';
+        box.innerHTML = '<div class="empty-state p-4">暂无任务</div>';
         scheduleFitTasksLayout();
         return;
     }
@@ -463,21 +450,21 @@ function renderTaskList() {
         const pct = progressPercent(task.progress);
         const progressClass = progressBarClass(task.state);
         const copyIncrementalBtn = task.can_copy_incremental_magnets
-            ? `<button onclick="copyTaskIncrementalMagnets('${taskId}')" title="复制新增影片磁力" aria-label="复制新增影片磁力" class="inline-flex h-6 w-6 items-center justify-center rounded bg-blue-50 text-sm font-bold text-blue-700 hover:bg-blue-100">⧉</button>`
+            ? `<button onclick="copyTaskIncrementalMagnets('${taskId}')" title="复制新增影片磁力" aria-label="复制新增影片磁力" class="btn btn-info h-6 w-6 p-0 text-sm">⧉</button>`
             : '';
         return `
-        <div class="relative grid grid-cols-[minmax(0,1fr)_42px_72px_52px] items-center gap-1 overflow-hidden px-3 py-1 text-xs ${task.task_id === queueStatus.current_task_id ? 'bg-blue-50' : 'bg-white'}">
+        <div class="relative grid grid-cols-[minmax(0,1fr)_42px_72px_52px] items-center gap-1 overflow-hidden px-3 py-1 text-xs ${task.task_id === queueStatus.current_task_id ? 'bg-info-soft' : 'bg-white'}">
             <div class="min-w-0">
                 <div class="truncate font-bold text-xs leading-tight" title="${escapeHtml(displayName(rawName))}">${escapeHtml(displayName(rawName))}</div>
                 <div class="truncate font-mono text-[10px] leading-tight text-slate-400">${escapeHtml((task.task_id || '').slice(0, 8))}</div>
             </div>
             <div class="font-mono text-slate-600 text-right">${escapeHtml(task.progress || '0/0')}</div>
             <div class="text-right">
-                <span class="inline-flex w-[72px] justify-center px-1.5 py-0.5 rounded text-xs font-bold ${stateClass(task.state)}">${stateLabel(task.state)}</span>
+                <span class="badge w-[72px] ${stateClass(task.state)}">${stateLabel(task.state)}</span>
             </div>
             <div class="flex justify-end gap-1">
                 ${copyIncrementalBtn}
-                <button onclick="deleteTaskById('${taskId}')" title="删除任务" aria-label="删除任务" class="inline-flex h-6 w-6 items-center justify-center rounded bg-red-50 text-sm font-bold text-red-700 hover:bg-red-100">×</button>
+                <button onclick="deleteTaskById('${taskId}')" title="删除任务" aria-label="删除任务" class="btn btn-danger h-6 w-6 p-0 text-sm">×</button>
             </div>
             <div class="absolute inset-x-0 bottom-0 h-[2px] bg-slate-100">
                 <div class="h-full ${progressClass} transition-all duration-300" style="width:${pct}%"></div>
@@ -533,7 +520,7 @@ function renderCurrentActions(task) {
         if (!wasHidden) scheduleFitTasksLayout();
         return;
     }
-    box.innerHTML = taskActions(task, { hidePauseResume: true });
+    box.innerHTML = taskActions(task, { hidePauseResume: true, hideCancel: true });
     box.classList.toggle('hidden', !box.innerHTML.trim());
     renderQueueTaskControl(task);
     const isHidden = box.classList.contains('hidden');

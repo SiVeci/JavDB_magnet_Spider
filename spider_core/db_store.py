@@ -6,6 +6,7 @@ import sqlite3
 import time
 import uuid
 
+from ranking_utils import COLLECTION_TYPE_ACTOR, COLLECTION_TYPE_RANKING, is_valid_ranking, parse_ranking_url
 from storage_utils import UnsafeFilenameError, get_safe_csv_path, normalize_csv_filename
 
 
@@ -72,6 +73,9 @@ def init_database():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 filename TEXT NOT NULL UNIQUE,
                 source_url TEXT DEFAULT '',
+                collection_type TEXT DEFAULT 'actor',
+                ranking_category TEXT DEFAULT '',
+                ranking_period TEXT DEFAULT '',
                 tags_json TEXT DEFAULT '[]',
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL
@@ -122,6 +126,9 @@ def init_database():
                 final_filename TEXT DEFAULT '',
                 collection_filename TEXT DEFAULT '',
                 crawl_mode TEXT DEFAULT '',
+                collection_type TEXT DEFAULT 'actor',
+                ranking_category TEXT DEFAULT '',
+                ranking_period TEXT DEFAULT '',
                 state TEXT NOT NULL,
                 progress TEXT DEFAULT '0/0',
                 current TEXT DEFAULT '-',
@@ -159,6 +166,7 @@ def init_database():
             """
         )
     _migrate_task_runtime_columns()
+    _migrate_collection_type_columns()
     _migrate_tag_columns()
     _migrate_magnet_check_columns()
     _migrate_runtime_tracker_column()
@@ -193,6 +201,63 @@ def _migrate_magnet_check_columns():
 def _migrate_runtime_tracker_column():
     with connect() as conn:
         _ensure_column(conn, "runtime_config", "tracker_list_json", "TEXT DEFAULT '[]'")
+
+
+def _migrate_collection_type_columns():
+    with connect() as conn:
+        _ensure_column(conn, "collections", "collection_type", "TEXT DEFAULT 'actor'")
+        _ensure_column(conn, "collections", "ranking_category", "TEXT DEFAULT ''")
+        _ensure_column(conn, "collections", "ranking_period", "TEXT DEFAULT ''")
+        _ensure_column(conn, "tasks", "collection_type", "TEXT DEFAULT 'actor'")
+        _ensure_column(conn, "tasks", "ranking_category", "TEXT DEFAULT ''")
+        _ensure_column(conn, "tasks", "ranking_period", "TEXT DEFAULT ''")
+
+        now = _now()
+        rows = conn.execute("SELECT id, source_url FROM collections WHERE source_url != ''").fetchall()
+        for row in rows:
+            ranking = parse_ranking_url(row["source_url"])
+            if not ranking:
+                continue
+            conn.execute(
+                """
+                UPDATE collections
+                SET collection_type = ?, ranking_category = ?, ranking_period = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    COLLECTION_TYPE_RANKING,
+                    ranking["ranking_category"],
+                    ranking["ranking_period"],
+                    now,
+                    row["id"],
+                ),
+            )
+
+        rows = conn.execute("SELECT task_id, start_url FROM tasks WHERE start_url != ''").fetchall()
+        for row in rows:
+            ranking = parse_ranking_url(row["start_url"])
+            if not ranking:
+                continue
+            conn.execute(
+                """
+                UPDATE tasks
+                SET collection_type = ?, ranking_category = ?, ranking_period = ?, updated_at = ?
+                WHERE task_id = ?
+                """,
+                (
+                    COLLECTION_TYPE_RANKING,
+                    ranking["ranking_category"],
+                    ranking["ranking_period"],
+                    now,
+                    row["task_id"],
+                ),
+            )
+        conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_collections_type_ranking
+                ON collections(collection_type, ranking_category, ranking_period, updated_at)
+            """
+        )
 
 
 def _migrate_task_runtime_columns():
@@ -349,21 +414,58 @@ def _row_to_task(row):
     return dict(row)
 
 
-def _collection_id(conn, filename, source_url=""):
+def _collection_id(
+    conn,
+    filename,
+    source_url="",
+    collection_type=COLLECTION_TYPE_ACTOR,
+    ranking_category="",
+    ranking_period="",
+):
     safe_name = normalize_csv_filename(filename)
     now = _now()
+    collection_type = (collection_type or COLLECTION_TYPE_ACTOR).strip()
+    ranking_category = (ranking_category or "").strip()
+    ranking_period = (ranking_period or "").strip()
+    ranking = parse_ranking_url(source_url)
+    if ranking:
+        collection_type = COLLECTION_TYPE_RANKING
+        ranking_category = ranking["ranking_category"]
+        ranking_period = ranking["ranking_period"]
+    existing = conn.execute(
+        "SELECT collection_type, ranking_category, ranking_period FROM collections WHERE filename = ?",
+        (safe_name,),
+    ).fetchone()
+    if (
+        existing
+        and collection_type == COLLECTION_TYPE_ACTOR
+        and not source_url
+        and existing["collection_type"] == COLLECTION_TYPE_RANKING
+    ):
+        collection_type = COLLECTION_TYPE_RANKING
+        ranking_category = existing["ranking_category"] or ""
+        ranking_period = existing["ranking_period"] or ""
+    if collection_type != COLLECTION_TYPE_RANKING or not is_valid_ranking(ranking_category, ranking_period):
+        collection_type = COLLECTION_TYPE_ACTOR
+        ranking_category = ""
+        ranking_period = ""
     conn.execute(
         """
-        INSERT INTO collections(filename, source_url, created_at, updated_at)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO collections(
+            filename, source_url, collection_type, ranking_category, ranking_period, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(filename) DO UPDATE SET
             source_url = CASE
                 WHEN excluded.source_url != '' THEN excluded.source_url
                 ELSE collections.source_url
             END,
+            collection_type = excluded.collection_type,
+            ranking_category = excluded.ranking_category,
+            ranking_period = excluded.ranking_period,
             updated_at = excluded.updated_at
         """,
-        (safe_name, source_url or "", now, now),
+        (safe_name, source_url or "", collection_type, ranking_category, ranking_period, now, now),
     )
     row = conn.execute("SELECT id FROM collections WHERE filename = ?", (safe_name,)).fetchone()
     return row["id"]
