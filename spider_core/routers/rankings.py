@@ -6,8 +6,24 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse, Response
 
 import db_store
-from main import TaskConfig, create_task_from_config, get_safe_name, parse_tag_filter
-from ranking_utils import COLLECTION_TYPE_RANKING, is_valid_ranking, ranking_url
+from main import (
+    TaskConfig,
+    build_proxy_dict,
+    create_task_from_config,
+    fetch_html,
+    get_runtime_for_request,
+    get_safe_name,
+    parse_tag_filter,
+    runtime_headers,
+)
+from ranking_utils import (
+    COLLECTION_TYPE_RANKING,
+    TOP250_OPTIONS_CACHE_KEY,
+    TOP250_SOURCE_URL,
+    is_valid_ranking,
+    parse_top250_options,
+    ranking_url,
+)
 from services import magnet_service
 from spider_engine import DATA_DIR
 from storage_utils import UnsafeFilenameError
@@ -23,6 +39,99 @@ def _ranking_filename(category, period):
     if not is_valid_ranking(category, period):
         return ""
     return db_store.get_ranking_collection_filename(category, period)
+
+
+def _merge_ranking_options(*option_groups):
+    merged = []
+    seen = set()
+    for options in option_groups:
+        for item in options or []:
+            key = str((item or {}).get("key") or "").strip()
+            label = str((item or {}).get("label") or "").strip()
+            if not key or key in seen:
+                continue
+            merged.append({"key": key, "label": label or key})
+            seen.add(key)
+    return merged
+
+
+def _top250_options_payload(options, cache=None, stale=False, msg="", error_type=""):
+    return {
+        "options": options,
+        "source_url": (cache or {}).get("source_url") or TOP250_SOURCE_URL,
+        "updated_at": (cache or {}).get("updated_at") or 0,
+        "stale": stale,
+        "msg": msg,
+        "error_type": error_type,
+    }
+
+
+class Top250OptionError(Exception):
+    def __init__(self, error_type, message):
+        super().__init__(message)
+        self.error_type = error_type
+        self.message = message
+
+
+def _classify_top250_exception(error):
+    if isinstance(error, Top250OptionError):
+        return error.error_type, error.message
+    text = str(error)
+    lowered = text.lower()
+    if any(token in lowered for token in ["timeout", "timed out", "proxy", "dns", "connection", "connect", "tls", "ssl"]):
+        return "network", f"网络或代理异常：{text}"
+    return "unknown", text or "未知错误"
+
+
+@router.get("/api/rankings/top250/options")
+def get_top250_options(refresh: bool = False):
+    cache = db_store.get_ranking_option_cache(TOP250_OPTIONS_CACHE_KEY)
+    local_options = db_store.get_local_top250_options()
+    cached_options = cache["options"] if cache else []
+    fallback_options = _merge_ranking_options(cached_options, local_options)
+    if not refresh:
+        return {"code": 200, "data": _top250_options_payload(fallback_options, cache)}
+
+    try:
+        runtime = get_runtime_for_request()
+        response = fetch_html(
+            TOP250_SOURCE_URL,
+            headers=runtime_headers(runtime),
+            proxies=build_proxy_dict(runtime.get("proxies")),
+        )
+        if response.status_code in [401, 403, 503]:
+            raise Top250OptionError("auth", f"状态码 {response.status_code}，Cookie 可能失效")
+        if response.status_code != 200:
+            raise Top250OptionError("unknown", f"状态码 {response.status_code}")
+        remote_options = parse_top250_options(response.text)
+        if not remote_options:
+            raise Top250OptionError("parse", "未找到 TOP250 分类选项")
+        db_store.save_ranking_option_cache(TOP250_OPTIONS_CACHE_KEY, remote_options, TOP250_SOURCE_URL)
+        fresh_cache = db_store.get_ranking_option_cache(TOP250_OPTIONS_CACHE_KEY)
+        return {
+            "code": 200,
+            "data": _top250_options_payload(
+                _merge_ranking_options(remote_options, local_options),
+                fresh_cache,
+            ),
+        }
+    except Exception as e:
+        error_type, message = _classify_top250_exception(e)
+        if fallback_options:
+            return {
+                "code": 200,
+                "data": _top250_options_payload(
+                    fallback_options,
+                    cache,
+                    True,
+                    f"刷新分类失败，已使用本地缓存: {message}",
+                    error_type,
+                ),
+            }
+        return JSONResponse(
+            status_code=502,
+            content={"code": 502, "msg": f"TOP250 分类加载失败: {message}", "error_type": error_type},
+        )
 
 
 @router.get("/api/rankings/{category}/{period}/movies")

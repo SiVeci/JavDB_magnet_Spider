@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db_store  # noqa: E402
-from ranking_utils import parse_ranking_url, ranking_url  # noqa: E402
+from ranking_utils import parse_ranking_url, parse_top250_options, ranking_url  # noqa: E402
 
 
 class MockResponse:
@@ -64,6 +64,131 @@ class RankingDataSplitTest(unittest.TestCase):
         self.assertEqual(meta["ranking_period"], "weekly")
         self.assertEqual(meta["filename"], "ranking_fc2_weekly.csv")
 
+    def test_playback_ranking_url_uses_playback_path(self):
+        self.assertEqual(ranking_url("playback", "daily"), "https://javdb.com/rankings/playback?p=daily")
+
+    def test_parse_playback_ranking_url_ignores_t_param(self):
+        meta = parse_ranking_url("https://javdb.com/rankings/playback?locale=zh&p=monthly&t=high_score")
+        self.assertIsNotNone(meta)
+        self.assertEqual(meta["collection_type"], "ranking")
+        self.assertEqual(meta["ranking_category"], "playback")
+        self.assertEqual(meta["ranking_period"], "monthly")
+        self.assertEqual(meta["filename"], "ranking_playback_monthly.csv")
+
+    def test_top250_ranking_url_uses_top_path(self):
+        self.assertEqual(ranking_url("top250", "all"), "https://javdb.com/rankings/top")
+        self.assertEqual(ranking_url("top250", "0"), "https://javdb.com/rankings/top?t=0")
+        self.assertEqual(ranking_url("top250", "y2026"), "https://javdb.com/rankings/top?t=y2026")
+
+    def test_parse_top250_ranking_url_detects_option(self):
+        meta = parse_ranking_url("https://javdb.com/rankings/top?locale=zh&t=y2026")
+        self.assertIsNotNone(meta)
+        self.assertEqual(meta["collection_type"], "ranking")
+        self.assertEqual(meta["ranking_category"], "top250")
+        self.assertEqual(meta["ranking_period"], "y2026")
+        self.assertEqual(meta["filename"], "ranking_top250_y2026.csv")
+
+        all_meta = parse_ranking_url("https://javdb.com/rankings/top")
+        self.assertIsNotNone(all_meta)
+        self.assertEqual(all_meta["ranking_period"], "all")
+
+    def test_parse_top250_options_from_select(self):
+        html = """
+        <select name="t" id="t" data-url="/rankings/top?t=%25s">
+            <option value="">全部</option>
+            <option value="0">有碼</option>
+            <option value="y2026">2026</option>
+        </select>
+        """
+        self.assertEqual(
+            parse_top250_options(html),
+            [
+                {"key": "all", "label": "全部"},
+                {"key": "0", "label": "有碼"},
+                {"key": "y2026", "label": "2026"},
+            ],
+        )
+
+    def test_top250_options_api_caches_remote_options(self):
+        html = """
+        <select name="t" id="t">
+            <option value="">全部</option>
+            <option value="y2026">2026</option>
+        </select>
+        """
+        with patch("routers.rankings.fetch_html", return_value=MockResponse(html)):
+            r = self.client.get("/api/rankings/top250/options?refresh=1")
+
+        self.assertEqual(r.status_code, 200)
+        payload = r.json()
+        self.assertEqual(payload["code"], 200)
+        self.assertEqual(payload["data"]["options"][0], {"key": "all", "label": "全部"})
+        cached = db_store.get_ranking_option_cache("top250")
+        self.assertEqual(cached["options"][1], {"key": "y2026", "label": "2026"})
+
+    def test_top250_options_api_does_not_fetch_without_refresh(self):
+        with patch("routers.rankings.fetch_html", side_effect=AssertionError("should not fetch")):
+            r = self.client.get("/api/rankings/top250/options")
+
+        self.assertEqual(r.status_code, 200)
+        payload = r.json()
+        self.assertEqual(payload["code"], 200)
+        self.assertEqual(payload["data"]["options"], [])
+
+    def test_top250_options_api_merges_local_collections(self):
+        db_store.save_ranking_option_cache("top250", [{"key": "all", "label": "全部"}], "https://javdb.com/rankings/top")
+        db_store.ensure_collection(
+            "ranking_top250_y2026.csv",
+            ranking_url("top250", "y2026"),
+            "ranking",
+            "top250",
+            "y2026",
+        )
+
+        r = self.client.get("/api/rankings/top250/options")
+
+        self.assertEqual(r.status_code, 200)
+        keys = [item["key"] for item in r.json()["data"]["options"]]
+        self.assertEqual(keys, ["all", "y2026"])
+
+    def test_top250_options_api_reports_auth_error(self):
+        with patch("routers.rankings.fetch_html", return_value=MockResponse("", 403)):
+            r = self.client.get("/api/rankings/top250/options?refresh=1")
+
+        self.assertEqual(r.status_code, 502)
+        payload = r.json()
+        self.assertEqual(payload["error_type"], "auth")
+        self.assertIn("Cookie", payload["msg"])
+
+    def test_top250_options_api_reports_network_error(self):
+        with patch("routers.rankings.fetch_html", side_effect=TimeoutError("timeout")):
+            r = self.client.get("/api/rankings/top250/options?refresh=1")
+
+        self.assertEqual(r.status_code, 502)
+        payload = r.json()
+        self.assertEqual(payload["error_type"], "network")
+        self.assertIn("网络", payload["msg"])
+
+    def test_top250_options_api_reports_parse_error(self):
+        with patch("routers.rankings.fetch_html", return_value=MockResponse("<html></html>")):
+            r = self.client.get("/api/rankings/top250/options?refresh=1")
+
+        self.assertEqual(r.status_code, 502)
+        payload = r.json()
+        self.assertEqual(payload["error_type"], "parse")
+        self.assertIn("未找到", payload["msg"])
+
+    def test_top250_options_api_uses_cache_after_refresh_error(self):
+        db_store.save_ranking_option_cache("top250", [{"key": "all", "label": "全部"}], "https://javdb.com/rankings/top")
+        with patch("routers.rankings.fetch_html", return_value=MockResponse("", 403)):
+            r = self.client.get("/api/rankings/top250/options?refresh=1")
+
+        self.assertEqual(r.status_code, 200)
+        payload = r.json()
+        self.assertEqual(payload["data"]["error_type"], "auth")
+        self.assertTrue(payload["data"]["stale"])
+        self.assertEqual(payload["data"]["options"], [{"key": "all", "label": "全部"}])
+
     def test_legacy_source_url_collection_migrates_to_ranking(self):
         now = time.time()
         with db_store.connect() as conn:
@@ -116,6 +241,36 @@ class RankingDataSplitTest(unittest.TestCase):
         self.assertEqual(task["collection_type"], "ranking")
         self.assertEqual(task["ranking_category"], "censored")
         self.assertEqual(task["ranking_period"], "daily")
+
+    def test_update_playback_ranking_endpoint_creates_overwrite_task(self):
+        with patch.object(self.main, "fetch_html", return_value=MockResponse("<html></html>")):
+            r = self.client.post("/api/rankings/playback/daily/update")
+
+        self.assertEqual(r.status_code, 200)
+        payload = r.json()
+        self.assertEqual(payload["code"], 200)
+        task = db_store.get_task(payload["task_id"])
+        self.assertEqual(task["start_url"], "https://javdb.com/rankings/playback?p=daily&locale=zh")
+        self.assertEqual(task["final_filename"], "ranking_playback_daily.csv")
+        self.assertEqual(task["crawl_mode"], "overwrite")
+        self.assertEqual(task["collection_type"], "ranking")
+        self.assertEqual(task["ranking_category"], "playback")
+        self.assertEqual(task["ranking_period"], "daily")
+
+    def test_update_top250_ranking_endpoint_creates_overwrite_task(self):
+        with patch.object(self.main, "fetch_html", return_value=MockResponse("<html></html>")):
+            r = self.client.post("/api/rankings/top250/y2026/update")
+
+        self.assertEqual(r.status_code, 200)
+        payload = r.json()
+        self.assertEqual(payload["code"], 200)
+        task = db_store.get_task(payload["task_id"])
+        self.assertEqual(task["start_url"], "https://javdb.com/rankings/top?t=y2026&locale=zh")
+        self.assertEqual(task["final_filename"], "ranking_top250_y2026.csv")
+        self.assertEqual(task["crawl_mode"], "overwrite")
+        self.assertEqual(task["collection_type"], "ranking")
+        self.assertEqual(task["ranking_category"], "top250")
+        self.assertEqual(task["ranking_period"], "y2026")
 
 
 if __name__ == "__main__":

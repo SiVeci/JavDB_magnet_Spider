@@ -68,7 +68,7 @@ for _sub in ("css", "js"):
         app.mount(f"/{_sub}", StaticFiles(directory=_static_dir), name=_sub)
 
 
-APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "1.8.2")
+APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "1.9.1")
 AUTH_HEADER = "X-JavDB-Token"
 PUBLIC_API_PATHS = {"/api/version"}
 QUEUE_LOCK = threading.RLock()

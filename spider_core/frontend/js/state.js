@@ -41,6 +41,8 @@ let collectionMovieCache = {};
 let rankingMovieCache = {};
 let collectionTagFilters = {};
 let collectionExcludeFilters = {};
+let rankingTagFilters = {};
+let rankingExcludeFilters = {};
 
 // 下拉菜单与磁力检测任务
 let openTagDropdown = null;

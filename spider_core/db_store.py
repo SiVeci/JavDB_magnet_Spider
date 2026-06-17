@@ -6,7 +6,14 @@ import sqlite3
 import time
 import uuid
 
-from ranking_utils import COLLECTION_TYPE_ACTOR, COLLECTION_TYPE_RANKING, is_valid_ranking, parse_ranking_url
+from ranking_utils import (
+    COLLECTION_TYPE_ACTOR,
+    COLLECTION_TYPE_RANKING,
+    TOP250_CATEGORY,
+    is_valid_ranking,
+    parse_ranking_url,
+    top250_option_label,
+)
 from storage_utils import UnsafeFilenameError, get_safe_csv_path, normalize_csv_filename
 
 
@@ -161,6 +168,13 @@ def init_database():
                 user_agent TEXT DEFAULT '',
                 proxies TEXT DEFAULT '',
                 tracker_list_json TEXT DEFAULT '[]',
+                updated_at REAL NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS ranking_option_cache (
+                cache_key TEXT PRIMARY KEY,
+                options_json TEXT NOT NULL,
+                source_url TEXT DEFAULT '',
                 updated_at REAL NOT NULL
             );
             """
@@ -359,6 +373,87 @@ def _tags_from_json(value):
     except (TypeError, json.JSONDecodeError):
         return []
     return _normalize_string_list(data if isinstance(data, list) else [])
+
+
+def _normalize_ranking_options(options):
+    normalized = []
+    seen = set()
+    for item in options or []:
+        key = str((item or {}).get("key") or "").strip()
+        label = str((item or {}).get("label") or "").strip()
+        if not key or key in seen:
+            continue
+        normalized.append({"key": key, "label": label or key})
+        seen.add(key)
+    return normalized
+
+
+def get_ranking_option_cache(cache_key):
+    key = str(cache_key or "").strip()
+    if not key:
+        return None
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT cache_key, options_json, source_url, updated_at
+            FROM ranking_option_cache
+            WHERE cache_key = ?
+            """,
+            (key,),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        options = json.loads(row["options_json"])
+    except (TypeError, json.JSONDecodeError):
+        options = []
+    return {
+        "cache_key": row["cache_key"],
+        "options": _normalize_ranking_options(options),
+        "source_url": row["source_url"] or "",
+        "updated_at": row["updated_at"] or 0,
+    }
+
+
+def save_ranking_option_cache(cache_key, options, source_url=""):
+    key = str(cache_key or "").strip()
+    if not key:
+        return
+    normalized = _normalize_ranking_options(options)
+    now = _now()
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO ranking_option_cache(cache_key, options_json, source_url, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(cache_key) DO UPDATE SET
+                options_json = excluded.options_json,
+                source_url = excluded.source_url,
+                updated_at = excluded.updated_at
+            """,
+            (key, json.dumps(normalized, ensure_ascii=False), source_url or "", now),
+        )
+
+
+def get_local_top250_options():
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT ranking_period, MAX(updated_at) AS updated_at
+            FROM collections
+            WHERE collection_type = ?
+              AND ranking_category = ?
+              AND ranking_period != ''
+            GROUP BY ranking_period
+            ORDER BY updated_at DESC
+            """,
+            (COLLECTION_TYPE_RANKING, TOP250_CATEGORY),
+        ).fetchall()
+    return [
+        {"key": row["ranking_period"], "label": top250_option_label(row["ranking_period"])}
+        for row in rows
+        if row["ranking_period"]
+    ]
 
 
 def _trackers_to_json(trackers):
