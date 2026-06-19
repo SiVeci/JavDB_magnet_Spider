@@ -25,6 +25,7 @@ jobs:
       - name: Run Python tests
         run: |
           pip install -r requirements.txt
+          pip install httpx2
           python -m unittest discover -s spider_core/tests
       - name: Log in to the Container registry
         uses: docker/login-action@v3

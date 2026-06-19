@@ -27,6 +27,7 @@ jobs:
       - name: Run Python tests
         run: |
           pip install -r requirements.txt
+          pip install httpx2
           python -m unittest discover -s spider_core/tests
       - name: Inject Version Tag
         run: |
