@@ -1,0 +1,14 @@
+.git
+.github
+.gradle
+.idea
+__pycache__
+*.pyc
+app/
+gradle/
+*.jks
+*.md
+spider_core/tests/
+spider_core/data/
+diff_output.txt
+local.properties

@@ -139,12 +139,6 @@ def delete_task(task_id):
         row = conn.execute("SELECT task_id FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
         if not row:
             return False
-        conn.execute("DELETE FROM task_logs WHERE task_id = ?", (task_id,))
-        checkpoint_table = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'task_checkpoints'"
-        ).fetchone()
-        if checkpoint_table:
-            conn.execute("DELETE FROM task_checkpoints WHERE task_id = ?", (task_id,))
         conn.execute("DELETE FROM tasks WHERE task_id = ?", (task_id,))
         return True
 

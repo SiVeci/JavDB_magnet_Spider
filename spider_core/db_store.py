@@ -361,11 +361,13 @@ def _normalize_string_list(values):
     return normalized
 
 
-def _tags_to_json(tags):
-    return json.dumps(_normalize_string_list(tags), ensure_ascii=False)
+def _string_list_to_json(values):
+    """Serialize a normalized string list as JSON."""
+    return json.dumps(_normalize_string_list(values), ensure_ascii=False)
 
 
-def _tags_from_json(value):
+def _string_list_from_json(value):
+    """Deserialize a JSON string into a normalized string list."""
     if not value:
         return []
     try:
@@ -373,6 +375,10 @@ def _tags_from_json(value):
     except (TypeError, json.JSONDecodeError):
         return []
     return _normalize_string_list(data if isinstance(data, list) else [])
+
+
+_tags_to_json = _string_list_to_json
+_tags_from_json = _string_list_from_json
 
 
 def _normalize_ranking_options(options):
@@ -456,18 +462,8 @@ def get_local_top250_options():
     ]
 
 
-def _trackers_to_json(trackers):
-    return json.dumps(_normalize_string_list(trackers), ensure_ascii=False)
-
-
-def _trackers_from_json(value):
-    if not value:
-        return []
-    try:
-        data = json.loads(value)
-    except (TypeError, json.JSONDecodeError):
-        return []
-    return _normalize_string_list(data if isinstance(data, list) else [])
+_trackers_to_json = _string_list_to_json
+_trackers_from_json = _string_list_from_json
 
 
 def _matches_tags(row_tags_json, required_tags, exclude_tags=None):
@@ -672,7 +668,55 @@ def _export_rows(conn, filename, required_tags=None, exclude_tags=None):
 # 必须置于文件末尾：此时上方的底层与私有 helper 均已定义，
 # 各 repo 在导入时 `from db_store import ...` 可正确解析。
 # ---------------------------------------------------------------------------
-from task_repo import *          # noqa: E402,F401,F403
-from settings_repo import *      # noqa: E402,F401,F403
-from movie_repo import *         # noqa: E402,F401,F403
-from export_service import *     # noqa: E402,F401,F403
+from export_service import export_collection_to_csv_bytes  # noqa: E402,F401
+from movie_repo import (  # noqa: E402,F401
+    auto_select_collection_magnets,
+    clear_collection,
+    collection_exists,
+    delete_collections,
+    ensure_collection,
+    get_collection_movie_ids,
+    get_collection_movies,
+    get_collection_source_url,
+    get_existing_codes,
+    get_history,
+    get_magnet_links,
+    get_magnet_links_for_codes,
+    get_movie_magnets,
+    get_ranking_collection_filename,
+    get_ranking_magnet_links,
+    get_ranking_movie_ids,
+    get_ranking_movies,
+    import_csv_file,
+    import_existing_csvs,
+    resolve_ranking_collection_filename,
+    save_movie_result,
+    select_movie_magnet,
+    update_magnet_check_result,
+)
+from settings_repo import get_runtime_config, save_runtime_config  # noqa: E402,F401
+from task_repo import (  # noqa: E402,F401
+    append_task_log,
+    claim_next_pending_task,
+    cleanup_finished_tasks,
+    clear_task_checkpoint,
+    count_tasks_by_state,
+    create_task,
+    delete_task,
+    get_active_task,
+    get_current_task,
+    get_task,
+    get_task_logs,
+    has_active_task,
+    list_tasks,
+    load_task_checkpoint,
+    recover_interrupted_tasks,
+    request_task_cancel,
+    request_task_pause,
+    resume_task_to_pending,
+    save_task_checkpoint,
+    update_task,
+    update_task_cookie,
+    update_task_mode,
+    update_task_status,
+)

@@ -1,4 +1,4 @@
-import csv
+﻿import csv
 import io
 import os
 import tempfile
@@ -11,6 +11,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import db_store  # noqa: E402
+from schemas import TaskConfig  # noqa: E402
+from services import queue_service, task_service  # noqa: E402
 
 
 class MockResponse:
@@ -62,48 +64,51 @@ class TaskEnqueueTest(unittest.TestCase):
         self.old_data_dir = main.DATA_DIR
         main.DATA_DIR = self.tmpdir.name
         main.QUEUE_THREAD = None
+        queue_service.QUEUE_THREAD = None
         db_store.save_runtime_config(cookie="cookie", remember_cookie=False, user_agent="ua", proxies="")
 
     def tearDown(self):
         self.main.DATA_DIR = self.old_data_dir
         self.main.QUEUE_THREAD = None
+        queue_service.QUEUE_THREAD = None
         self.tmpdir.cleanup()
 
     def actor_html(self, actor_name="Actor Name"):
         return f"<html><body><h1 class='actor-section-name'>{actor_name}</h1></body></html>"
 
     def test_create_task_preprocesses_name_but_does_not_start_queue(self):
-        with patch.object(self.main, "fetch_html", return_value=MockResponse(self.actor_html("Queue Actor"))):
-            result = self.main.create_task_from_config(
-                self.main.TaskConfig(start_url="https://javdb.com/actors/QDvG", user_agent="ua")
+        with patch.object(task_service, "fetch_html", return_value=MockResponse(self.actor_html("Queue Actor"))):
+            result = task_service.create_task_from_config(
+                TaskConfig(start_url="https://javdb.com/actors/QDvG", user_agent="ua")
             )
 
         self.assertEqual(result["code"], 200)
-        task = db_store.get_task(result["task_id"])
+        task = db_store.get_task(result["data"]["task_id"])
         self.assertEqual(task["state"], "pending")
         self.assertEqual(task["final_filename"], "Queue Actor.csv")
-        self.assertFalse(self.main.is_queue_running())
+        self.assertFalse(queue_service.is_queue_running())
 
     def test_existing_collection_requires_mode_before_enqueue(self):
         db_store.ensure_collection("Queue Actor.csv")
 
-        with patch.object(self.main, "fetch_html", return_value=MockResponse(self.actor_html("Queue Actor"))):
-            response = self.main.create_task_from_config(
-                self.main.TaskConfig(start_url="https://javdb.com/actors/QDvG", user_agent="ua")
-            )
-        self.assertEqual(response.status_code, 409)
+        with patch.object(task_service, "fetch_html", return_value=MockResponse(self.actor_html("Queue Actor"))):
+            with self.assertRaises(task_service.TaskConfigError) as ctx:
+                task_service.create_task_from_config(
+                    TaskConfig(start_url="https://javdb.com/actors/QDvG", user_agent="ua")
+                )
+        self.assertEqual(ctx.exception.status_code, 409)
         self.assertEqual(db_store.list_tasks(), [])
 
-        with patch.object(self.main, "fetch_html", return_value=MockResponse(self.actor_html("Queue Actor"))):
-            result = self.main.create_task_from_config(
-                self.main.TaskConfig(
+        with patch.object(task_service, "fetch_html", return_value=MockResponse(self.actor_html("Queue Actor"))):
+            result = task_service.create_task_from_config(
+                TaskConfig(
                     start_url="https://javdb.com/actors/QDvG",
                     user_agent="ua",
                     crawl_mode="incremental",
                 )
             )
         self.assertEqual(result["code"], 200)
-        self.assertEqual(db_store.get_task(result["task_id"])["crawl_mode"], "incremental")
+        self.assertEqual(db_store.get_task(result["data"]["task_id"])["crawl_mode"], "incremental")
 
 
 class MagnetSelectionTest(unittest.TestCase):
@@ -175,3 +180,4 @@ class MagnetSelectionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

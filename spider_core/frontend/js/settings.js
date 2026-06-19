@@ -34,16 +34,6 @@ function setTrackerList(trackers) {
     document.getElementById('tracker_list').value = (trackers || []).join('\n');
 }
 
-function renderRuntimePanelState() {
-    const body = document.getElementById('runtime-config-body');
-    if (!body) return;
-    body.classList.remove('hidden');
-}
-
-function toggleRuntimePanel() {
-    renderRuntimePanelState();
-}
-
 function saveCookieBrowserCache() {
     const cookie = document.getElementById('cookie').value;
     if (document.getElementById('remember_cookie').checked) {

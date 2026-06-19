@@ -7,25 +7,19 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 import db_store
+from app_config import APP_VERSION, is_auth_required
+from schemas import RuntimeConfig, TagConfigRequest
+from services.queue_service import write_status_mirror
+from services.task_service import get_runtime_for_request, task_to_response
 from spider_engine import fetch_html
-from main import (
-    APP_VERSION,
-    RuntimeConfig,
-    TagConfigRequest,
-    build_proxy_dict,
-    ensure_zh_locale,
-    get_runtime_for_request,
-    is_auth_required,
-    task_to_response,
-    write_status_mirror,
-)
+from utils import build_proxy_dict, ensure_zh_locale
 
 router = APIRouter()
 
 
 @router.get("/api/version")
 def get_version():
-    return {"version": APP_VERSION, "auth_required": is_auth_required()}
+    return {"code": 200, "data": {"version": APP_VERSION, "auth_required": is_auth_required()}}
 
 
 @router.get("/api/runtime_config")

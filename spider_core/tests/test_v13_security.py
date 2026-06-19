@@ -61,6 +61,14 @@ class AtomicJsonTest(unittest.TestCase):
             with open(path, "r", encoding="utf-8") as f:
                 self.assertEqual(json.load(f), {"state": "finished"})
 
+    def test_read_json_file_returns_default_for_invalid_json(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "broken.json")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("{not-json")
+
+            self.assertEqual(read_json_file(path, default={"state": "idle"}), {"state": "idle"})
+
 
 class AuthTokenTest(unittest.TestCase):
     def test_auth_disabled_without_env(self):

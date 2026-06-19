@@ -26,8 +26,8 @@ android {
         applicationId "com.javdb_spider.app"
         minSdk 26
         targetSdk 36
-        versionCode 21
-        versionName "1.9.1"
+        versionCode 22
+        versionName "1.10.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // === 新增：配置 NDK，指定手机 CPU 架构 ===
@@ -53,7 +53,8 @@ android {
         }
 
         release {
-            minifyEnabled false
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             // 凭据齐全才用 release 签名；否则不指定签名（需自行在 local.properties 配置后再出正式包）
             if (hasReleaseSigning) {
@@ -90,11 +91,11 @@ chaquopy {
         version = "3.12"
         // 配置你的爬虫需要的 Python 库
         pip {
-            install "fastapi==0.95.2"
-            install "pydantic<2.0.0"
-            install "uvicorn"
-            install "beautifulsoup4"
-            install "bencodepy"
+            install "fastapi>=0.95.2,<0.100.0"
+            install "pydantic>=1.10.24,<2.0.0"
+            install "uvicorn>=0.46.0,<1.0.0"
+            install "beautifulsoup4>=4.14.3,<5.0.0"
+            install "bencodepy>=0.9.5,<1.0.0"
             // 注意：不安装 curl_cffi，因为我们要改用安卓原生 WebView
         }
     }

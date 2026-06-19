@@ -4,34 +4,41 @@
 magnet_service.ACTIVE_MAGNET_CHECK_JOB_ID 属性访问，以获取实时值。
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
 import db_store
-from storage_utils import UnsafeFilenameError, normalize_csv_filename
+from dependencies import valid_collection
 from services import magnet_service
 
 router = APIRouter()
 
 
+def _magnet_check_error_response(error: magnet_service.MagnetCheckError):
+    content = {"code": error.status_code, "msg": error.msg}
+    if error.data:
+        content["data"] = error.data
+    return JSONResponse(status_code=error.status_code, content=content)
+
+
 @router.post("/api/movies/{movie_id}/check_magnets")
 def check_movie_magnets(movie_id: int, failed_only: bool = False):
     magnets = db_store.get_movie_magnets(movie_id)
-    return magnet_service.start_magnet_check("movie", str(movie_id), magnets, "找不到候选磁力", failed_only)
+    try:
+        return magnet_service.start_magnet_check("movie", str(movie_id), magnets, "找不到候选磁力", failed_only)
+    except magnet_service.MagnetCheckError as e:
+        return _magnet_check_error_response(e)
 
 
 @router.post("/api/collections/{name}/check_magnets")
-def check_collection_magnets(name: str, failed_only: bool = False):
-    try:
-        safe_name = normalize_csv_filename(name)
-    except UnsafeFilenameError:
-        return JSONResponse(status_code=400, content={"code": 400, "msg": "文件名非法"})
-    if not db_store.collection_exists(safe_name):
-        return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到该集合"})
+def check_collection_magnets(safe_name: str = Depends(valid_collection), failed_only: bool = False):
     magnets = []
     for movie_id in db_store.get_collection_movie_ids(safe_name):
         magnets.extend(db_store.get_movie_magnets(movie_id))
-    return magnet_service.start_magnet_check("collection", safe_name, magnets, "该集合没有候选磁力", failed_only)
+    try:
+        return magnet_service.start_magnet_check("collection", safe_name, magnets, "该集合没有候选磁力", failed_only)
+    except magnet_service.MagnetCheckError as e:
+        return _magnet_check_error_response(e)
 
 
 @router.post("/api/magnets/check_all")
@@ -40,18 +47,15 @@ def check_all_magnets(failed_only: bool = False):
     for item in db_store.get_history():
         for movie_id in db_store.get_collection_movie_ids(item["name"]):
             magnets.extend(db_store.get_movie_magnets(movie_id))
-    return magnet_service.start_magnet_check("all", "all", magnets, "没有候选磁力", failed_only)
+    try:
+        return magnet_service.start_magnet_check("all", "all", magnets, "没有候选磁力", failed_only)
+    except magnet_service.MagnetCheckError as e:
+        return _magnet_check_error_response(e)
 
 
 @router.get("/api/magnet_check_jobs/current")
 def get_current_magnet_check_job_route():
-    with magnet_service.MAGNET_CHECK_LOCK:
-        active_id = magnet_service.ACTIVE_MAGNET_CHECK_JOB_ID
-        job = magnet_service.MAGNET_CHECK_JOBS.get(active_id) if active_id else None
-    if not job:
-        return {"code": 200, "data": None}
-    data = magnet_service.public_magnet_check_job(job)
-    return {"code": 200, "data": data if data["running"] else None}
+    return {"code": 200, "data": magnet_service.get_current_job()}
 
 
 @router.get("/api/magnet_check_jobs/{job_id}")
@@ -64,11 +68,7 @@ def get_magnet_check_job(job_id: str):
 
 @router.post("/api/magnet_check_jobs/{job_id}/cancel")
 def cancel_magnet_check_job(job_id: str):
-    job = magnet_service.MAGNET_CHECK_JOBS.get(job_id)
-    if not job:
+    success, data = magnet_service.cancel_job(job_id)
+    if not success:
         return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到检测任务"})
-    job["cancel_event"].set()
-    with job["lock"]:
-        job["cancelled"] = True
-        job["message"] = "正在取消检测"
-    return {"code": 200, "data": magnet_service.public_magnet_check_job(job)}
+    return {"code": 200, "data": data}

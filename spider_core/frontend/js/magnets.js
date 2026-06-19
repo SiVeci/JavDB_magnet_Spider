@@ -39,14 +39,16 @@ function magnetCheckButtonId(scope, target) {
 // 各 scope 的差异：启动 / 切换函数名、目标参数是否加引号、按钮尺寸档。
 const MAGNET_CHECK_SCOPE = {
     movie:      { startFn: 'startMovieMagnetCheck',      toggleFn: 'toggleMovieMagnetCheckMenu',      size: 'mini' },
-    collection: { startFn: 'startCollectionMagnetCheck', toggleFn: 'toggleCollectionMagnetCheckMenu', size: 'std'  },
+    collection: { startFn: 'startCollectionMagnetCheck', toggleFn: 'toggleCollectionMagnetCheckMenu', size: 'toolbar' },
     all:        { startFn: 'startAllMagnetCheck',        toggleFn: 'toggleAllMagnetCheckMenu',        size: 'std'  },
+    ranking:    { startFn: 'startRankingMagnetCheckByTarget', toggleFn: 'toggleRankingMagnetCheckMenuByTarget', size: 'toolbar' },
 };
 
 // 尺寸档：主按钮 / 副按钮的宽高与字号（配色由 .btn-split-* 组件类负责）。
 const MAGNET_CHECK_SIZE = {
     mini: { primary: 'h-5 w-6 text-[11px] leading-none', toggle: 'h-5 w-5 text-[10px] leading-none', spinner: 'h-2.5 w-2.5' },
     std:  { primary: 'h-9 w-14 text-xs shadow-sm',        toggle: 'h-9 w-7 text-xs shadow-sm',         spinner: 'h-3 w-3'    },
+    toolbar: { primary: 'h-7 w-7 text-[11px] leading-none', toggle: 'h-7 w-6 text-[10px] leading-none', spinner: 'h-3 w-3' },
 };
 
 const MAGNET_RADAR_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -95,7 +97,7 @@ function renderMagnetCheckPrimary(scope, target, st) {
         : '检测磁力';
     const content = st.isRunningTarget
         ? (scope === 'movie' ? magnetSpinner(size.spinner) : `<span>${st.progress}</span>`)
-        : (scope === 'movie' ? MAGNET_RADAR_ICON : `<span>${st.progress}</span>`);
+        : MAGNET_RADAR_ICON;
     return `<button${idAttr} type="button" onclick="${cfg.startFn}(${targetArg})" title="${title}" aria-label="${title}"${disabledAttr} class="btn-split-primary ${size.primary}">
                     <span class="inline-flex items-center justify-center gap-1">${content}</span>
                 </button>`;
@@ -145,6 +147,13 @@ function updateRenderedMagnetCheckButtons() {
     if (movieButtonTarget) {
         const movieButton = document.getElementById(magnetCheckButtonId('movie', movieButtonTarget));
         if (movieButton) movieButton.outerHTML = renderMagnetCheckButton('movie', movieButtonTarget);
+    }
+    const rankingButtonTarget = activeMagnetCheckJob && activeMagnetCheckJob.scope === 'ranking'
+        ? activeMagnetCheckJob.target
+        : currentRankingMagnetCheckTarget();
+    if (rankingButtonTarget) {
+        const rankingButton = document.getElementById(magnetCheckButtonId('ranking', rankingButtonTarget));
+        if (rankingButton) rankingButton.outerHTML = renderMagnetCheckButton('ranking', rankingButtonTarget);
     }
 }
 

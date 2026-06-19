@@ -159,6 +159,10 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --no-access-log
 │   │   └── test/                       # Android Unit Tests
 ├── spider_core/                # Backend Core Engine (FastAPI Runtime)
 │   ├── main.py                 # ASGI Entrypoint & Middleware (CORS / Auth Interceptor)
+│   ├── app_config.py           # Centralized Application Configuration & Constants
+│   ├── dependencies.py         # FastAPI Dependency Injection & Request Scoping
+│   ├── schemas.py              # Pydantic Data Models & Type Definitions
+│   ├── utils.py                # Core Utilities & Helper Functions
 │   ├── spider_engine.py        # Task Orchestration & Concurrent Scraping Engine
 │   ├── ranking_utils.py        # HTML/JSON Parsing & Ranking Data Binding
 │   ├── magnet_checker.py       # P2P Tracker Probing Module (UDP/HTTP Client)
@@ -176,7 +180,9 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --no-access-log
 │   │   ├── storage.py          # Storage Management & CSV Export Routes
 │   │   └── tasks.py            # Spider Task Queue Control Routes
 │   ├── services/               # Business Logic Layer
-│   │   └── magnet_service.py   # Magnet Selection & Scoring Algorithms
+│   │   ├── magnet_service.py   # Magnet Selection & Scoring Algorithms
+│   │   ├── queue_service.py    # Background Queue & Thread Management
+│   │   └── task_service.py     # Task Preparation & Payload Serialization
 │   ├── frontend/               # WebUI Assets (SPA Frontend)
 │   │   ├── index.html          # WebUI Entrypoint
 │   │   ├── css/                # CSS Tokens & Styles
@@ -185,11 +191,14 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --no-access-log
 │   │   │   ├── components.css  # UI Components
 │   │   │   └── pages.css       # Page Layouts
 │   │   └── js/                 # JS Modules
-│   │       ├── api.js          # Backend API Client
-│   │       ├── app.js          # Frontend Initialization & Routing
-│   │       ├── magnets.js      # Magnet Management UI Logic
+│   │       ├── api.js          # Backend API Client & Error Handling
+│   │       ├── app.js          # Frontend Initialization & Core Events
+│   │       ├── magnet-table.js # Magnet Table Rendering & Interaction Logic
+│   │       ├── magnets.js      # Magnet Task Management UI Logic
 │   │       ├── meta.js         # Meta Data & Env Variables
-│   │       ├── movies.js       # Movie Collection & Tag UI Logic
+│   │       ├── movies.js       # Movie Collection & Filter UI Logic
+│   │       ├── ranking.js      # Ranking View & Category Filtering Logic
+│   │       ├── routing.js      # SPA Router & Hash Navigation Interceptor
 │   │       ├── settings.js     # Settings Panel UI Logic
 │   │       ├── state.js        # Global State Store
 │   │       ├── tasks.js        # Task Queue & Status UI Logic

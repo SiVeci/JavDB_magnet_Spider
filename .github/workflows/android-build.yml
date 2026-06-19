@@ -24,9 +24,13 @@ jobs:
           python-version: '3.12'
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
+      - name: Run Python tests
+        run: |
+          pip install -r requirements.txt
+          python -m unittest discover -s spider_core/tests
       - name: Inject Version Tag
         run: |
-          sed -i 's/JAVDB_SPIDER_VERSION", "[^"]*"/JAVDB_SPIDER_VERSION", "${{ github.event.inputs.version }}"/' spider_core/main.py
+          sed -i 's/JAVDB_SPIDER_VERSION", "[^"]*"/JAVDB_SPIDER_VERSION", "${{ github.event.inputs.version }}"/' spider_core/app_config.py
       - name: Generate signing config (local.properties)
         run: |
           {

@@ -9,14 +9,23 @@ import queue
 import threading
 import uuid
 
-from fastapi.responses import JSONResponse
-
 import db_store
 import magnet_checker
 
 MAGNET_CHECK_LOCK = threading.RLock()
 MAGNET_CHECK_JOBS = {}
 ACTIVE_MAGNET_CHECK_JOB_ID = None
+MAX_FINISHED_JOBS = 20
+
+
+class MagnetCheckError(Exception):
+    """Magnet check job cannot be started."""
+
+    def __init__(self, status_code: int, msg: str, data=None):
+        super().__init__(msg)
+        self.status_code = status_code
+        self.msg = msg
+        self.data = data
 
 
 def public_magnet_check_job(job):
@@ -74,6 +83,27 @@ def create_magnet_check_job(scope, target, magnets):
     return job, None
 
 
+def get_current_job():
+    with MAGNET_CHECK_LOCK:
+        active_id = ACTIVE_MAGNET_CHECK_JOB_ID
+        job = MAGNET_CHECK_JOBS.get(active_id) if active_id else None
+    if not job:
+        return None
+    data = public_magnet_check_job(job)
+    return data if data["running"] else None
+
+
+def cancel_job(job_id):
+    job = MAGNET_CHECK_JOBS.get(job_id)
+    if not job:
+        return False, None
+    job["cancel_event"].set()
+    with job["lock"]:
+        job["cancelled"] = True
+        job["message"] = "正在取消检测"
+    return True, public_magnet_check_job(job)
+
+
 def failed_magnet_rows(magnets):
     return [magnet for magnet in magnets if magnet.get("check_error") and not magnet.get("check_status")]
 
@@ -81,17 +111,14 @@ def failed_magnet_rows(magnets):
 def start_magnet_check(scope, target, magnets, empty_msg, failed_only=False):
     """统一磁力检测启动逻辑：空集校验 + failed_only 过滤 + 创建 job + 并发冲突处理。"""
     if not magnets:
-        return JSONResponse(status_code=404, content={"code": 404, "msg": empty_msg})
+        raise MagnetCheckError(404, empty_msg)
     if failed_only:
         magnets = failed_magnet_rows(magnets)
         if not magnets:
-            return JSONResponse(status_code=404, content={"code": 404, "msg": "没有检测失败的磁力"})
+            raise MagnetCheckError(404, "没有检测失败的磁力")
     job, active = create_magnet_check_job(scope, target, magnets)
     if active:
-        return JSONResponse(
-            status_code=409,
-            content={"code": 409, "msg": "磁力检测任务正在运行", "data": public_magnet_check_job(active)},
-        )
+        raise MagnetCheckError(409, "磁力检测任务正在运行", public_magnet_check_job(active))
     return {"code": 200, "data": public_magnet_check_job(job)}
 
 
@@ -148,3 +175,11 @@ def run_magnet_check_job(job_id, magnets, user_trackers):
     with MAGNET_CHECK_LOCK:
         if ACTIVE_MAGNET_CHECK_JOB_ID == job_id:
             ACTIVE_MAGNET_CHECK_JOB_ID = None
+        finished_ids = [
+            jid for jid, item in MAGNET_CHECK_JOBS.items()
+            if not item["running"] and jid != job_id
+        ]
+        excess = len(finished_ids) - MAX_FINISHED_JOBS
+        if excess > 0:
+            for jid in finished_ids[:excess]:
+                del MAGNET_CHECK_JOBS[jid]

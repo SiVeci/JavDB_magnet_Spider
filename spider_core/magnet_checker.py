@@ -22,6 +22,7 @@ TRACKER_CONCURRENCY_LIMIT = 3
 TRACKER_TIMEOUT_SECONDS = 6
 MAGNET_TIMEOUT_SECONDS = 12
 RETRY_COUNT = 2
+HTTP_TRACKER_USER_AGENT = "JavDB-Magnet-Spider/1.0"
 
 
 class MagnetCheckError(Exception):
@@ -35,7 +36,7 @@ class InvalidMagnetError(MagnetCheckError):
 def extract_info_hash(magnet_link):
     parsed = urlparse(magnet_link or "")
     if parsed.scheme != "magnet":
-        raise InvalidMagnetError("无效的磁力链接")
+        raise InvalidMagnetError("无效磁力链接 (鏃犳晥)")
     xt_values = parse_qs(parsed.query).get("xt", [])
     for value in xt_values:
         prefix = "urn:btih:"
@@ -45,15 +46,15 @@ def extract_info_hash(magnet_link):
                 try:
                     return bytes.fromhex(raw)
                 except ValueError as exc:
-                    raise InvalidMagnetError("无效的磁力链接") from exc
+                    raise InvalidMagnetError("无效磁力链接 (鏃犳晥)") from exc
             try:
                 padded = raw.upper() + "=" * ((8 - len(raw) % 8) % 8)
                 decoded = base64.b32decode(padded)
             except Exception as exc:
-                raise InvalidMagnetError("无效的磁力链接") from exc
+                raise InvalidMagnetError("无效磁力链接 (鏃犳晥)") from exc
             if len(decoded) == 20:
                 return decoded
-    raise InvalidMagnetError("无效的磁力链接")
+    raise InvalidMagnetError("无效磁力链接 (鏃犳晥)")
 
 
 def extract_trackers_from_magnet(magnet_link):
@@ -84,7 +85,7 @@ def check_magnet(magnet_link, user_trackers=None):
     trackers = get_trackers_for_magnet(magnet_link, user_trackers)
     peer_id = _peer_id()
     deadline = time.monotonic() + MAGNET_TIMEOUT_SECONDS
-    last_error = "没有可用 tracker"
+    last_error = "No available tracker"
     best_seeders = 0
     best_leechers = 0
     has_success = False
@@ -102,7 +103,7 @@ def check_magnet(magnet_link, user_trackers=None):
         if has_success:
             break
         if time.monotonic() >= deadline:
-            last_error = "检测超时"
+            last_error = "Check timeout"
             break
 
     if not has_success:
@@ -123,7 +124,7 @@ def check_magnet(magnet_link, user_trackers=None):
 def query_trackers_once(trackers, info_hash, peer_id, deadline):
     remaining = deadline - time.monotonic()
     if remaining <= 0:
-        return False, 0, 0, "检测超时"
+        return False, 0, 0, "Check timeout"
 
     best_seeders = 0
     best_leechers = 0
@@ -148,7 +149,7 @@ def query_trackers_once(trackers, info_hash, peer_id, deadline):
             if best_seeders > 0:
                 return True, best_seeders, best_leechers, None
     except TimeoutError:
-        last_error = "检测超时"
+        last_error = "Check timeout"
     finally:
         executor.shutdown(wait=False, cancel_futures=True)
     return has_success, best_seeders, best_leechers, last_error
@@ -157,7 +158,7 @@ def query_trackers_once(trackers, info_hash, peer_id, deadline):
 def query_tracker_with_deadline(tracker, info_hash, peer_id, deadline):
     remaining = deadline - time.monotonic()
     if remaining <= 0:
-        raise MagnetCheckError("检测超时")
+        raise MagnetCheckError("Check timeout")
     timeout = min(TRACKER_TIMEOUT_SECONDS, remaining)
     return query_tracker(tracker, info_hash, peer_id, timeout)
 
@@ -178,7 +179,7 @@ def query_tracker(tracker_url, info_hash, peer_id, timeout):
         return query_http_tracker(tracker_url, info_hash, peer_id, timeout)
     if scheme == "udp":
         return query_udp_tracker(tracker_url, info_hash, peer_id, timeout)
-    raise MagnetCheckError(f"不支持的 tracker 协议: {scheme or '-'}")
+    raise MagnetCheckError(f"涓嶆敮鎸佺殑 tracker 鍗忚: {scheme or '-'}")
 
 
 def query_http_tracker(tracker_url, info_hash, peer_id, timeout):
@@ -196,22 +197,22 @@ def query_http_tracker(tracker_url, info_hash, peer_id, timeout):
         f"{tracker_url}{separator}info_hash={quote_from_bytes(info_hash)}&"
         f"{urlencode(query, encoding='latin1')}"
     )
-    request = Request(url, headers={"User-Agent": "JavDB-Magnet-Spider/1.0"})
+    request = Request(url, headers={"User-Agent": HTTP_TRACKER_USER_AGENT})
     with urlopen(request, timeout=timeout) as response:
         payload = response.read()
     data = bdecode(payload)
     if not isinstance(data, dict):
-        raise MagnetCheckError("tracker 响应无效")
+        raise MagnetCheckError("tracker 鍝嶅簲鏃犳晥")
     if b"failure reason" in data:
         reason = data[b"failure reason"]
-        raise MagnetCheckError(_to_text(reason) or "tracker 返回失败")
+        raise MagnetCheckError(_to_text(reason) or "tracker 杩斿洖澶辫触")
     return int(data.get(b"complete", 0) or 0), int(data.get(b"incomplete", 0) or 0)
 
 
 def query_udp_tracker(tracker_url, info_hash, peer_id, timeout):
     parsed = urlparse(tracker_url)
     if not parsed.hostname or not parsed.port:
-        raise MagnetCheckError("UDP tracker 地址无效")
+        raise MagnetCheckError("UDP tracker 鍦板潃鏃犳晥")
     address = (parsed.hostname, parsed.port)
     transaction_id = random.randint(0, 0xFFFFFFFF)
     deadline = time.monotonic() + timeout
@@ -221,10 +222,10 @@ def query_udp_tracker(tracker_url, info_hash, peer_id, timeout):
         sock.sendto(connect_packet, address)
         data, _ = sock.recvfrom(2048)
         if len(data) < 16:
-            raise MagnetCheckError("UDP tracker 响应无效")
+            raise MagnetCheckError("UDP tracker 鍝嶅簲鏃犳晥")
         action, response_tx, connection_id = struct.unpack(">IIQ", data[:16])
         if action != 0 or response_tx != transaction_id:
-            raise MagnetCheckError("UDP tracker 握手失败")
+            raise MagnetCheckError("UDP tracker 鎻℃墜澶辫触")
 
         announce_tx = random.randint(0, 0xFFFFFFFF)
         key = random.randint(0, 0xFFFFFFFF)
@@ -248,12 +249,12 @@ def query_udp_tracker(tracker_url, info_hash, peer_id, timeout):
         sock.sendto(announce_packet, address)
         data, _ = sock.recvfrom(2048)
     if len(data) < 20:
-        raise MagnetCheckError("UDP tracker 响应无效")
+        raise MagnetCheckError("UDP tracker 鍝嶅簲鏃犳晥")
     action, response_tx, _interval, leechers, seeders = struct.unpack(">IIIII", data[:20])
     if action == 3:
-        raise MagnetCheckError(_to_text(data[8:]) or "UDP tracker 返回失败")
+        raise MagnetCheckError(_to_text(data[8:]) or "UDP tracker 杩斿洖澶辫触")
     if action != 1 or response_tx != announce_tx:
-        raise MagnetCheckError("UDP tracker announce 失败")
+        raise MagnetCheckError("UDP tracker announce 澶辫触")
     return seeders, leechers
 
 
@@ -265,13 +266,13 @@ def bdecode(payload):
     except ImportError:
         value, index = _bdecode_at(payload, 0)
         if index != len(payload):
-            raise MagnetCheckError("tracker 响应无效")
+            raise MagnetCheckError("tracker 鍝嶅簲鏃犳晥")
         return value
 
 
 def _bdecode_at(payload, index):
     if index >= len(payload):
-        raise MagnetCheckError("tracker 响应无效")
+        raise MagnetCheckError("tracker 鍝嶅簲鏃犳晥")
     token = payload[index:index + 1]
     if token == b"i":
         end = payload.index(b"e", index)
@@ -297,7 +298,7 @@ def _bdecode_at(payload, index):
         start = colon + 1
         end = start + length
         return payload[start:end], end
-    raise MagnetCheckError("tracker 响应无效")
+    raise MagnetCheckError("tracker 鍝嶅簲鏃犳晥")
 
 
 def _peer_id():

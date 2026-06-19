@@ -533,49 +533,51 @@ async function refreshMonitor() {
 }
 
 async function pauseTask(taskId) {
-    const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/pause`, { method: 'POST' }).then(r => r.json());
-    if (res.code !== 200) showToast(res.msg);
-    await refreshMonitor();
+    await taskAction(taskId, 'pause');
 }
 
 async function cancelTask(taskId) {
     if (!confirm('确定取消这个任务吗？')) return;
-    const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/cancel`, { method: 'POST' }).then(r => r.json());
-    if (res.code !== 200) showToast(res.msg);
-    await refreshMonitor();
+    await taskAction(taskId, 'cancel');
 }
 
 async function deleteTaskById(taskId) {
     if (!confirm('删除这个任务记录吗？不会删除数据库集合或已爬取数据。')) return;
-    const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' }).then(r => r.json());
-    if (res.code !== 200) return showToast(res.msg || '删除任务失败');
-    await refreshMonitor();
+    await taskAction(taskId, '', { method: 'DELETE', path: `/api/tasks/${encodeURIComponent(taskId)}` });
 }
 
 async function resumeTaskById(taskId) {
     await saveRuntimeConfig(false);
-    const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/resume`, { method: 'POST' }).then(r => r.json());
-    if (res.code !== 200) showToast(res.msg);
+    await taskAction(taskId, 'resume');
     startMonitorPolling(2000);
-    await refreshMonitor();
 }
 
 async function refreshCookie(taskId) {
-    const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/refresh_cookie`, { method: 'POST' }).then(r => r.json());
-    if (res.code !== 200) showToast(res.msg);
+    await taskAction(taskId, 'refresh_cookie');
     startMonitorPolling(2000);
-    await refreshMonitor();
 }
 
 async function setTaskModeById(taskId, mode) {
-    const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/mode`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode })
-    }).then(r => r.json());
-    if (res.code !== 200) showToast(res.msg);
+    await taskAction(taskId, 'mode', { body: { mode } });
     startMonitorPolling(2000);
-    await refreshMonitor();
+}
+
+async function taskAction(taskId, action, options = {}) {
+    const method = options.method || 'POST';
+    const path = options.path || `/api/tasks/${encodeURIComponent(taskId)}/${action}`;
+    try {
+        const requestOptions = { method };
+        if (options.body !== undefined) {
+            requestOptions.headers = { 'Content-Type': 'application/json' };
+            requestOptions.body = JSON.stringify(options.body);
+        }
+        const res = await apiFetchJson(path, requestOptions);
+        if (res.code !== 200) return showToast(res.msg || '操作失败');
+        if (res.msg) showToast(res.msg);
+        await refreshMonitor();
+    } catch (err) {
+        showToast(err.message || '操作失败');
+    }
 }
 
 async function copyTaskIncrementalMagnets(taskId) {

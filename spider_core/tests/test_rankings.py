@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import tempfile
 import time
@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db_store  # noqa: E402
 from ranking_utils import parse_ranking_url, parse_top250_options, ranking_url  # noqa: E402
+from services import queue_service, task_service  # noqa: E402
 
 
 class MockResponse:
@@ -30,12 +31,14 @@ class RankingDataSplitTest(unittest.TestCase):
         self.old_data_dir = main.DATA_DIR
         main.DATA_DIR = self.tmpdir.name
         main.QUEUE_THREAD = None
+        queue_service.QUEUE_THREAD = None
         db_store.save_runtime_config(cookie="cookie", remember_cookie=False, user_agent="ua", proxies="")
         self.client = TestClient(main.app)
 
     def tearDown(self):
         self.main.DATA_DIR = self.old_data_dir
         self.main.QUEUE_THREAD = None
+        queue_service.QUEUE_THREAD = None
         db_store.configure(self.old_data_dir)
         self.tmpdir.cleanup()
 
@@ -229,13 +232,13 @@ class RankingDataSplitTest(unittest.TestCase):
         self.assertEqual(data["movies"][0]["candidate_count"], 1)
 
     def test_update_ranking_endpoint_creates_overwrite_task(self):
-        with patch.object(self.main, "fetch_html", return_value=MockResponse("<html></html>")):
+        with patch.object(task_service, "fetch_html", return_value=MockResponse("<html></html>")):
             r = self.client.post("/api/rankings/censored/daily/update")
 
         self.assertEqual(r.status_code, 200)
         payload = r.json()
         self.assertEqual(payload["code"], 200)
-        task = db_store.get_task(payload["task_id"])
+        task = db_store.get_task(payload["data"]["task_id"])
         self.assertEqual(task["final_filename"], "ranking_censored_daily.csv")
         self.assertEqual(task["crawl_mode"], "overwrite")
         self.assertEqual(task["collection_type"], "ranking")
@@ -243,13 +246,13 @@ class RankingDataSplitTest(unittest.TestCase):
         self.assertEqual(task["ranking_period"], "daily")
 
     def test_update_playback_ranking_endpoint_creates_overwrite_task(self):
-        with patch.object(self.main, "fetch_html", return_value=MockResponse("<html></html>")):
+        with patch.object(task_service, "fetch_html", return_value=MockResponse("<html></html>")):
             r = self.client.post("/api/rankings/playback/daily/update")
 
         self.assertEqual(r.status_code, 200)
         payload = r.json()
         self.assertEqual(payload["code"], 200)
-        task = db_store.get_task(payload["task_id"])
+        task = db_store.get_task(payload["data"]["task_id"])
         self.assertEqual(task["start_url"], "https://javdb.com/rankings/playback?p=daily&locale=zh")
         self.assertEqual(task["final_filename"], "ranking_playback_daily.csv")
         self.assertEqual(task["crawl_mode"], "overwrite")
@@ -258,13 +261,13 @@ class RankingDataSplitTest(unittest.TestCase):
         self.assertEqual(task["ranking_period"], "daily")
 
     def test_update_top250_ranking_endpoint_creates_overwrite_task(self):
-        with patch.object(self.main, "fetch_html", return_value=MockResponse("<html></html>")):
+        with patch.object(task_service, "fetch_html", return_value=MockResponse("<html></html>")):
             r = self.client.post("/api/rankings/top250/y2026/update")
 
         self.assertEqual(r.status_code, 200)
         payload = r.json()
         self.assertEqual(payload["code"], 200)
-        task = db_store.get_task(payload["task_id"])
+        task = db_store.get_task(payload["data"]["task_id"])
         self.assertEqual(task["start_url"], "https://javdb.com/rankings/top?t=y2026&locale=zh")
         self.assertEqual(task["final_filename"], "ranking_top250_y2026.csv")
         self.assertEqual(task["crawl_mode"], "overwrite")
@@ -275,3 +278,4 @@ class RankingDataSplitTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+

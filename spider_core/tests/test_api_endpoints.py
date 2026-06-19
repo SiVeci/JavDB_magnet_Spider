@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db_store  # noqa: E402
+from services import task_service  # noqa: E402
 
 
 def _seed_collection():
@@ -63,7 +64,7 @@ class ApiEndpointTest(unittest.TestCase):
     def test_version_is_public(self):
         r = self.client.get("/api/version")
         self.assertEqual(r.status_code, 200)
-        self.assertIn("version", r.json())
+        self.assertIn("version", r.json()["data"])
 
     def test_history_lists_collection(self):
         r = self.client.get("/api/history")
@@ -104,6 +105,22 @@ class ApiEndpointTest(unittest.TestCase):
         r = self.client.get("/api/download", params={"name": "nope.csv"})
         self.assertEqual(r.status_code, 404)
 
+    def test_delete_all_fail_returns_400(self):
+        r = self.client.post("/api/delete", json={"filenames": ["nope.csv"]})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["code"], 400)
+
+    def test_missing_frontend_responses_do_not_expose_paths(self):
+        with patch.object(self.main.os.path, "exists", return_value=False):
+            root = self.main.read_root()
+            favicon = self.main.get_favicon()
+
+        self.assertEqual(root.status_code, 404)
+        self.assertNotIn(self.tmpdir.name, root.body.decode("utf-8"))
+        self.assertNotIn("frontend", root.body.decode("utf-8"))
+        self.assertEqual(favicon.status_code, 404)
+        self.assertNotIn("frontend", favicon.body.decode("utf-8"))
+
     # ---------- 导出 + tags / exclude_tags ----------
     def test_magnet_links_filter_by_tags(self):
         # 仅 API-001 含「中出」
@@ -133,9 +150,9 @@ class ApiEndpointTest(unittest.TestCase):
     def test_create_task_network_failure_returns_502(self):
         class FakeTLSError(Exception):
             pass
-        with patch.object(self.main, "fetch_html", side_effect=FakeTLSError("TLS connect error")), \
-             patch.object(self.main, "get_runtime_for_request", return_value={"cookie": "x", "user_agent": "ua", "proxies": ""}), \
-             patch.object(self.main, "save_runtime_from_payload", return_value=None):
+        with patch.object(task_service, "fetch_html", side_effect=FakeTLSError("TLS connect error")), \
+             patch.object(task_service, "get_runtime_for_request", return_value={"cookie": "x", "user_agent": "ua", "proxies": ""}), \
+             patch.object(task_service, "save_runtime_from_payload", return_value=None):
             r = self.client.post("/api/tasks", json={"start_url": "https://javdb.com/actors/x"})
         self.assertEqual(r.status_code, 502)
         self.assertEqual(r.json()["code"], 502)

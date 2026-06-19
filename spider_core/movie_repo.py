@@ -53,6 +53,22 @@ __all__ = [
 ]
 
 
+def _collection_movie_query(conn, filename, select_columns, extra_joins="", extra_where="", order_by="m.id", params=None):
+    """Run a movies/collections query scoped by collection filename."""
+    safe_name = normalize_csv_filename(filename)
+    sql = f"""
+        SELECT {select_columns}
+        FROM movies m
+        JOIN collections c ON c.id = m.collection_id
+        {extra_joins}
+        WHERE c.filename = ?
+        {extra_where}
+        ORDER BY {order_by}
+    """
+    all_params = [safe_name] + (list(params) if params else [])
+    return conn.execute(sql, all_params).fetchall()
+
+
 def ensure_collection(
     filename,
     source_url="",
@@ -262,25 +278,20 @@ def get_collection_movies(filename):
             "SELECT tags_json FROM collections WHERE filename = ?",
             (safe_name,),
         ).fetchone()
-        rows = conn.execute(
-            """
-            SELECT m.id, m.code, m.title, m.url, m.best_magnet_name, m.best_magnet_link,
+        rows = _collection_movie_query(
+            conn,
+            safe_name,
+            """m.id, m.code, m.title, m.url, m.best_magnet_name, m.best_magnet_link,
                    m.priority_score, m.magnet_date, m.size_mb, m.tags_json,
                    COUNT(mg.id) AS candidate_count,
                    SUM(CASE WHEN mg.check_status = 'active' THEN 1 ELSE 0 END) AS active_count,
                    SUM(CASE WHEN mg.check_status = 'weak' THEN 1 ELSE 0 END) AS weak_count,
                    SUM(CASE WHEN mg.check_status = 'dead' THEN 1 ELSE 0 END) AS dead_count,
                    SUM(CASE WHEN mg.check_error IS NOT NULL AND mg.check_error != '' AND mg.check_status IS NULL THEN 1 ELSE 0 END) AS failed_count,
-                   SUM(CASE WHEN mg.checked_at IS NOT NULL OR (mg.check_error IS NOT NULL AND mg.check_error != '') THEN 1 ELSE 0 END) AS checked_count
-            FROM movies m
-            JOIN collections c ON c.id = m.collection_id
-            LEFT JOIN magnets mg ON mg.movie_id = m.id
-            WHERE c.filename = ?
-            GROUP BY m.id
-            ORDER BY m.id
-            """,
-            (safe_name,),
-        ).fetchall()
+                   SUM(CASE WHEN mg.checked_at IS NOT NULL OR (mg.check_error IS NOT NULL AND mg.check_error != '') THEN 1 ELSE 0 END) AS checked_count""",
+            extra_joins="LEFT JOIN magnets mg ON mg.movie_id = m.id",
+            extra_where="GROUP BY m.id",
+        )
     movies = []
     for row in rows:
         item = dict(row)
@@ -345,18 +356,8 @@ def select_movie_magnet(movie_id, magnet_id):
 
 
 def get_collection_movie_ids(filename):
-    safe_name = normalize_csv_filename(filename)
     with connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT m.id
-            FROM movies m
-            JOIN collections c ON c.id = m.collection_id
-            WHERE c.filename = ?
-            ORDER BY m.id
-            """,
-            (safe_name,),
-        ).fetchall()
+        rows = _collection_movie_query(conn, filename, "m.id")
     return [row["id"] for row in rows]
 
 
@@ -366,16 +367,7 @@ def auto_select_collection_magnets(filenames):
     updated = 0
     with connect() as conn:
         for filename in safe_names:
-            rows = conn.execute(
-                """
-                SELECT m.id
-                FROM movies m
-                JOIN collections c ON c.id = m.collection_id
-                WHERE c.filename = ?
-                ORDER BY m.id
-                """,
-                (filename,),
-            ).fetchall()
+            rows = _collection_movie_query(conn, filename, "m.id")
             for row in rows:
                 if _reselect_movie_magnet(conn, row["id"], now):
                     updated += 1
@@ -414,23 +406,17 @@ def update_magnet_check_result(magnet_id, check_status, seeders=0, leechers=0, c
 
 
 def get_magnet_links(filename, required_tags=None, exclude_tags=None):
-    safe_name = normalize_csv_filename(filename)
     with connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT m.best_magnet_link, m.tags_json
-            FROM movies m
-            JOIN collections c ON c.id = m.collection_id
-            WHERE c.filename = ? AND m.best_magnet_link != ''
-            ORDER BY m.id
-            """,
-            (safe_name,),
-        ).fetchall()
+        rows = _collection_movie_query(
+            conn,
+            filename,
+            "m.best_magnet_link, m.tags_json",
+            extra_where="AND m.best_magnet_link != ''",
+        )
     return [row["best_magnet_link"] for row in rows if _matches_tags(row["tags_json"], required_tags, exclude_tags)]
 
 
 def get_magnet_links_for_codes(filename, codes):
-    safe_name = normalize_csv_filename(filename)
     ordered_codes = []
     seen = set()
     for code in codes or []:
@@ -442,17 +428,13 @@ def get_magnet_links_for_codes(filename, codes):
         return []
     placeholders = ",".join("?" for _ in ordered_codes)
     with connect() as conn:
-        rows = conn.execute(
-            f"""
-            SELECT m.code, m.best_magnet_link
-            FROM movies m
-            JOIN collections c ON c.id = m.collection_id
-            WHERE c.filename = ?
-              AND m.code IN ({placeholders})
-              AND m.best_magnet_link != ''
-            """,
-            [safe_name] + ordered_codes,
-        ).fetchall()
+        rows = _collection_movie_query(
+            conn,
+            filename,
+            "m.code, m.best_magnet_link",
+            extra_where=f"AND m.code IN ({placeholders}) AND m.best_magnet_link != ''",
+            params=ordered_codes,
+        )
     links_by_code = {row["code"]: row["best_magnet_link"] for row in rows}
     return [links_by_code[code] for code in ordered_codes if links_by_code.get(code)]
 

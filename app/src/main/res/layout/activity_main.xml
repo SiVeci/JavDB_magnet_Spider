@@ -3,10 +3,9 @@
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F3F4F6"
+    android:background="@color/background_primary"
     android:fitsSystemWindows="true">
 
-    <!-- 控制面板 (支持滚动以适配小屏设备) -->
     <ScrollView
         android:id="@+id/control_panel"
         android:layout_width="match_parent"
@@ -19,57 +18,55 @@
             android:orientation="vertical"
             android:padding="24dp">
 
-            <!-- 顶部 Logo 与标题 -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:gravity="center"
                 android:layout_marginTop="24dp"
-                android:layout_marginBottom="32dp">
+                android:layout_marginBottom="32dp"
+                android:gravity="center"
+                android:orientation="vertical">
 
                 <ImageView
                     android:layout_width="80dp"
                     android:layout_height="80dp"
-                    android:src="@mipmap/ic_launcher_round"
                     android:layout_marginBottom="16dp"
-                    android:elevation="4dp"/>
+                    android:elevation="4dp"
+                    android:src="@mipmap/ic_launcher_round" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="JavDB 引擎"
-                    android:textColor="#1F2937"
+                    android:layout_marginBottom="12dp"
+                    android:text="@string/app_title"
+                    android:textColor="@color/text_primary"
                     android:textSize="28sp"
-                    android:textStyle="bold"
-                    android:layout_marginBottom="12dp"/>
+                    android:textStyle="bold" />
 
-                <!-- 状态指示器 -->
                 <com.google.android.material.card.MaterialCardView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    app:cardBackgroundColor="#E5E7EB"
+                    app:cardBackgroundColor="@color/divider"
                     app:cardCornerRadius="16dp"
                     app:cardElevation="0dp"
                     app:strokeWidth="0dp">
+
                     <TextView
                         android:id="@+id/tv_engine_status"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="⚪ 引擎状态：未启动"
-                        android:textColor="#6B7280"
-                        android:textSize="13sp"
-                        android:textStyle="bold"
                         android:paddingHorizontal="14dp"
-                        android:paddingVertical="6dp"/>
+                        android:paddingVertical="6dp"
+                        android:text="@string/engine_status_idle"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>
 
-            <!-- 核心工作流卡片 -->
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                app:cardBackgroundColor="#FFFFFF"
+                app:cardBackgroundColor="@color/card_background"
                 app:cardCornerRadius="16dp"
                 app:cardElevation="2dp"
                 app:strokeWidth="0dp">
@@ -80,151 +77,152 @@
                     android:orientation="vertical"
                     android:padding="24dp">
 
-                    <!-- 步骤一 -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:layout_marginBottom="24dp">
+                        android:layout_marginBottom="24dp"
+                        android:orientation="vertical">
+
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="1. 🛡️ 身份验证"
-                            android:textColor="#374151"
+                            android:layout_marginBottom="4dp"
+                            android:text="@string/step_auth_title"
+                            android:textColor="@color/text_dark"
                             android:textSize="16sp"
-                            android:textStyle="bold"
-                            android:layout_marginBottom="4dp"/>
+                            android:textStyle="bold" />
+
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="获取合法会话以穿透盾牌拦截"
-                            android:textColor="#9CA3AF"
-                            android:textSize="13sp"
-                            android:layout_marginBottom="12dp"/>
+                            android:layout_marginBottom="12dp"
+                            android:text="@string/step_auth_desc"
+                            android:textColor="@color/text_hint"
+                            android:textSize="13sp" />
+
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_login"
                             android:layout_width="match_parent"
                             android:layout_height="56dp"
-                            android:text="手动登录过盾"
-                            app:backgroundTint="#EEF2FF"
-                            android:textColor="#4F46E5"
-                            app:cornerRadius="12dp"
+                            android:text="@string/manual_login"
+                            android:textColor="@color/accent_primary"
                             android:textStyle="bold"
-                            app:elevation="0dp"/>
+                            app:backgroundTint="@color/surface_secondary"
+                            app:cornerRadius="12dp"
+                            app:elevation="0dp" />
                     </LinearLayout>
 
-                    <!-- 步骤二 -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:layout_marginBottom="24dp">
+                        android:layout_marginBottom="24dp"
+                        android:orientation="vertical">
+
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="2. ⚙️ 爬虫引擎"
-                            android:textColor="#374151"
+                            android:layout_marginBottom="4dp"
+                            android:text="@string/step_engine_title"
+                            android:textColor="@color/text_dark"
                             android:textSize="16sp"
-                            android:textStyle="bold"
-                            android:layout_marginBottom="4dp"/>
+                            android:textStyle="bold" />
+
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="在后台静默启动 Python 核心服务"
-                            android:textColor="#9CA3AF"
-                            android:textSize="13sp"
-                            android:layout_marginBottom="12dp"/>
-                        <!-- 局域网访问勾选项 -->
+                            android:layout_marginBottom="12dp"
+                            android:text="@string/step_engine_desc"
+                            android:textColor="@color/text_hint"
+                            android:textSize="13sp" />
+
                         <CheckBox
                             android:id="@+id/cb_lan_access"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="允许局域网访问"
-                            android:textColor="#6B7280"
-                            android:textSize="13sp"
-                            android:buttonTint="#4F46E5"
-                            android:layout_marginBottom="8dp"/>
+                            android:layout_marginBottom="8dp"
+                            android:buttonTint="@color/accent_primary"
+                            android:text="@string/allow_lan_access"
+                            android:textColor="@color/text_secondary"
+                            android:textSize="13sp" />
 
-                        <!-- 局域网地址展示（引擎启动后显示） -->
                         <TextView
                             android:id="@+id/tv_lan_address"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text=""
-                            android:textColor="#10B981"
-                            android:textSize="13sp"
-                            android:textStyle="bold"
+                            android:layout_marginBottom="8dp"
                             android:paddingHorizontal="4dp"
                             android:paddingVertical="6dp"
-                            android:layout_marginBottom="8dp"
-                            android:visibility="gone"/>
+                            android:textColor="@color/accent_success"
+                            android:textSize="13sp"
+                            android:textStyle="bold"
+                            android:visibility="gone" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_start"
                             android:layout_width="match_parent"
                             android:layout_height="56dp"
-                            android:text="启动引擎"
-                            app:backgroundTint="#4F46E5"
-                            android:textColor="#FFFFFF"
-                            app:cornerRadius="12dp"
+                            android:text="@string/start_engine"
+                            android:textColor="@color/white"
                             android:textStyle="bold"
-                            app:elevation="0dp"/>
+                            app:backgroundTint="@color/accent_primary"
+                            app:cornerRadius="12dp"
+                            app:elevation="0dp" />
                     </LinearLayout>
 
-                    <!-- 步骤三 -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:orientation="vertical">
+
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="3. 💻 远程控制"
-                            android:textColor="#374151"
+                            android:layout_marginBottom="4dp"
+                            android:text="@string/step_control_title"
+                            android:textColor="@color/text_dark"
                             android:textSize="16sp"
-                            android:textStyle="bold"
-                            android:layout_marginBottom="4dp"/>
+                            android:textStyle="bold" />
+
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="打开浏览器进入 WebUI 配置任务"
-                            android:textColor="#9CA3AF"
-                            android:textSize="13sp"
-                            android:layout_marginBottom="12dp"/>
+                            android:layout_marginBottom="12dp"
+                            android:text="@string/step_control_desc"
+                            android:textColor="@color/text_hint"
+                            android:textSize="13sp" />
+
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btn_open_browser"
                             android:layout_width="match_parent"
                             android:layout_height="56dp"
-                            android:text="打开控制台"
-                            app:backgroundTint="#10B981"
-                            android:textColor="#FFFFFF"
-                            app:cornerRadius="12dp"
+                            android:text="@string/open_console"
+                            android:textColor="@color/white"
                             android:textStyle="bold"
-                            app:elevation="0dp"/>
+                            app:backgroundTint="@color/accent_success"
+                            app:cornerRadius="12dp"
+                            app:elevation="0dp" />
                     </LinearLayout>
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
         </LinearLayout>
     </ScrollView>
 
-    <!-- 内置浏览器页面 (沉浸式破盾) -->
     <LinearLayout
         android:id="@+id/login_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:background="@color/card_background"
+        android:elevation="8dp"
         android:orientation="vertical"
-        android:background="#FFFFFF"
-        android:visibility="gone"
-        android:elevation="8dp">
+        android:visibility="gone">
 
-        <!-- 沉浸式顶部导航栏 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="56dp"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:background="#FFFFFF"
+            android:background="@color/card_background"
             android:elevation="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
             android:paddingHorizontal="8dp">
 
             <com.google.android.material.button.MaterialButton
@@ -232,34 +230,33 @@
                 style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="关闭"
-                android:textColor="#6B7280"
+                android:text="@string/close"
+                android:textColor="@color/text_secondary"
                 android:textStyle="bold" />
 
             <TextView
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="验证与选片"
-                android:textColor="#1F2937"
+                android:gravity="center"
+                android:text="@string/verify_and_pick"
+                android:textColor="@color/text_primary"
                 android:textSize="18sp"
-                android:textStyle="bold"
-                android:gravity="center"/>
+                android:textStyle="bold" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_copy_link"
                 style="@style/Widget.MaterialComponents.Button.TextButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="复制链接"
-                android:textColor="#4F46E5"
+                android:text="@string/copy_link"
+                android:textColor="@color/accent_primary"
                 android:textStyle="bold" />
         </LinearLayout>
 
         <WebView
             android:id="@+id/visible_webview"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"/>
+            android:layout_height="match_parent" />
     </LinearLayout>
-
 </RelativeLayout>

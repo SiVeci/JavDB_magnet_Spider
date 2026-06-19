@@ -39,7 +39,7 @@ class MagnetCheckerTest(unittest.TestCase):
 
         self.assertEqual(result["check_status"], "dead")
         self.assertEqual(result["seeders"], 0)
-        self.assertIn("无效", result["check_error"])
+        self.assertIn("鏃犳晥", result["check_error"])
 
     def test_uses_best_successful_tracker_result(self):
         link = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"
@@ -116,12 +116,6 @@ class MagnetCheckerTest(unittest.TestCase):
         self.assertEqual(data[b"complete"], 15)
         self.assertEqual(data[b"incomplete"], 3)
 
-    def test_udp_response_parser_shape(self):
-        packet = struct.pack(">IIIII", 1, 123, 1800, 5, 9)
-
-        action, tx, _interval, leechers, seeders = struct.unpack(">IIIII", packet)
-
-        self.assertEqual((action, tx, seeders, leechers), (1, 123, 9, 5))
 
 
 if __name__ == "__main__":

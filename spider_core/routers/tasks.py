@@ -7,26 +7,27 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 import db_store
-from spider_engine import get_android_javdb_cookie
-from storage_utils import UnsafeFilenameError, normalize_csv_filename
-from main import (
-    CookieConfig,
-    ModeConfig,
-    TaskConfig,
+from dependencies import valid_collection
+from schemas import CookieConfig, ModeConfig, TaskConfig
+from services.queue_service import ensure_queue_worker, get_queue_status_data
+from services.task_service import (
+    TaskConfigError,
     create_task_from_config,
-    ensure_queue_worker,
-    get_queue_status_data,
     resolve_task_cookie,
     task_incremental_movie_codes,
     task_to_response,
 )
+from spider_engine import get_android_javdb_cookie
 
 router = APIRouter()
 
 
 @router.post("/api/tasks")
 def create_task(config: TaskConfig):
-    return create_task_from_config(config)
+    try:
+        return create_task_from_config(config)
+    except TaskConfigError as e:
+        return JSONResponse(status_code=e.status_code, content={"code": e.status_code, "msg": e.msg, **e.extra})
 
 
 @router.get("/api/tasks")
@@ -37,7 +38,7 @@ def list_tasks():
 @router.post("/api/tasks/cleanup")
 def cleanup_finished_tasks():
     deleted = db_store.cleanup_finished_tasks()
-    return {"code": 200, "msg": f"已清理 {deleted} 个已结束任务", "deleted": deleted}
+    return {"code": 200, "msg": f"已清理 {deleted} 个已结束任务", "data": {"deleted": deleted}}
 
 
 @router.delete("/api/tasks/{task_id}")
@@ -81,12 +82,7 @@ def get_task_incremental_magnets(task_id: str):
     if not codes:
         return {"code": 200, "data": [], "count": 0}
     filename = task.get("collection_filename") or task.get("final_filename") or task.get("requested_filename") or ""
-    try:
-        safe_name = normalize_csv_filename(filename)
-    except UnsafeFilenameError:
-        return JSONResponse(status_code=400, content={"code": 400, "msg": "任务文件名非法"})
-    if not db_store.collection_exists(safe_name):
-        return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到该集合"})
+    safe_name = valid_collection(filename)
     links = db_store.get_magnet_links_for_codes(safe_name, codes)
     return {"code": 200, "data": links, "count": len(links)}
 

@@ -19,3 +19,14 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Preserve Chaquopy's Java/Python bridge.
+-keep class com.chaquo.python.** { *; }
+
+# Keep bridge entry points used across WebView and Python integration.
+-keep class com.javdb_spider.app.WebViewBridge { *; }
+
+# Preserve JavaScript interfaces.
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}

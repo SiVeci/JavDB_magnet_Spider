@@ -1,6 +1,6 @@
-fastapi
-uvicorn
-pydantic
-curl_cffi
-beautifulsoup4
-bencodepy
+fastapi>=0.136.1,<1.0.0
+uvicorn>=0.46.0,<1.0.0
+pydantic>=2.13.4,<3.0.0
+curl_cffi>=0.15.0,<1.0.0
+beautifulsoup4>=4.14.3,<5.0.0
+bencodepy>=0.9.5,<1.0.0

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * app.js — 应用入口
  * 鉴权流程、全局菜单关闭、初始化与首屏加载。
  * 依赖其它模块（utils/api/state/settings/tasks/movies/magnets）已在本文件之前加载。
@@ -139,7 +139,6 @@ function setActiveView(view) {
         fitMovieTags();
     }
     if (activeView === 'settings') {
-        renderRuntimePanelState();
     }
     if (activeView === 'tasks' && typeof fitTasksLayout === 'function') {
         requestAnimationFrame(fitTasksLayout);
@@ -182,7 +181,6 @@ window.onload = async function() {
     showAuthPanel(false);
     window.addEventListener('hashchange', handleHashChange);
     setActiveView(viewFromHash());
-    renderRuntimePanelState();
     renderLogPanelState();
     window.addEventListener('resize', () => {
         fitMovieTags();
@@ -194,8 +192,9 @@ window.onload = async function() {
     document.getElementById('user_agent').value = localStorage.getItem('javdb_ua') || defaultUA();
     try {
         const version = await fetch('/api/version').then(r => r.json());
-        document.getElementById('app_version').innerText = version.version || 'v?.?.?';
-        authRequired = !!version.auth_required;
+        const payload = version.data || version;
+        document.getElementById('app_version').innerText = payload.version || 'v?.?.?';
+        authRequired = !!payload.auth_required;
     } catch {
         document.getElementById('app_version').innerText = 'v?.?.?';
         lockAppForAuth('无法读取鉴权状态，请刷新重试');
@@ -219,3 +218,4 @@ window.onload = async function() {
         lockAppForAuth(err.message || '验证失败，请稍后重试');
     }
 };
+

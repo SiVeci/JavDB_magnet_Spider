@@ -1,32 +1,24 @@
 """排行榜集合端点：按分类/周期定位榜单快照并复用现有集合能力。"""
 
-from urllib.parse import quote
-
-from fastapi import APIRouter
-from fastapi.responses import JSONResponse, Response
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 import db_store
-from main import (
-    TaskConfig,
-    build_proxy_dict,
-    create_task_from_config,
-    fetch_html,
-    get_runtime_for_request,
-    get_safe_name,
-    parse_tag_filter,
-    runtime_headers,
-)
+from dependencies import check_not_occupied_by_task, valid_ranking
 from ranking_utils import (
     COLLECTION_TYPE_RANKING,
     TOP250_OPTIONS_CACHE_KEY,
     TOP250_SOURCE_URL,
-    is_valid_ranking,
     parse_top250_options,
     ranking_url,
 )
+from schemas import TaskConfig
 from services import magnet_service
+from services.task_service import TaskConfigError, create_task_from_config, get_runtime_for_request
 from spider_engine import DATA_DIR
+from spider_engine import fetch_html
 from storage_utils import UnsafeFilenameError
+from utils import build_proxy_dict, csv_download_response, parse_tag_filter, runtime_headers
 
 router = APIRouter()
 
@@ -35,9 +27,14 @@ def _invalid_ranking_response():
     return JSONResponse(status_code=404, content={"code": 404, "msg": "排行榜不存在"})
 
 
+def _magnet_check_error_response(error: magnet_service.MagnetCheckError):
+    content = {"code": error.status_code, "msg": error.msg}
+    if error.data:
+        content["data"] = error.data
+    return JSONResponse(status_code=error.status_code, content=content)
+
+
 def _ranking_filename(category, period):
-    if not is_valid_ranking(category, period):
-        return ""
     return db_store.get_ranking_collection_filename(category, period)
 
 
@@ -136,8 +133,7 @@ def get_top250_options(refresh: bool = False):
 
 @router.get("/api/rankings/{category}/{period}/movies")
 def get_ranking_movies(category: str, period: str):
-    if not is_valid_ranking(category, period):
-        return _invalid_ranking_response()
+    category, period = valid_ranking(category, period)
     data = db_store.get_ranking_movies(category, period)
     data["collection_filename"] = _ranking_filename(category, period)
     return {"code": 200, "data": data}
@@ -148,21 +144,23 @@ def create_ranking_update_task(category: str, period: str):
     url = ranking_url(category, period)
     if not url:
         return _invalid_ranking_response()
-    return create_task_from_config(
-        TaskConfig(
-            start_url=url,
-            crawl_mode="overwrite",
-            collection_type=COLLECTION_TYPE_RANKING,
-            ranking_category=category,
-            ranking_period=period,
+    try:
+        return create_task_from_config(
+            TaskConfig(
+                start_url=url,
+                crawl_mode="overwrite",
+                collection_type=COLLECTION_TYPE_RANKING,
+                ranking_category=category,
+                ranking_period=period,
+            )
         )
-    )
+    except TaskConfigError as e:
+        return JSONResponse(status_code=e.status_code, content={"code": e.status_code, "msg": e.msg, **e.extra})
 
 
 @router.get("/api/rankings/{category}/{period}/magnets")
 def get_ranking_magnets(category: str, period: str, tags: str = None, exclude_tags: str = None):
-    if not is_valid_ranking(category, period):
-        return _invalid_ranking_response()
+    category, period = valid_ranking(category, period)
     try:
         links = db_store.get_ranking_magnet_links(category, period, parse_tag_filter(tags), parse_tag_filter(exclude_tags))
     except Exception as e:
@@ -172,8 +170,7 @@ def get_ranking_magnets(category: str, period: str, tags: str = None, exclude_ta
 
 @router.get("/api/rankings/{category}/{period}/download")
 def download_ranking_csv(category: str, period: str, tags: str = None, exclude_tags: str = None):
-    if not is_valid_ranking(category, period):
-        return _invalid_ranking_response()
+    category, period = valid_ranking(category, period)
     filename = _ranking_filename(category, period)
     if not filename:
         return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到该榜单"})
@@ -187,27 +184,19 @@ def download_ranking_csv(category: str, period: str, tags: str = None, exclude_t
         return JSONResponse(status_code=400, content={"code": 400, "msg": "文件名非法"})
     if csv_bytes is None:
         return JSONResponse(status_code=404, content={"code": 404, "msg": "找不到该榜单"})
-    quoted_name = quote(safe_name)
-    return Response(
-        content=csv_bytes,
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="download.csv"; filename*=UTF-8\'\'{quoted_name}'},
-    )
+    return csv_download_response(csv_bytes, safe_name)
 
 
 @router.post("/api/rankings/{category}/{period}/clear")
 def clear_ranking_collection(category: str, period: str):
-    if not is_valid_ranking(category, period):
-        return _invalid_ranking_response()
+    category, period = valid_ranking(category, period)
     filename = _ranking_filename(category, period)
     if not filename:
         return {"code": 200, "msg": "榜单已为空"}
 
-    active_file = None
-    active_task = db_store.get_active_task()
-    if active_task:
-        active_file = get_safe_name(active_task.get("collection_filename") or active_task.get("final_filename"))
-    if active_file == filename:
+    try:
+        check_not_occupied_by_task(filename)
+    except HTTPException:
         return JSONResponse(status_code=400, content={"code": 400, "msg": "榜单正在被任务占用"})
 
     deleted, missing = db_store.delete_collections([filename], DATA_DIR)
@@ -218,15 +207,17 @@ def clear_ranking_collection(category: str, period: str):
 
 @router.post("/api/rankings/{category}/{period}/check_magnets")
 def check_ranking_magnets(category: str, period: str, failed_only: bool = False):
-    if not is_valid_ranking(category, period):
-        return _invalid_ranking_response()
+    category, period = valid_ranking(category, period)
     magnets = []
     for movie_id in db_store.get_ranking_movie_ids(category, period):
         magnets.extend(db_store.get_movie_magnets(movie_id))
-    return magnet_service.start_magnet_check(
-        "ranking",
-        f"{category}:{period}",
-        magnets,
-        "该榜单没有候选磁力",
-        failed_only,
-    )
+    try:
+        return magnet_service.start_magnet_check(
+            "ranking",
+            f"{category}:{period}",
+            magnets,
+            "该榜单没有候选磁力",
+            failed_only,
+        )
+    except magnet_service.MagnetCheckError as e:
+        return _magnet_check_error_response(e)

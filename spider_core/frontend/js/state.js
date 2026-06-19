@@ -30,7 +30,6 @@ let selectedTags = new Set();
 
 // 面板折叠状态
 let tagsCollapsed = false;
-let runtimeConfigCollapsed = true;
 let logCollapsed = true;
 let showFinishedTasks = false;
 

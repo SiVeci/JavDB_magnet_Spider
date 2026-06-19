@@ -12,14 +12,24 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import db_store  # noqa: E402
+from routers import magnets as magnets_router  # noqa: E402
+from routers import movies as movies_router  # noqa: E402
+from routers import storage as storage_router  # noqa: E402
+from services import magnet_service  # noqa: E402
 
 
 class DbStoreTest(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
         db_store.configure(self.tmpdir.name)
+        with magnet_service.MAGNET_CHECK_LOCK:
+            magnet_service.MAGNET_CHECK_JOBS.clear()
+            magnet_service.ACTIVE_MAGNET_CHECK_JOB_ID = None
 
     def tearDown(self):
+        with magnet_service.MAGNET_CHECK_LOCK:
+            magnet_service.MAGNET_CHECK_JOBS.clear()
+            magnet_service.ACTIVE_MAGNET_CHECK_JOB_ID = None
         self.tmpdir.cleanup()
 
     def write_csv(self, filename, rows):
@@ -285,6 +295,9 @@ class DbBackedApiTest(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
         db_store.configure(self.tmpdir.name)
+        with magnet_service.MAGNET_CHECK_LOCK:
+            magnet_service.MAGNET_CHECK_JOBS.clear()
+            magnet_service.ACTIVE_MAGNET_CHECK_JOB_ID = None
 
         import main
 
@@ -312,24 +325,27 @@ class DbBackedApiTest(unittest.TestCase):
         )
 
     def tearDown(self):
+        with magnet_service.MAGNET_CHECK_LOCK:
+            magnet_service.MAGNET_CHECK_JOBS.clear()
+            magnet_service.ACTIVE_MAGNET_CHECK_JOB_ID = None
         self.main.DATA_DIR = self.old_data_dir
         self.tmpdir.cleanup()
 
     def test_history_download_and_magnets_are_db_backed(self):
-        history = self.main.get_history()
+        history = movies_router.get_history()
         self.assertEqual(history["code"], 200)
         self.assertEqual(history["data"][0]["name"], "api.csv")
         self.assertEqual(history["data"][0]["count"], 1)
 
-        magnets = self.main.get_magnets("api.csv")
+        magnets = storage_router.get_magnets("api.csv")
         self.assertEqual(magnets, {"code": 200, "data": ["magnet:?xt=urn:btih:api"]})
-        self.assertEqual(self.main.get_magnets("api.csv", tags="美乳,中出"), magnets)
-        self.assertEqual(self.main.get_magnets("api.csv", tags="潮吹"), {"code": 200, "data": []})
+        self.assertEqual(storage_router.get_magnets("api.csv", tags="美乳,中出"), magnets)
+        self.assertEqual(storage_router.get_magnets("api.csv", tags="潮吹"), {"code": 200, "data": []})
 
         path = os.path.join(self.tmpdir.name, "api.csv")
         if os.path.exists(path):
             os.remove(path)
-        response = self.main.download_csv("api.csv")
+        response = storage_router.download_csv("api.csv")
         self.assertEqual(response.status_code, 200)
         self.assertFalse(os.path.exists(path))
         self.assertIn("filename*=UTF-8''api.csv", response.headers["content-disposition"])
@@ -340,15 +356,15 @@ class DbBackedApiTest(unittest.TestCase):
         movie_id = db_store.get_collection_movies("api.csv")["movies"][0]["id"]
 
         with patch.object(
-            self.main.magnet_checker,
+            magnet_service.magnet_checker,
             "check_magnet",
             return_value={"check_status": "active", "seeders": 9, "leechers": 2, "check_error": None},
         ):
-            response = self.main.check_movie_magnets(movie_id)
+            response = magnets_router.check_movie_magnets(movie_id)
             self.assertEqual(response["code"], 200)
             job_id = response["data"]["job_id"]
             for _ in range(100):
-                job = self.main.get_magnet_check_job(job_id)["data"]
+                job = magnets_router.get_magnet_check_job(job_id)["data"]
                 if not job["running"]:
                     break
                 time.sleep(0.01)
@@ -379,12 +395,12 @@ class DbBackedApiTest(unittest.TestCase):
             checked_links.append(link)
             return {"check_status": "active", "seeders": 3, "leechers": 1, "check_error": None}
 
-        with patch.object(self.main.magnet_checker, "check_magnet", side_effect=fake_check):
-            response = self.main.check_movie_magnets(movie_id, failed_only=True)
+        with patch.object(magnet_service.magnet_checker, "check_magnet", side_effect=fake_check):
+            response = magnets_router.check_movie_magnets(movie_id, failed_only=True)
             self.assertEqual(response["code"], 200)
             job_id = response["data"]["job_id"]
             for _ in range(100):
-                job = self.main.get_magnet_check_job(job_id)["data"]
+                job = magnets_router.get_magnet_check_job(job_id)["data"]
                 if not job["running"]:
                     break
                 time.sleep(0.01)
@@ -394,15 +410,15 @@ class DbBackedApiTest(unittest.TestCase):
 
     def test_all_check_job_updates_magnet_results(self):
         with patch.object(
-            self.main.magnet_checker,
+            magnet_service.magnet_checker,
             "check_magnet",
             return_value={"check_status": "active", "seeders": 2, "leechers": 0, "check_error": None},
         ):
-            response = self.main.check_all_magnets()
+            response = magnets_router.check_all_magnets()
             self.assertEqual(response["code"], 200)
             job_id = response["data"]["job_id"]
             for _ in range(100):
-                job = self.main.get_magnet_check_job(job_id)["data"]
+                job = magnets_router.get_magnet_check_job(job_id)["data"]
                 if not job["running"]:
                     break
                 time.sleep(0.01)
@@ -417,21 +433,43 @@ class DbBackedApiTest(unittest.TestCase):
             time.sleep(0.2)
             return {"check_status": "active", "seeders": 1, "leechers": 0, "check_error": None}
 
-        with patch.object(self.main.magnet_checker, "check_magnet", side_effect=slow_check):
-            response = self.main.check_movie_magnets(movie_id)
+        with patch.object(magnet_service.magnet_checker, "check_magnet", side_effect=slow_check):
+            response = magnets_router.check_movie_magnets(movie_id)
             self.assertEqual(response["code"], 200)
             job_id = response["data"]["job_id"]
-            current = self.main.get_current_magnet_check_job_route()
+            current = magnets_router.get_current_magnet_check_job_route()
             self.assertEqual(current["code"], 200)
             self.assertEqual(current["data"]["job_id"], job_id)
 
             for _ in range(100):
-                job = self.main.get_magnet_check_job(job_id)["data"]
+                job = magnets_router.get_magnet_check_job(job_id)["data"]
                 if not job["running"]:
                     break
                 time.sleep(0.01)
 
-        self.assertIsNone(self.main.get_current_magnet_check_job_route()["data"])
+        self.assertIsNone(magnets_router.get_current_magnet_check_job_route()["data"])
+
+    def test_finished_magnet_check_jobs_are_pruned(self):
+        movie_id = db_store.get_collection_movies("api.csv")["movies"][0]["id"]
+        latest_job_id = None
+
+        with patch.object(
+            magnet_service.magnet_checker,
+            "check_magnet",
+            return_value={"check_status": "active", "seeders": 1, "leechers": 0, "check_error": None},
+        ):
+            for _ in range(25):
+                response = magnets_router.check_movie_magnets(movie_id)
+                self.assertEqual(response["code"], 200)
+                latest_job_id = response["data"]["job_id"]
+                for _ in range(100):
+                    job = magnets_router.get_magnet_check_job(latest_job_id)["data"]
+                    if not job["running"]:
+                        break
+                    time.sleep(0.01)
+
+        self.assertIn(latest_job_id, magnet_service.MAGNET_CHECK_JOBS)
+        self.assertLessEqual(len(magnet_service.MAGNET_CHECK_JOBS), magnet_service.MAX_FINISHED_JOBS + 1)
 
 
 if __name__ == "__main__":

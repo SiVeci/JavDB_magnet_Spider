@@ -17,3 +17,42 @@ async function apiFetch(url, options = {}) {
     }
     return response;
 }
+
+async function apiFetchJson(url, options = {}) {
+    const response = await apiFetch(url, options);
+    if (!response.ok) {
+        let body;
+        try {
+            body = await response.json();
+        } catch {
+            body = {};
+        }
+        const msg = body.msg || body.message || `请求失败 (${response.status})`;
+        throw Object.assign(new Error(msg), { status: response.status, body });
+    }
+    return response.json();
+}
+
+async function apiPost(url, body = null) {
+    const options = { method: 'POST' };
+    if (body !== null && body !== undefined) {
+        options.headers = { 'Content-Type': 'application/json' };
+        options.body = JSON.stringify(body);
+    }
+    return apiFetchJson(url, options);
+}
+
+async function apiDownloadBlob(url, filename) {
+    const response = await apiFetch(url);
+    if (!response.ok) {
+        throw new Error(`下载失败 (${response.status})`);
+    }
+    const blob = await response.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(a.href);
+    a.remove();
+}

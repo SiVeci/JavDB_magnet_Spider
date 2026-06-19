@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import tempfile
@@ -84,6 +85,9 @@ def read_json_file(path, default=None):
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except FileNotFoundError:
+            return default
+        except (json.JSONDecodeError, ValueError):
+            logging.warning("JSON parse failed: %s", path)
             return default
 
 
