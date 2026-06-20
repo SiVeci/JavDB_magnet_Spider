@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JavDB Magnet Spider</title>
     <link rel="icon" type="image/png" href="/favicon.png">
+    <script>
+        (function() {
+            var saved = localStorage.getItem('javdb_theme');
+            var pref = saved === 'dark' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', pref);
+        })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/css/variables.css?v=20260615-redesign1">
     <link rel="stylesheet" href="/css/base.css?v=20260615-redesign1">
@@ -60,6 +67,73 @@
         .btn-info    { @apply bg-info-soft     text-info-text    hover:brightness-95; }
         .btn-neutral { @apply bg-[color:var(--c-neutral-soft)] text-[color:var(--c-neutral-text)] hover:brightness-95; }
 
+        .theme-switch {
+            position: relative;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            align-items: center;
+            width: 3.125rem;
+            height: 1.5rem;
+            padding: 0.125rem;
+            border: 1px solid var(--c-border);
+            border-radius: var(--radius-full);
+            background: var(--c-surface-sunken);
+            box-shadow: var(--shadow-sm);
+            color: var(--c-text-muted);
+            transition: border-color var(--t) var(--ease), background-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
+        }
+        .theme-switch:hover {
+            border-color: var(--c-primary);
+            box-shadow: var(--shadow);
+        }
+        .theme-switch:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 3px var(--c-primary-ring), var(--shadow);
+        }
+        .theme-switch__icon {
+            position: relative;
+            z-index: 1;
+            display: inline-flex;
+            width: 1.125rem;
+            height: 1.125rem;
+            align-items: center;
+            justify-content: center;
+            justify-self: center;
+            font-size: 0.75rem;
+            line-height: 1;
+            opacity: .48;
+            transition: color var(--t) var(--ease), opacity var(--t) var(--ease), transform var(--t) var(--ease);
+        }
+        .theme-switch__icon--light { color: var(--c-warning); }
+        .theme-switch__icon--dark { color: var(--c-neutral); }
+        .theme-switch__thumb {
+            position: absolute;
+            top: 0.125rem;
+            left: 0.125rem;
+            z-index: 0;
+            width: 1.125rem;
+            height: 1.125rem;
+            border-radius: var(--radius-full);
+            background: var(--c-surface);
+            box-shadow: var(--shadow);
+            transition: transform var(--t) var(--ease), background-color var(--t) var(--ease);
+        }
+        .theme-switch[data-theme-state="dark"] .theme-switch__thumb {
+            transform: translateX(1.625rem);
+        }
+        .theme-switch[data-theme-state="light"] .theme-switch__icon--light,
+        .theme-switch[data-theme-state="dark"] .theme-switch__icon--dark {
+            opacity: 1;
+            transform: scale(1.04);
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .theme-switch,
+            .theme-switch__icon,
+            .theme-switch__thumb {
+                transition: none;
+            }
+        }
+
         /* ---- 拆分按钮（magnet 检测专用：主按钮 + 副按钮联体） ----
            颜色 / 圆角 / 过渡 / 禁用态集中于此；高宽尺寸由 JS 侧用原子类拼接
            （std 档 h-9、mini 档 h-5，见 magnets.js renderMagnetCheckButton）。 */
@@ -101,21 +175,21 @@
         .empty-state { @apply flex items-center justify-center p-8 text-center text-sm text-[color:var(--c-text-subtle)]; }
     </style>
 </head>
-<body class="bg-slate-100 min-h-screen p-4 md:p-8 text-slate-800">
+<body class="bg-[color:var(--c-bg)] min-h-screen p-4 md:p-8 text-[color:var(--c-text)]">
     <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
-    <section id="authGate" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-slate-950 text-slate-100 p-4">
+    <section id="authGate" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-[#0f172a] text-[#f1f5f9] p-4">
         <div class="w-full max-w-sm space-y-4">
             <div class="flex flex-col items-center gap-3 text-center">
                 <img src="/favicon.png" alt="Logo" class="w-12 h-12 rounded-lg">
                 <div>
                     <h1 class="text-2xl font-bold tracking-tight">JavDB Magnet Spider</h1>
-                    <p class="mt-1 text-sm text-slate-400">输入访问令牌后继续</p>
+                    <p class="mt-1 text-sm text-[#94a3b8]">输入访问令牌后继续</p>
                 </div>
             </div>
             <div class="space-y-3">
-                <input id="auth_token" type="password" autocomplete="off" placeholder="访问令牌" onkeydown="handleAuthTokenKeydown(event)" class="w-full border border-slate-700 bg-slate-900 rounded p-3 text-sm text-slate-100 outline-none focus:border-indigo-400">
-                <button id="auth_submit" type="button" onclick="saveAuthToken()" class="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-700 disabled:text-slate-400 text-white font-bold px-4 py-3 rounded">验证</button>
-                <div id="auth_error" class="hidden text-sm text-red-300 text-center"></div>
+                <input id="auth_token" type="password" autocomplete="off" placeholder="访问令牌" onkeydown="handleAuthTokenKeydown(event)" class="w-full border border-[#334155] bg-[#0f172a] rounded p-3 text-sm text-[#f1f5f9] outline-none focus:border-[#818cf8]">
+                <button id="auth_submit" type="button" onclick="saveAuthToken()" class="w-full bg-[#4f46e5] hover:bg-[#4338ca] disabled:bg-[#334155] disabled:text-[#94a3b8] text-white font-bold px-4 py-3 rounded">验证</button>
+                <div id="auth_error" class="hidden text-sm text-[#fca5a5] text-center"></div>
             </div>
         </div>
     </section>
@@ -127,9 +201,16 @@
                     <img src="/favicon.png" alt="Logo" class="w-10 h-10 rounded-lg">
                     <h1 class="text-3xl font-bold tracking-tight">JavDB Magnet Spider</h1>
                 </div>
-                <span id="app_version" class="badge badge-info">加载中...</span>
+                <div class="flex items-center justify-center gap-2 md:justify-start">
+                    <span id="app_version" class="badge badge-info">加载中...</span>
+                    <button id="themeToggleBtn" type="button" onclick="cycleTheme()" title="切换到暗色" aria-label="切换到暗色" aria-pressed="false" data-theme-state="light" class="theme-switch">
+                        <span class="theme-switch__icon theme-switch__icon--light" aria-hidden="true">☀</span>
+                        <span class="theme-switch__icon theme-switch__icon--dark" aria-hidden="true">☾</span>
+                        <span class="theme-switch__thumb" aria-hidden="true"></span>
+                    </button>
+                </div>
             </div>
-            <nav class="grid grid-cols-3 rounded-lg border border-slate-200 bg-slate-50 p-1 text-sm font-bold shadow-sm md:w-80" aria-label="主导航">
+            <nav class="grid w-full grid-cols-3 rounded-lg border border-[color:var(--c-border)] bg-[color:var(--c-surface-sunken)] p-1 text-sm font-bold shadow-sm md:w-80" aria-label="主导航">
                 <button id="nav-tasks" type="button" onclick="navigateToView('tasks')" class="nav-seg">任务</button>
                 <button id="nav-database" type="button" onclick="navigateToView('database')" class="nav-seg">数据库</button>
                 <button id="nav-settings" type="button" onclick="navigateToView('settings')" class="nav-seg">设置</button>
@@ -180,7 +261,7 @@
                     <button onclick="refreshMonitor()" class="btn btn-sm btn-soft">刷新</button>
                 </div>
                 <div id="taskMonitorBody" class="grid min-h-0 flex-1 content-start grid-cols-1 items-start overflow-hidden lg:grid-cols-[280px_1fr]">
-                    <aside id="taskQueuePanel" class="min-h-0 self-start overflow-hidden border-r border-slate-100 bg-slate-50">
+                    <aside id="taskQueuePanel" class="min-h-0 self-start overflow-hidden border-r border-[color:var(--c-border-soft)] bg-[color:var(--c-surface-sunken)]">
                         <div id="taskQueueToolbar" class="toolbar px-4 py-1.5">
                             <div class="flex items-center gap-2">
                                 <button id="startQueueBtn" onclick="startQueue()" title="开始任务队列" aria-label="开始任务队列" class="btn btn-icon-lg bg-emerald-600 text-white hover:bg-emerald-700">
@@ -205,10 +286,10 @@
                                         <path d="M14 11v6"></path>
                                     </svg>
                                 </button>
-                                <div id="queueSummary" class="flex h-10 min-w-0 flex-col justify-center text-xs leading-4 text-slate-500">加载中...</div>
+                                <div id="queueSummary" class="flex h-10 min-w-0 flex-col justify-center text-xs leading-4 text-[color:var(--c-text-muted)]">加载中...</div>
                             </div>
                         </div>
-                        <div id="task-list" class="divide-y divide-slate-200 overflow-y-auto log-box">
+                        <div id="task-list" class="divide-y divide-[color:var(--c-border)] overflow-y-auto log-box">
                             <div class="empty-state">暂无任务</div>
                         </div>
                     </aside>
@@ -216,12 +297,12 @@
                     <section id="taskLogPanel" class="flex min-h-0 self-start flex-col gap-3 overflow-hidden p-5">
                         <div id="currentActions" class="hidden flex-wrap gap-2"></div>
 
-                        <div id="taskLogShell" class="min-h-0 overflow-hidden rounded-lg border border-slate-200">
-                            <button type="button" onclick="toggleLogPanel()" class="w-full px-3 py-2 bg-slate-50 border-b border-slate-200 text-sm font-semibold flex items-center justify-between text-left">
+                        <div id="taskLogShell" class="min-h-0 overflow-hidden rounded-lg border border-[color:var(--c-border)]">
+                            <button type="button" onclick="toggleLogPanel()" class="w-full px-3 py-2 bg-[color:var(--c-surface-sunken)] border-b border-[color:var(--c-border)] text-sm font-semibold flex items-center justify-between text-left">
                                 <span>运行日志</span>
-                                <span id="log-toggle-icon" class="text-xs text-slate-500">▼</span>
+                                <span id="log-toggle-icon" class="text-xs text-[color:var(--c-text-muted)]">▼</span>
                             </button>
-                            <div id="logContainer" class="overflow-y-auto log-box bg-white p-3 font-mono text-xs text-slate-600">
+                            <div id="logContainer" class="overflow-y-auto log-box bg-surface p-3 font-mono text-xs text-[color:var(--c-text-muted)]">
                                 <div>等待任务启动...</div>
                             </div>
                         </div>
@@ -232,9 +313,9 @@
 
         <section id="view-database" data-view="database" class="hidden space-y-4">
             <section class="card flex h-[calc(100dvh-190px)] min-h-0 min-w-0 flex-col overflow-hidden">
-                <div id="database-breadcrumb" class="shrink-0 border-b border-slate-100 px-5 py-3 text-sm text-slate-500">数据库</div>
-                <div id="databaseCollectionToolbar" class="shrink-0 border-b border-slate-100 px-5 pb-2 pt-2">
-                    <div id="databaseSummary" class="mb-3 text-xs text-slate-500">加载中...</div>
+                <div id="database-breadcrumb" class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-3 text-sm text-[color:var(--c-text-muted)]">数据库</div>
+                <div id="databaseCollectionToolbar" class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-2 pt-2">
+                    <div id="databaseSummary" class="mb-3 text-xs text-[color:var(--c-text-muted)]">加载中...</div>
                     <div class="flex flex-wrap gap-2">
                         <button id="autoSelectBtn" onclick="autoSelectMagnets()" title="按评分自动选择磁力" aria-label="按评分自动选择磁力" class="btn btn-md btn-warning">★ 自动选择</button>
                         <div id="globalMagnetCheckSlot"></div>
@@ -270,11 +351,11 @@
                 <div id="runtime-config-body" class="p-5 space-y-4 text-sm">
                     <div>
                         <div class="flex justify-between items-center mb-1">
-                            <label class="text-slate-600">Cookie</label>
+                            <label class="text-[color:var(--c-text-muted)]">Cookie</label>
                             <a href="https://javdb.com" target="_blank" class="text-xs text-info-text underline">打开 JavDB</a>
                         </div>
                         <textarea id="cookie" rows="4" class="input input-mono" oninput="saveCookieBrowserCache()"></textarea>
-                        <label class="mt-2 flex items-center gap-2 text-xs text-slate-500">
+                        <label class="mt-2 flex items-center gap-2 text-xs text-[color:var(--c-text-muted)]">
                             <input id="remember_cookie" type="checkbox" class="w-4 h-4 accent-[color:var(--c-primary)]" onchange="saveRuntimeConfig()">
                             <span>记住 Cookie（写入后端数据库）</span>
                         </label>
@@ -294,21 +375,22 @@
                         <label class="field-label">Tracker 列表</label>
                         <textarea id="tracker_list" rows="4" class="input input-mono" placeholder="一行一个 tracker URL"></textarea>
                     </div>
-                    <button type="button" onclick="saveRuntimeConfig(true)" class="btn btn-lg w-full bg-slate-700 text-white hover:bg-slate-800">保存全局配置</button>
+                    <button type="button" onclick="saveRuntimeConfig(true)" class="btn btn-lg w-full bg-[color:var(--c-neutral)] text-white hover:brightness-90">保存全局配置</button>
                 </div>
             </section>
         </section>
     </main>
 
     <!-- 前端脚本：以普通脚本顺序加载，保持全局作用域，确保内联 onclick 处理器可用 -->
+    <script src="/js/theme.js?v=20260620-theme-switch"></script>
     <script src="/js/state.js?v=20260619-p1-architecture"></script>
     <script src="/js/utils.js?v=20260619-p1-architecture"></script>
     <script src="/js/meta.js?v=20260619-p1-architecture"></script>
     <script src="/js/api.js?v=20260619-p1-architecture"></script>
     <script src="/js/routing.js?v=20260619-p1-architecture"></script>
-    <script src="/js/magnet-table.js?v=20260619-p1-architecture"></script>
-    <script src="/js/ranking.js?v=20260619-p1-architecture"></script>
-    <script src="/js/movies.js?v=20260619-p1-architecture"></script>
+    <script src="/js/magnet-table.js?v=20260620-actor-row-divider"></script>
+    <script src="/js/ranking.js?v=20260620-row-divider"></script>
+    <script src="/js/movies.js?v=20260620-hide-zero-more-display"></script>
     <script src="/js/magnets.js?v=20260619-p1-architecture"></script>
     <script src="/js/tasks.js?v=20260619-p1-architecture"></script>
     <script src="/js/settings.js?v=20260619-p1-architecture"></script>

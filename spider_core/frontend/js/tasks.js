@@ -453,12 +453,12 @@ function renderTaskList() {
             ? `<button onclick="copyTaskIncrementalMagnets('${taskId}')" title="复制新增影片磁力" aria-label="复制新增影片磁力" class="btn btn-info h-6 w-6 p-0 text-sm">⧉</button>`
             : '';
         return `
-        <div class="relative grid grid-cols-[minmax(0,1fr)_42px_72px_52px] items-center gap-1 overflow-hidden px-3 py-1 text-xs ${task.task_id === queueStatus.current_task_id ? 'bg-info-soft' : 'bg-white'}">
+        <div class="relative grid grid-cols-[minmax(0,1fr)_42px_72px_52px] items-center gap-1 overflow-hidden px-3 py-1 text-xs ${task.task_id === queueStatus.current_task_id ? 'bg-info-soft' : 'bg-surface'}">
             <div class="min-w-0">
                 <div class="truncate font-bold text-xs leading-tight" title="${escapeHtml(displayName(rawName))}">${escapeHtml(displayName(rawName))}</div>
-                <div class="truncate font-mono text-[10px] leading-tight text-slate-400">${escapeHtml((task.task_id || '').slice(0, 8))}</div>
+                <div class="truncate font-mono text-[10px] leading-tight text-[color:var(--c-text-subtle)]">${escapeHtml((task.task_id || '').slice(0, 8))}</div>
             </div>
-            <div class="font-mono text-slate-600 text-right">${escapeHtml(task.progress || '0/0')}</div>
+            <div class="font-mono text-[color:var(--c-text-muted)] text-right">${escapeHtml(task.progress || '0/0')}</div>
             <div class="text-right">
                 <span class="badge w-[72px] ${stateClass(task.state)}">${stateLabel(task.state)}</span>
             </div>
@@ -466,7 +466,7 @@ function renderTaskList() {
                 ${copyIncrementalBtn}
                 <button onclick="deleteTaskById('${taskId}')" title="删除任务" aria-label="删除任务" class="btn btn-danger h-6 w-6 p-0 text-sm">×</button>
             </div>
-            <div class="absolute inset-x-0 bottom-0 h-[2px] bg-slate-100">
+            <div class="absolute inset-x-0 bottom-0 h-[2px] bg-[color:var(--c-bg)]">
                 <div class="h-full ${progressClass} transition-all duration-300" style="width:${pct}%"></div>
             </div>
         </div>
@@ -505,7 +505,7 @@ function renderCurrentTask(data) {
     const task = currentTask();
     const logs = data.logs || [];
     document.getElementById('logContainer').innerHTML = logs.length
-        ? logs.map(log => `<div class="mb-1 border-b border-slate-100 pb-1">${escapeHtml(log)}</div>`).join('')
+        ? logs.map(log => `<div class="mb-1 border-b border-[color:var(--c-border-soft)] pb-1">${escapeHtml(log)}</div>`).join('')
         : '<div>等待任务启动...</div>';
     renderCurrentActions(task);
 }

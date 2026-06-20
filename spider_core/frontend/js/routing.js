@@ -113,13 +113,13 @@ function renderDatabaseBreadcrumb(collectionName = null, movie = null, options =
             const category = options.rankingCategory;
             items.push(`<button type="button" onclick="setRankingHash('${escapeJs(category.key)}', '${escapeJs(period.key)}')" class="font-bold text-[color:var(--c-primary-text)] hover:underline">${escapeHtml(period.label)}</button>`);
         } else {
-            items.push(`<span class="font-bold text-slate-700">${escapeHtml(period.label)}</span>`);
+            items.push(`<span class="font-bold text-[color:var(--c-text)]">${escapeHtml(period.label)}</span>`);
         }
     }
     if (movie) {
-        items.push(`<span class="max-w-[42vw] truncate font-bold text-slate-700">${escapeHtml(movie.code || String(movie.id))}</span>`);
+        items.push(`<span class="max-w-[42vw] truncate font-bold text-[color:var(--c-text)]">${escapeHtml(movie.code || String(movie.id))}</span>`);
     }
-    box.innerHTML = `<div class="flex min-w-0 flex-wrap items-center gap-2">${items.join('<span class="text-slate-300">/</span>')}</div>`;
+    box.innerHTML = `<div class="flex min-w-0 flex-wrap items-center gap-2">${items.join('<span class="text-[color:var(--c-text-subtle)]">/</span>')}</div>`;
 }
 
 async function renderDatabaseRoute() {

@@ -65,7 +65,7 @@ const MAGNET_STOP_ICON = `<svg aria-hidden="true" viewBox="0 0 24 24" class="h-3
                     </svg>`;
 
 function magnetSpinner(sizeClass) {
-    return `<span class="inline-block ${sizeClass} animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"></span>`;
+    return `<span class="inline-block ${sizeClass} animate-spin rounded-full border-2 border-[color:var(--c-border)] border-t-slate-600"></span>`;
 }
 
 // 计算按钮的派生状态（纯函数，无 DOM）。

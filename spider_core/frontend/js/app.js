@@ -1,4 +1,4 @@
-﻿/*
+/*
  * app.js — 应用入口
  * 鉴权流程、全局菜单关闭、初始化与首屏加载。
  * 依赖其它模块（utils/api/state/settings/tasks/movies/magnets）已在本文件之前加载。
@@ -178,6 +178,7 @@ async function startApp() {
 }
 
 window.onload = async function() {
+    initTheme();
     showAuthPanel(false);
     window.addEventListener('hashchange', handleHashChange);
     setActiveView(viewFromHash());
@@ -218,4 +219,3 @@ window.onload = async function() {
         lockAppForAuth(err.message || '验证失败，请稍后重试');
     }
 };
-

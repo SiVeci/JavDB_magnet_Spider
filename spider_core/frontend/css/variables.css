@@ -69,9 +69,64 @@
         ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code',
         Consolas, 'Roboto Mono', monospace;
 
+    /* ===== 滚动条 ===== */
+    --c-scrollbar-thumb: #cbd5e1;  /* slate-300 */
+
     /* ===== 兼容旧 Toast 变量（保留为别名，不破坏 components.css 现有引用） ===== */
     --toast-info-bg:    var(--c-text);          /* slate-800 */
     --toast-success-bg: var(--c-success-text);  /* emerald-700 */
     --toast-error-bg:   var(--c-danger);        /* red-600 */
     --toast-text:       #f8fafc;                /* slate-50 */
+}
+
+/* ===== 暗色模式令牌覆盖 ===== */
+[data-theme="dark"] {
+    /* ===== 品牌主色（暗底适配） ===== */
+    --c-primary:       #818cf8;  /* indigo-400 */
+    --c-primary-hover: #a5b4fc;  /* indigo-300 */
+    --c-primary-soft:  #1e1b4b;  /* indigo-950 */
+    --c-primary-text:  #a5b4fc;  /* indigo-300 */
+    --c-primary-ring:  #4338ca;  /* indigo-700 */
+
+    /* ===== 语义色（暗底） ===== */
+    --c-success:      #34d399;  /* emerald-400 */
+    --c-success-soft: #022c22;  /* emerald-950 */
+    --c-success-text: #6ee7b7;  /* emerald-300 */
+    --c-warning:      #fbbf24;  /* amber-400   */
+    --c-warning-soft: #451a03;  /* amber-950   */
+    --c-warning-text: #fcd34d;  /* amber-300   */
+    --c-danger:       #f87171;  /* red-400     */
+    --c-danger-soft:  #450a0a;  /* red-950     */
+    --c-danger-text:  #fca5a5;  /* red-300     */
+    --c-info:         #60a5fa;  /* blue-400    */
+    --c-info-soft:    #172554;  /* blue-950    */
+    --c-info-text:    #93c5fd;  /* blue-300    */
+    --c-neutral:      #94a3b8;  /* slate-400   */
+    --c-neutral-soft: #1e293b;  /* slate-800   */
+    --c-neutral-text: #cbd5e1;  /* slate-300   */
+
+    /* ===== 表面 / 边框 / 文字层级 ===== */
+    --c-bg:            #0f172a;  /* slate-900 页面底色 */
+    --c-surface:       #1e293b;  /* slate-800 卡片面 */
+    --c-surface-sunken:#0f172a;  /* slate-900 工具栏 / 表头 / 嵌套面 */
+    --c-border:        #334155;  /* slate-700 主边框 */
+    --c-border-soft:   #1e293b;  /* slate-800 分隔线 */
+    --c-text:          #f1f5f9;  /* slate-100 主文字 */
+    --c-text-muted:    #94a3b8;  /* slate-400 次要文字 */
+    --c-text-subtle:   #64748b;  /* slate-500 弱文字 */
+
+    /* ===== 阴影（暗底加深） ===== */
+    --shadow-sm:  0 1px 2px 0 rgb(0 0 0 / .20);
+    --shadow:     0 1px 3px 0 rgb(0 0 0 / .30), 0 1px 2px -1px rgb(0 0 0 / .24);
+    --shadow-md:  0 4px 12px -2px rgb(0 0 0 / .40);
+    --shadow-pop: 0 8px 24px -4px rgb(0 0 0 / .50);
+
+    /* ===== 滚动条 ===== */
+    --c-scrollbar-thumb: #475569;  /* slate-600 */
+
+    /* ===== Toast（暗底适配） ===== */
+    --toast-info-bg:    #e2e8f0;  /* slate-200 */
+    --toast-success-bg: #34d399;  /* emerald-400 */
+    --toast-error-bg:   #f87171;  /* red-400 */
+    --toast-text:       #0f172a;  /* slate-900 */
 }

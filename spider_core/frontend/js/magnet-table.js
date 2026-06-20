@@ -12,12 +12,12 @@ async function loadMagnets(movieId, keepOpen = false) {
 
 function renderMagnetTable(movieId, magnets) {
     return `
-        <div class="min-h-0 flex-1 overflow-auto rounded-lg border border-slate-200">
+        <div class="min-h-0 flex-1 overflow-auto rounded-lg border border-[color:var(--c-border)]">
             <table class="w-full table-fixed text-xs">
                 <colgroup>
                     <col class="w-14"><col><col class="w-10"><col class="w-16"><col class="w-16">
                 </colgroup>
-                <thead class="sticky top-0 border-b border-slate-200 bg-slate-50 text-slate-500"><tr><th class="p-2 text-center whitespace-nowrap font-bold">状态</th><th class="p-2 text-left font-bold">文件名</th><th class="p-2 text-center font-bold">分数</th><th class="p-2 text-center font-bold">大小</th><th class="p-2 text-center font-bold">操作</th></tr></thead>
+                <thead class="sticky top-0 border-b border-[color:var(--c-border)] bg-[color:var(--c-surface-sunken)] text-[color:var(--c-text-muted)]"><tr><th class="p-2 text-center whitespace-nowrap font-bold">状态</th><th class="p-2 text-left font-bold">文件名</th><th class="p-2 text-center font-bold">分数</th><th class="p-2 text-center font-bold">大小</th><th class="p-2 text-center font-bold">操作</th></tr></thead>
                 <tbody>${magnets.map(magnet => renderMagnetRow(movieId, magnet)).join('')}</tbody>
             </table>
         </div>`;
@@ -39,10 +39,10 @@ function magnetRowSignature(magnet) {
 function renderMagnetRow(movieId, magnet) {
     const signature = escapeHtml(magnetRowSignature(magnet));
     return `
-        <tr id="magnet-row-${magnet.id}" data-signature="${signature}" class="border-t border-slate-100 transition-colors ${magnet.is_selected ? 'bg-success-soft' : 'hover:bg-slate-50'}">
+        <tr id="magnet-row-${magnet.id}" data-signature="${signature}" class="border-t border-[color:var(--c-border)] transition-colors ${magnet.is_selected ? 'bg-success-soft' : 'hover:bg-[color:var(--c-surface-sunken)]'}">
             <td class="p-2 text-center align-middle ${magnet.is_selected ? 'border-l-2 border-[color:var(--c-success)]' : ''}">
                 <div>${renderMagnetStatus(magnet)}</div>
-                <div class="mt-1 text-[10px] leading-none text-slate-400">${magnet.checked_at ? `${magnet.seeders ?? 0}/${magnet.leechers ?? 0}` : '-/-'}</div>
+                <div class="mt-1 text-[10px] leading-none text-[color:var(--c-text-subtle)]">${magnet.checked_at ? `${magnet.seeders ?? 0}/${magnet.leechers ?? 0}` : '-/-'}</div>
             </td>
             <td class="min-w-0 cursor-pointer p-2" title="${escapeHtml(magnet.link)}" onclick="${magnet.is_selected ? '' : `selectMagnet(${movieId}, ${magnet.id})`}">
                 <div class="truncate">${magnet.is_selected ? '<span class="mr-1 text-success-text">✓</span>' : ''}${escapeHtml(magnet.name)}</div>

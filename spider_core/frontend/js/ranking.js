@@ -53,15 +53,15 @@ function renderRankingCategoryPage() {
     const content = databaseContent();
     if (!content) return;
     content.innerHTML = `
-        <div class="shrink-0 border-b border-slate-100 px-5 py-3">
+        <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-3">
             <div class="text-sm font-bold text-[color:var(--c-text)]">排行榜分类</div>
         </div>
         <div class="min-h-0 flex-1 overflow-y-auto p-4">
             <div class="grid gap-3 md:grid-cols-2">
                 ${RANKING_CATEGORIES.map(category => `
                 <button type="button" onclick="setRankingHash('${escapeJs(category.key)}')" class="group flex min-h-[56px] items-center gap-3 rounded-[var(--radius)] border border-[color:var(--c-border)] bg-surface px-4 py-3 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-[color:var(--c-primary-soft)]">
-                    <span class="shrink-0 text-base font-bold leading-none text-slate-800">${escapeHtml(category.label)}</span>
-                    <span class="text-xs font-bold leading-none text-slate-400 group-hover:text-[color:var(--c-primary-text)]">${escapeHtml(category.subLabel || '日榜 · 周榜 · 月榜')}</span>
+                    <span class="shrink-0 text-base font-bold leading-none text-[color:var(--c-text)]">${escapeHtml(category.label)}</span>
+                    <span class="text-xs font-bold leading-none text-[color:var(--c-text-subtle)] group-hover:text-[color:var(--c-primary-text)]">${escapeHtml(category.subLabel || '日榜 · 周榜 · 月榜')}</span>
                 </button>`).join('')}
             </div>
         </div>`;
@@ -116,8 +116,8 @@ async function renderTop250OptionPage(category) {
             <div class="grid gap-3 md:grid-cols-3">
                 ${options.map(option => `
                 <button type="button" onclick="setRankingHash('${escapeJs(category.key)}', '${escapeJs(option.key)}')" class="group flex min-h-[56px] items-center gap-3 rounded-[var(--radius)] border border-[color:var(--c-border)] bg-surface px-4 py-3 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-[color:var(--c-primary-soft)]">
-                    <span class="shrink-0 text-base font-bold leading-none text-slate-800">${escapeHtml(option.label)}</span>
-                    <span class="text-xs font-bold leading-none text-slate-400 group-hover:text-[color:var(--c-primary-text)]">影片列表</span>
+                    <span class="shrink-0 text-base font-bold leading-none text-[color:var(--c-text)]">${escapeHtml(option.label)}</span>
+                    <span class="text-xs font-bold leading-none text-[color:var(--c-text-subtle)] group-hover:text-[color:var(--c-primary-text)]">影片列表</span>
                 </button>`).join('')}
             </div>` : `
             <div class="empty-state flex-1 flex-col gap-3 px-6 py-10">
@@ -125,11 +125,11 @@ async function renderTop250OptionPage(category) {
                 <button type="button" onclick="refreshTop250Options()" class="btn btn-sm btn-info text-xs">刷新分类</button>
             </div>`;
     content.innerHTML = `
-        <div class="shrink-0 border-b border-slate-100 px-5 py-3">
+        <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-3">
             <div class="flex items-center justify-between gap-3">
                 <div class="min-w-0">
                     <div class="text-sm font-bold text-[color:var(--c-text)]">${escapeHtml(category.label)}</div>
-                    <div class="mt-1 truncate text-xs text-slate-400">${data.stale ? '使用本地缓存' : '动态分类'} · ${options.length} 个选项</div>
+                    <div class="mt-1 truncate text-xs text-[color:var(--c-text-subtle)]">${data.stale ? '使用本地缓存' : '动态分类'} · ${options.length} 个选项</div>
                 </div>
                 <button type="button" onclick="refreshTop250Options()" class="btn btn-sm btn-info shrink-0 text-xs">刷新分类</button>
             </div>
@@ -145,15 +145,15 @@ function renderRankingPeriodPage(category) {
     const content = databaseContent();
     if (!content) return;
     content.innerHTML = `
-        <div class="shrink-0 border-b border-slate-100 px-5 py-3">
+        <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-3">
             <div class="text-sm font-bold text-[color:var(--c-text)]">${escapeHtml(category.label)}</div>
         </div>
         <div class="min-h-0 flex-1 overflow-y-auto p-4">
             <div class="grid gap-3 md:grid-cols-3">
                 ${RANKING_PERIODS.map(period => `
                 <button type="button" onclick="setRankingHash('${escapeJs(category.key)}', '${escapeJs(period.key)}')" class="group flex min-h-[92px] flex-col items-start justify-between rounded-[var(--radius)] border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-[color:var(--c-primary-soft)]">
-                    <span class="text-base font-bold text-slate-800">${escapeHtml(period.label)}</span>
-                    <span class="text-xs font-bold text-slate-400 group-hover:text-[color:var(--c-primary-text)]">影片列表</span>
+                    <span class="text-base font-bold text-[color:var(--c-text)]">${escapeHtml(period.label)}</span>
+                    <span class="text-xs font-bold text-[color:var(--c-text-subtle)] group-hover:text-[color:var(--c-primary-text)]">影片列表</span>
                 </button>`).join('')}
             </div>
         </div>`;
@@ -341,13 +341,13 @@ async function clearRankingList(categoryKey, periodKey) {
 
 function renderRankingMovies(category, period, movies) {
     if (!movies.length) {
-        return '<div class="min-h-0 flex-1 max-w-full overflow-y-auto rounded-lg border border-slate-200 bg-white"><div class="empty-state px-6 py-10">暂无榜单影片</div></div>';
+        return '<div class="min-h-0 flex-1 max-w-full overflow-y-auto rounded-lg border border-[color:var(--c-border)] bg-surface"><div class="empty-state px-6 py-10">暂无榜单影片</div></div>';
     }
-    return `<div class="min-h-0 flex-1 max-w-full divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white">${movies.map(movie => `
+    return `<div class="min-h-0 flex-1 max-w-full divide-y divide-[color:var(--c-border)] overflow-y-auto rounded-lg border border-[color:var(--c-border)] bg-surface">${movies.map(movie => `
         <div class="p-3">
             <button type="button" onclick="selectRankingMovie('${escapeJs(category.key)}', '${escapeJs(period.key)}', ${Number(movie.id)})" class="block w-full min-w-0 text-left transition-colors hover:text-[color:var(--c-primary-text)]">
-                <div class="truncate font-bold" title="${escapeHtml(`${movie.code} ${movie.title || ''}`)}"><span>${escapeHtml(movie.code)}</span> <span class="font-normal text-slate-500">${escapeHtml(movie.title || '')}</span></div>
-                <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-slate-500">
+                <div class="truncate font-bold" title="${escapeHtml(`${movie.code} ${movie.title || ''}`)}"><span>${escapeHtml(movie.code)}</span> <span class="font-normal text-[color:var(--c-text-muted)]">${escapeHtml(movie.title || '')}</span></div>
+                <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-[color:var(--c-text-muted)]">
                     <span class="badge badge-info shrink-0 whitespace-nowrap">候选 ${movie.candidate_count || 0}</span>
                     <span id="movie-selected-name-${movie.id}" class="min-w-0 truncate" title="${escapeHtml(movie.best_magnet_name || '未选中磁力')}">${escapeHtml(movie.best_magnet_name || '未选中磁力')}</span>
                 </div>
@@ -371,8 +371,8 @@ async function renderRankingMovieListPage(category, period, options = {}) {
     const filtered = filterMovies(movies, selected, excluded);
     const totalCount = Number(data.total_count || movies.length);
     content.innerHTML = `
-        <div class="shrink-0 border-b border-slate-100 px-5 pb-2 pt-2">
-            <div class="flex min-w-0 flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+        <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-2 pt-2">
+            <div class="flex min-w-0 flex-wrap items-center justify-between gap-2 text-xs text-[color:var(--c-text-muted)]">
                 <div class="flex min-w-0 flex-wrap items-center gap-2">
                     <span class="min-w-0 truncate">${escapeHtml(category.label)} · ${escapeHtml(period.label)} · ${totalCount} 部影片</span>
                     ${renderRankingHealthTags(filtered)}
@@ -380,7 +380,7 @@ async function renderRankingMovieListPage(category, period, options = {}) {
                 ${renderMagnetCheckButton('ranking', rankingMagnetCheckTarget(category, period))}
             </div>
         </div>
-        <div class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-3 text-sm text-slate-500">
+        <div class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-3 text-sm text-[color:var(--c-text-muted)]">
             <div class="mb-3 flex shrink-0 flex-wrap items-center gap-2">
                 ${renderRankingFilter(category, period, data.available_tags || [], filtered.length, totalCount)}
                 ${renderRankingToolbarActions(category, period)}
@@ -407,11 +407,11 @@ async function renderRankingMagnetListPage(category, period, movieId) {
     if (!content) return;
     const movieTitle = movie.title || movie.code || String(movie.id);
     content.innerHTML = `
-        <div class="shrink-0 border-b border-slate-100 px-5 pb-4 pt-2">
+        <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-4 pt-2">
             <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div class="min-w-0">
-                    <div class="truncate text-xs text-slate-500" title="${escapeHtml(movieTitle)}">${escapeHtml(movieTitle)}</div>
-                    <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-slate-500">
+                    <div class="truncate text-xs text-[color:var(--c-text-muted)]" title="${escapeHtml(movieTitle)}">${escapeHtml(movieTitle)}</div>
+                    <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-[color:var(--c-text-muted)]">
                         ${renderMagnetCheckButton('movie', movie.id)}
                         <div id="movie-selected-name-${movie.id}" class="min-w-0 truncate" title="${escapeHtml(movie.best_magnet_name || '未选中磁力')}">${escapeHtml(movie.best_magnet_name || '未选中磁力')}</div>
                     </div>

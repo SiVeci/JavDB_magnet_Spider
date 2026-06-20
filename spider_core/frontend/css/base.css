@@ -21,4 +21,14 @@ code, pre, textarea.font-mono, .font-mono {
 
 /* 自定义滚动条：任务列表与运行日志区 */
 .log-box::-webkit-scrollbar { width: 6px; }
-.log-box::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
+.log-box::-webkit-scrollbar-thumb { background-color: var(--c-scrollbar-thumb); border-radius: 4px; }
+
+/* 主题切换过渡：背景 / 文字 / 边框平滑变化 */
+*,
+*::before,
+*::after {
+    transition: background-color var(--t) var(--ease),
+                color var(--t) var(--ease),
+                border-color var(--t) var(--ease),
+                box-shadow var(--t) var(--ease);
+}

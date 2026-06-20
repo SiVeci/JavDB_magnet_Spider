@@ -97,7 +97,7 @@ function renderMovieTags(tags) {
     if (!list.length) return '';
     return `<div class="movie-tags mt-2 flex max-w-full flex-nowrap gap-0.5 overflow-hidden" title="${escapeHtml(list.join(', '))}">
         ${list.map(tag => `<span data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-[color:var(--c-neutral-soft)] text-[color:var(--c-neutral-text)] text-[11px]">${escapeHtml(tag)}</span>`).join('')}
-        <span data-role="more" class="badge badge-info hidden shrink-0 text-[11px]">+0</span>
+        <span data-role="more" class="badge badge-info hidden shrink-0 text-[11px]" style="display:none">+0</span>
     </div>`;
 }
 
@@ -108,6 +108,7 @@ function fitMovieTags(root = document) {
         if (!more) return;
         tags.forEach(tag => tag.classList.remove('hidden'));
         more.classList.add('hidden');
+        more.style.display = 'none';
         more.innerText = '+0';
         const available = container.clientWidth;
         if (!available) return;
@@ -121,9 +122,11 @@ function fitMovieTags(root = document) {
             let moreWidth = 0;
             if (remaining > 0) {
                 more.classList.remove('hidden');
+                more.style.display = '';
                 more.classList.add('invisible');
                 moreWidth = more.offsetWidth + gap;
                 more.classList.add('hidden');
+                more.style.display = 'none';
                 more.classList.remove('invisible');
             }
             if (nextUsed + moreWidth > available) break;
@@ -135,6 +138,11 @@ function fitMovieTags(root = document) {
         if (hiddenCount > 0) {
             more.innerText = `+${hiddenCount}`;
             more.classList.remove('hidden');
+            more.style.display = '';
+        } else {
+            more.innerText = '+0';
+            more.classList.add('hidden');
+            more.style.display = 'none';
         }
     });
 }
@@ -184,18 +192,18 @@ function renderDatabaseTypePage() {
     const totalCollections = collectionsCache.length;
     const totalMovies = collectionsCache.reduce((sum, item) => sum + Number(item.count || 0), 0);
     content.innerHTML = `
-        <div class="shrink-0 border-b border-slate-100 px-5 py-3">
+        <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-3">
             <div class="text-sm font-bold text-[color:var(--c-text)]">类型</div>
         </div>
         <div class="min-h-0 flex-1 overflow-y-auto p-4">
             <div class="grid gap-3 md:grid-cols-2">
                 <button type="button" onclick="setDatabaseTypeHash('${DATABASE_TYPE_RANKING}')" class="group flex min-h-[92px] flex-col items-start justify-between rounded-[var(--radius)] border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-[color:var(--c-primary-soft)]">
-                    <span class="text-base font-bold text-slate-800">排行榜</span>
-                    <span class="text-xs font-bold text-slate-400 group-hover:text-[color:var(--c-primary-text)]">${RANKING_CATEGORIES.length} 个分类</span>
+                    <span class="text-base font-bold text-[color:var(--c-text)]">排行榜</span>
+                    <span class="text-xs font-bold text-[color:var(--c-text-subtle)] group-hover:text-[color:var(--c-primary-text)]">${RANKING_CATEGORIES.length} 个分类</span>
                 </button>
                 <button type="button" onclick="setDatabaseTypeHash('${DATABASE_TYPE_ACTOR}')" class="group flex min-h-[92px] flex-col items-start justify-between rounded-[var(--radius)] border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-[color:var(--c-primary-soft)]">
-                    <span class="text-base font-bold text-slate-800">演员</span>
-                    <span class="text-xs font-bold text-slate-400 group-hover:text-[color:var(--c-primary-text)]">${totalCollections} 个集合 · ${totalMovies} 部影片</span>
+                    <span class="text-base font-bold text-[color:var(--c-text)]">演员</span>
+                    <span class="text-xs font-bold text-[color:var(--c-text-subtle)] group-hover:text-[color:var(--c-primary-text)]">${totalCollections} 个集合 · ${totalMovies} 部影片</span>
                 </button>
             </div>
         </div>`;
@@ -252,16 +260,16 @@ function renderCollectionListPage() {
     const content = databaseContent();
     if (!content) return;
     content.innerHTML = `
-        <div class="shrink-0 border-b border-slate-100 px-4 pb-4 pt-3">
+        <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-4 pb-4 pt-3">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <input id="collectionSearch" type="search" oninput="updateCollectionSearch()" value="${escapeHtml(collectionSearchQuery)}" class="input md:max-w-sm" placeholder="搜索数据集合">
-                <label class="flex items-center gap-2 text-xs font-bold text-slate-600">
+                <label class="flex items-center gap-2 text-xs font-bold text-[color:var(--c-text-muted)]">
                     <input id="selectAllCheckbox" type="checkbox" class="accent-[color:var(--c-primary)]" onclick="toggleSelectAll()">
                     <span id="selectAllLabel">全选当前列表</span>
                 </label>
             </div>
         </div>
-        <div id="collection-list" class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto"></div>`;
+        <div id="collection-list" class="min-h-0 flex-1 divide-y divide-[color:var(--c-border)] overflow-y-auto"></div>`;
     renderGlobalMagnetCheckButton();
     renderCollections();
 }
@@ -302,14 +310,14 @@ function renderCollections() {
         const shownName = escapeHtml(displayName(item.name));
         const jsName = escapeJs(item.name);
         return `
-        <div class="group flex items-start gap-3 px-4 py-3 hover:bg-slate-50">
+        <div class="group flex items-start gap-3 px-4 py-3 hover:bg-[color:var(--c-surface-sunken)]">
             <input type="checkbox" class="collection-checkbox mt-1" value="${name}" onclick="event.stopPropagation(); updateBatchDeleteBtn()">
             <button type="button" onclick="selectCollection('${jsName}')" class="min-w-0 flex-1 text-left">
                 <div class="flex min-w-0 items-center justify-between gap-2">
-                    <div class="truncate font-bold text-slate-800" title="${shownName}">${shownName}</div>
+                    <div class="truncate font-bold text-[color:var(--c-text)]" title="${shownName}">${shownName}</div>
                     <span class="badge badge-info shrink-0 text-[11px]">${item.count}</span>
                 </div>
-                <div class="mt-1 truncate text-xs text-slate-400">${escapeHtml(item.time)} · ${((item.tags || []).length)} 个标签</div>
+                <div class="mt-1 truncate text-xs text-[color:var(--c-text-subtle)]">${escapeHtml(item.time)} · ${((item.tags || []).length)} 个标签</div>
             </button>
         </div>`;
     }).join('');
@@ -343,14 +351,14 @@ function movieById(collectionName, movieId) {
 function renderCollectionToolbarHeader(collectionName, filteredMovies) {
     const item = collectionItem(collectionName) || { name: collectionName, count: 0, tags: [], time: '' };
     return `
-        <div class="shrink-0 border-b border-slate-100 px-5 pb-2 pt-2">
-            <div class="flex min-w-0 items-center justify-between gap-2 text-xs text-slate-500">
+        <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-2 pt-2">
+            <div class="flex min-w-0 items-center justify-between gap-2 text-xs text-[color:var(--c-text-muted)]">
                 <div class="min-w-0 flex-1">
                     <div class="flex min-w-0 flex-wrap items-center gap-2">
                         <span class="shrink-0">${Number(item.count || 0)} 部影片 · ${((item.tags || []).length)} 个标签</span>
                         ${renderCollectionHealthTags(filteredMovies)}
                     </div>
-                    <div class="mt-0.5 truncate text-[11px] leading-none text-slate-400">${escapeHtml(item.time || '-')}</div>
+                    <div class="mt-0.5 truncate text-[11px] leading-none text-[color:var(--c-text-subtle)]">${escapeHtml(item.time || '-')}</div>
                 </div>
                 ${renderMagnetCheckButton('collection', collectionName)}
             </div>
@@ -390,7 +398,7 @@ function renderMovieListPage(collectionName) {
     if (!content) return;
     content.innerHTML = `
         <div id="collection-toolbar-${escapeHtml(collectionName)}"></div>
-        <div id="collection-body-${escapeHtml(collectionName)}" data-loaded="1" class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-3 text-sm text-slate-500"></div>`;
+        <div id="collection-body-${escapeHtml(collectionName)}" data-loaded="1" class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-3 text-sm text-[color:var(--c-text-muted)]"></div>`;
     renderCollectionBody(collectionName);
 }
 
@@ -410,11 +418,11 @@ async function renderMagnetListPage(collectionName, movieId) {
     if (!content) return;
     const movieTitle = movie.title || movie.code || String(movie.id);
     content.innerHTML = `
-        <div class="shrink-0 border-b border-slate-100 px-5 pb-4 pt-2">
+        <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-4 pt-2">
             <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div class="min-w-0">
-                    <div class="truncate text-xs text-slate-500" title="${escapeHtml(movieTitle)}">${escapeHtml(movieTitle)}</div>
-                    <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-slate-500">
+                    <div class="truncate text-xs text-[color:var(--c-text-muted)]" title="${escapeHtml(movieTitle)}">${escapeHtml(movieTitle)}</div>
+                    <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-[color:var(--c-text-muted)]">
                         ${renderMagnetCheckButton('movie', movie.id)}
                         <div id="movie-selected-name-${movie.id}" class="min-w-0 truncate" title="${escapeHtml(movie.best_magnet_name || '未选中磁力')}">${escapeHtml(movie.best_magnet_name || '未选中磁力')}</div>
                     </div>
@@ -508,11 +516,11 @@ function renderExcludeOption(collectionName, tag, checked) {
 
 function renderMovies(collectionName, movies) {
     if (!movies.length) return '<div class="empty-state">暂无匹配影片记录</div>';
-    return `<div class="min-h-0 flex-1 max-w-full divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white">${movies.map(movie => `
+    return `<div class="min-h-0 flex-1 max-w-full divide-y divide-[color:var(--c-border)] overflow-y-auto rounded-lg border border-[color:var(--c-border)] bg-surface">${movies.map(movie => `
         <div class="p-3">
             <button type="button" onclick="selectMovie('${escapeJs(collectionName)}', ${movie.id})" class="block w-full min-w-0 text-left">
-                <div class="truncate font-bold" title="${escapeHtml(`${movie.code} ${movie.title || ''}`)}"><span>${escapeHtml(movie.code)}</span> <span class="font-normal text-slate-500">${escapeHtml(movie.title || '')}</span></div>
-                <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-slate-500">
+                <div class="truncate font-bold" title="${escapeHtml(`${movie.code} ${movie.title || ''}`)}"><span>${escapeHtml(movie.code)}</span> <span class="font-normal text-[color:var(--c-text-muted)]">${escapeHtml(movie.title || '')}</span></div>
+                <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-[color:var(--c-text-muted)]">
                     <span class="badge badge-info shrink-0 whitespace-nowrap">候选 ${movie.candidate_count || 0}</span>
                     <span id="movie-selected-name-${movie.id}" class="min-w-0 truncate" title="${escapeHtml(movie.best_magnet_name || '未选中磁力')}">${escapeHtml(movie.best_magnet_name || '未选中磁力')}</span>
                 </div>
