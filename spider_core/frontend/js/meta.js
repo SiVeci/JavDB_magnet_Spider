@@ -29,6 +29,20 @@ function taskStateMeta(state) {
     return TASK_STATE_META[state] || { label: state || '-', badge: 'badge-neutral', bar: 'bg-info' };
 }
 
+/* ===== 任务状态分组 =====
+ * 此前 ['finished','canceled','failed'] 等状态数组散落在 tasks.js 多处，易漂移。
+ * 集中为命名常量 + 谓词，调用点统一走 isXxxTaskState()。 */
+const TERMINAL_TASK_STATES = ['finished', 'canceled', 'failed'];     // 已结束（不可再操作）
+const PAUSABLE_TASK_STATES = ['running', 'pending', 'pause_requested']; // 可暂停
+const RESUMABLE_TASK_STATES = ['paused', 'waiting_cookie', 'waiting_choice']; // 可恢复
+// 可取消 = 可暂停 ∪ 可恢复（派生避免与上面漂移）
+const CANCELABLE_TASK_STATES = [...PAUSABLE_TASK_STATES, ...RESUMABLE_TASK_STATES];
+
+function isTerminalTaskState(state) { return TERMINAL_TASK_STATES.includes(state); }
+function isPausableTaskState(state) { return PAUSABLE_TASK_STATES.includes(state); }
+function isResumableTaskState(state) { return RESUMABLE_TASK_STATES.includes(state); }
+function isCancelableTaskState(state) { return CANCELABLE_TASK_STATES.includes(state); }
+
 // 兼容旧调用名（转发到单一源）。注意：stateClass 现返回 badge-* 组件类，
 // 调用点须为 class="badge ${stateClass(...)}"。
 function stateLabel(state) { return taskStateMeta(state).label; }

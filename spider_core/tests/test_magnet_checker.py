@@ -39,7 +39,7 @@ class MagnetCheckerTest(unittest.TestCase):
 
         self.assertEqual(result["check_status"], "dead")
         self.assertEqual(result["seeders"], 0)
-        self.assertIn("鏃犳晥", result["check_error"])
+        self.assertIn("无效", result["check_error"])
 
     def test_uses_best_successful_tracker_result(self):
         link = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567"

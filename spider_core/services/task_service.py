@@ -88,8 +88,8 @@ def prepare_task_config(config: TaskConfig):
             proxies=build_proxy_dict(runtime.get("proxies")),
         )
     except Exception as e:
-        # 缃戠粶灞傚紓甯革紙TLS 鎻℃墜澶辫触銆佽秴鏃躲€佽繛鎺ヨ鎷掋€佷唬鐞嗕笉鍙敤绛夛級銆?
-        # 鏀跺彛涓哄弸濂藉搷搴旓紝閬垮厤寮傚父鍐掓场鍒?ASGI 灞傛墦鍑烘暣椤?traceback銆?
+        # 网络层异常（TLS 握手失败、超时、连接被拒、代理不可用等）。
+        # 收口为友好响应，避免异常冒泡到 ASGI 层打出整页 traceback。
         raise TaskConfigError(502, f"入队预检查请求失败: {str(e)}")
     if response.status_code != 200:
         raise TaskConfigError(

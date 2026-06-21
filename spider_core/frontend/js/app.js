@@ -183,10 +183,10 @@ window.onload = async function() {
     window.addEventListener('hashchange', handleHashChange);
     setActiveView(viewFromHash());
     renderLogPanelState();
-    window.addEventListener('resize', () => {
+    window.addEventListener('resize', debounce(() => {
         fitMovieTags();
         if (typeof fitTasksLayout === 'function') fitTasksLayout();
-    });
+    }, 150));
     document.addEventListener('click', handleDocumentClick);
     document.getElementById('start_url').value = localStorage.getItem('javdb_url') || '';
     document.getElementById('filename').value = localStorage.getItem('javdb_filename') || '';

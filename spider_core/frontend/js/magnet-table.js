@@ -14,6 +14,7 @@ function renderMagnetTable(movieId, magnets) {
     return `
         <div class="min-h-0 flex-1 overflow-auto rounded-lg border border-[color:var(--c-border)]">
             <table class="w-full table-fixed text-xs">
+                <caption class="sr-only">候选磁力列表</caption>
                 <colgroup>
                     <col class="w-14"><col><col class="w-10"><col class="w-16"><col class="w-16">
                 </colgroup>
@@ -83,9 +84,9 @@ async function refreshMagnetRows(movieId) {
     return magnets;
 }
 
-function syncSelectedMagnetToMovie(movieId, magnets) {
-    if (!expandedCollectionName) return false;
-    const data = collectionMovieCache[filterKey(expandedCollectionName)];
+// 把当前选中磁力的字段回写到给定缓存对象里对应的影片记录。
+// 两个上层函数仅在「如何解析 data 缓存」上不同，回写逻辑共用此函数。
+function applySelectedMagnetToMovie(data, movieId, magnets) {
     const selected = (magnets || []).find(magnet => magnet.is_selected);
     if (!data || !selected) return false;
     const movie = (data.movies || []).find(item => Number(item.id) === Number(movieId));
@@ -98,20 +99,15 @@ function syncSelectedMagnetToMovie(movieId, magnets) {
     return true;
 }
 
+function syncSelectedMagnetToMovie(movieId, magnets) {
+    if (!expandedCollectionName) return false;
+    return applySelectedMagnetToMovie(collectionMovieCache[filterKey(expandedCollectionName)], movieId, magnets);
+}
+
 function syncSelectedMagnetToRankingMovie(movieId, magnets) {
     const meta = currentRankingRouteMeta();
     if (!meta) return false;
-    const data = rankingMovieCache[rankingCacheKey(meta.category, meta.period)];
-    const selected = (magnets || []).find(magnet => magnet.is_selected);
-    if (!data || !selected) return false;
-    const movie = (data.movies || []).find(item => Number(item.id) === Number(movieId));
-    if (!movie) return false;
-    movie.best_magnet_name = selected.name || '';
-    movie.best_magnet_link = selected.link || '';
-    movie.priority_score = selected.priority_score || 0;
-    movie.magnet_date = selected.magnet_date || '';
-    movie.size_mb = selected.size_mb || 0;
-    return true;
+    return applySelectedMagnetToMovie(rankingMovieCache[rankingCacheKey(meta.category, meta.period)], movieId, magnets);
 }
 
 function updateMovieSelectedName(movieId, magnets) {

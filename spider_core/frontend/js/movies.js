@@ -83,11 +83,9 @@ function renderCollectionHealthTags(movies) {
     </div>`;
 }
 
+// 与集合页统计完全一致，委托复用（去重）。
 function renderRankingHealthTags(movies) {
-    const counts = collectionHealthCounts(movies);
-    return `<div class="flex shrink-0 items-center gap-1" aria-label="磁力检测影片统计">
-        ${HEALTH_ITEMS.map(item => `<span title="${item.title}" class="badge ${item.badge} min-w-[4ch] px-1 text-[10px]">${renderHealthCount(counts[item.key])}</span>`).join('')}
-    </div>`;
+    return renderCollectionHealthTags(movies);
 }
 
 /* ===== 影片标签渲染与自适应折叠 ===== */
@@ -167,7 +165,7 @@ function databaseBreadcrumb() {
 function showDatabaseLoading(label = '加载中...') {
     const content = databaseContent();
     if (!content) return;
-    content.innerHTML = `<div class="empty-state flex-1 flex-col gap-3">
+    content.innerHTML = `<div class="empty-state flex-1 flex-col gap-3" role="status" aria-busy="true">
         <span class="spinner-ring" aria-hidden="true"></span>
         <span>${escapeHtml(label)}</span>
     </div>`;

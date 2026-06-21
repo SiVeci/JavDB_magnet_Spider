@@ -12,9 +12,12 @@ if (keystorePropertiesFile.exists()) {
 }
 // 凭据是否齐全：齐全才启用 release 签名；否则 release 构建回退到默认（未签名/调试签名），
 // 这样在未配置凭据的机器上 debug 构建（Run/Debug）也能直接跑，不被签名卡住。
-def hasReleaseSigning = keystoreProperties['storePassword'] != null &&
-        keystoreProperties['keyAlias'] != null &&
-        keystoreProperties['keyPassword'] != null
+// 用非空白判定而非仅 != null：local.properties 里写了空值/空白（storePassword=）时，
+// 旧的 != null 会误判为"已配置"，导致 release 构建在签名阶段才失败；这里提前回退到默认签名。
+def hasValue = { v -> v != null && !v.toString().trim().isEmpty() }
+def hasReleaseSigning = hasValue(keystoreProperties['storePassword']) &&
+        hasValue(keystoreProperties['keyAlias']) &&
+        hasValue(keystoreProperties['keyPassword'])
 
 android {
     namespace 'com.javdb_spider.app'

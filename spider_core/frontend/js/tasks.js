@@ -341,7 +341,7 @@ function progressPercent(progress) {
 }
 
 function isFinishedTask(task) {
-    return ['finished', 'canceled', 'failed'].includes(task.state);
+    return isTerminalTaskState(task.state);
 }
 
 async function loadTasks() {
@@ -382,7 +382,7 @@ function renderQueueTaskControl(task) {
         return;
     }
     const id = escapeJs(task.task_id);
-    const cancelButton = ['pending', 'running', 'pause_requested', 'paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)
+    const cancelButton = isCancelableTaskState(task.state)
         ? `
             <button type="button" onclick="cancelTask('${id}')" title="取消当前任务" aria-label="取消当前任务" class="btn btn-icon-lg btn-danger">
                 <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -392,7 +392,7 @@ function renderQueueTaskControl(task) {
                 </svg>
             </button>`
         : '';
-    if (['running', 'pending', 'pause_requested'].includes(task.state)) {
+    if (isPausableTaskState(task.state)) {
         slot.innerHTML = `
             <div class="flex gap-2">
                 <button type="button" onclick="pauseTask('${id}')" title="暂停当前任务" aria-label="暂停当前任务" class="btn btn-icon-lg btn-warning">
@@ -405,7 +405,7 @@ function renderQueueTaskControl(task) {
             </div>`;
         return;
     }
-    if (['paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)) {
+    if (isResumableTaskState(task.state)) {
         slot.innerHTML = `
             <div class="flex gap-2">
                 <button type="button" onclick="resumeTaskById('${id}')" title="恢复当前任务" aria-label="恢复当前任务" class="btn btn-icon-lg btn-info">
@@ -424,14 +424,14 @@ function renderQueueTaskControl(task) {
 function taskActions(task, options = {}) {
     const id = escapeJs(task.task_id);
     const actions = [];
-    if (!options.hidePauseResume && ['running', 'pending', 'pause_requested'].includes(task.state)) actions.push(`<button onclick="pauseTask('${id}')" class="btn btn-sm btn-warning">暂停</button>`);
-    if (!options.hidePauseResume && ['paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)) actions.push(`<button onclick="resumeTaskById('${id}')" class="btn btn-sm btn-info">恢复</button>`);
+    if (!options.hidePauseResume && isPausableTaskState(task.state)) actions.push(`<button onclick="pauseTask('${id}')" class="btn btn-sm btn-warning">暂停</button>`);
+    if (!options.hidePauseResume && isResumableTaskState(task.state)) actions.push(`<button onclick="resumeTaskById('${id}')" class="btn btn-sm btn-info">恢复</button>`);
     if (task.state === 'waiting_cookie') actions.push(`<button onclick="refreshCookie('${id}')" class="btn btn-sm btn-warning">读安卓 Cookie</button>`);
     if (task.state === 'waiting_choice') {
         actions.push(`<button onclick="setTaskModeById('${id}', 'incremental')" class="btn btn-sm btn-info">增量</button>`);
         actions.push(`<button onclick="setTaskModeById('${id}', 'overwrite')" class="btn btn-sm btn-danger">覆盖</button>`);
     }
-    if (!options.hideCancel && ['pending', 'running', 'pause_requested', 'paused', 'waiting_cookie', 'waiting_choice'].includes(task.state)) actions.push(`<button onclick="cancelTask('${id}')" class="btn btn-sm btn-danger">取消</button>`);
+    if (!options.hideCancel && isCancelableTaskState(task.state)) actions.push(`<button onclick="cancelTask('${id}')" class="btn btn-sm btn-danger">取消</button>`);
     return actions.join(' ');
 }
 

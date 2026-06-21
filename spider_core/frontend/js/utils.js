@@ -32,6 +32,21 @@ function filterKey(name) {
 }
 
 /*
+ * debounce — 高频事件（如 window resize）合并：停止触发 waitMs 后才执行一次，
+ * 避免 resize 期间每帧都跑布局测量造成抖动/卡顿。
+ */
+function debounce(fn, waitMs = 150) {
+    let timer = null;
+    return function (...args) {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+            timer = null;
+            fn.apply(this, args);
+        }, waitMs);
+    };
+}
+
+/*
  * Toast 提示：替代原先阻塞 UI 的 window.alert()。
  * 非阻塞、自动消失，不会冻结轮询线程。
  */

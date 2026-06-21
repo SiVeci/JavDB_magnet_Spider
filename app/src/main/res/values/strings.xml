@@ -29,6 +29,9 @@
     <string name="wlan_unavailable">局域网地址获取失败，请确认已连接 WiFi</string>
     <string name="notification_channel_name">JavDB 引擎</string>
     <string name="notification_title_running">JavDB 爬虫引擎运行中</string>
+    <string name="notification_title_initializing">JavDB 引擎启动中</string>
+    <string name="notification_initializing_text">后端初始化中，请稍候…</string>
+    <string name="backend_not_ready">后端正在初始化，请稍候再打开控制台</string>
     <string name="notification_local_text">127.0.0.1:8000 已开启，请前往控制台配置</string>
     <string name="notification_lan_text">局域网访问已开启，端口 8000</string>
     <string name="notification_stop_action">停止引擎</string>

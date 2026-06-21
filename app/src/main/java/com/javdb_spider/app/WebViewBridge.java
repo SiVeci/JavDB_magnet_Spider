@@ -12,6 +12,10 @@ public class WebViewBridge {
     // volatile：主线程写入、后台线程读取，保证跨线程可见性
     public static volatile SpiderService activeService = null;
 
+    // 后端 uvicorn 是否已开始监听端口。
+    // 服务在端口就绪后置 true；UI 据此避免在后端就绪前打开控制台导致连接失败。
+    public static volatile boolean backendReady = false;
+
     public interface HtmlCallback {
         void onResult(String html);
     }

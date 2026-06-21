@@ -44,3 +44,14 @@ Pull requests should describe the change, list test commands run, mention affect
 
 ## Security & Configuration Tips
 Do not commit real cookies, tokens, databases, generated CSV exports, or signing credentials. Use `JAVDB_AUTH_TOKEN` for PC/Docker API protection, and preserve the existing path validation safeguards when adding file operations.
+
+## Dependency Compatibility (Pydantic v1/v2)
+The crawler core ships against two dependency sets and must run on both:
+- **PC/Docker** — `requirements.txt`: FastAPI ≥0.136, **Pydantic v2**.
+- **Android (Chaquopy)** — `app/build.gradle`: FastAPI 0.95, **Pydantic v1** (`>=1.10.24,<2.0.0`). Pydantic v2's `pydantic-core` is a Rust extension with no Chaquopy-compatible wheel, so v1 is intentional, not a mistake.
+
+Therefore `schemas.py` and every router/service must stay within the **v1/v2 common subset**:
+- Do NOT use v2-only APIs (`model_dump`, `model_validate`, `model_config`, `ConfigDict`, `@field_validator`) or v1-only APIs removed in v2 (`parse_obj`, `parse_raw`).
+- Use plain `BaseModel` field declarations and `X | None` for optionals (Python 3.12 supports PEP 604 on both versions).
+
+CI enforces this with a grep guard in the test job. CI runs the suite on Pydantic v2 (`requirements.txt`); the local test venv at `spider_core/.venv-test` mirrors the Android set (Pydantic v1) — running both covers both versions.

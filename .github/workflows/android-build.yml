@@ -27,11 +27,20 @@ jobs:
       - name: Run Python tests
         run: |
           pip install -r requirements.txt
-          pip install httpx2
+          pip install httpx
           python -m unittest discover -s spider_core/tests
+      - name: Guard Pydantic v1/v2 compatibility
+        run: |
+          if grep -rnE '(model_dump|model_validate|model_config|ConfigDict|field_validator|parse_obj|parse_raw)' spider_core --include='*.py'; then
+            echo "::error::Found Pydantic version-specific API; keep schemas in the v1/v2 common subset (see AGENTS.md)."
+            exit 1
+          fi
+          echo "Pydantic compatibility guard passed."
       - name: Inject Version Tag
         run: |
+          set -euo pipefail
           sed -i 's/JAVDB_SPIDER_VERSION", "[^"]*"/JAVDB_SPIDER_VERSION", "${{ github.event.inputs.version }}"/' spider_core/app_config.py
+          grep -q 'JAVDB_SPIDER_VERSION", "${{ github.event.inputs.version }}"' spider_core/app_config.py
       - name: Generate signing config (local.properties)
         run: |
           {
@@ -44,6 +53,13 @@ jobs:
       - name: Rename APK File
         run: |
           mv app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/JavDB-Spider_${{ github.event.inputs.version }}_android_arm64-v8a.apk
+      - name: Verify APK
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/JavDB-Spider_${{ github.event.inputs.version }}_android_arm64-v8a.apk
+          ls -lh "$APK"
+          unzip -t "$APK" > /dev/null
+          echo "APK integrity OK."
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:

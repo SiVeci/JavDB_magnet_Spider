@@ -15,9 +15,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
-import android.webkit.CookieManager;
 import android.webkit.WebResourceRequest;
-import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
@@ -120,8 +118,12 @@ public class MainActivity extends AppCompatActivity {
         btnStart.setOnClickListener(v -> checkNotificationPermission());
 
         btnOpenBrowser.setOnClickListener(v -> {
+            if (!WebViewBridge.backendReady) {
+                Toast.makeText(this, R.string.backend_not_ready, Toast.LENGTH_SHORT).show();
+                return;
+            }
             try {
-                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("http://127.0.0.1:8000"));
+                Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(Constants.localBaseUrl()));
                 startActivity(browserIntent);
             } catch (Exception e) {
                 Toast.makeText(this, R.string.no_browser_found, Toast.LENGTH_SHORT).show();
@@ -132,10 +134,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void initVisibleWebView() {
-        WebSettings settings = visibleWebView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(visibleWebView, true);
+        WebViewConfig.configure(visibleWebView);
 
         visibleWebView.setWebViewClient(new WebViewClient() {
             @Override
@@ -217,7 +216,7 @@ public class MainActivity extends AppCompatActivity {
     private void showLanAddress() {
         String ip = getLocalIpAddress();
         if (ip != null) {
-            String lanUrl = "http://" + ip + ":8000";
+            String lanUrl = Constants.lanBaseUrl(ip);
             tvLanAddress.setText(getString(R.string.lan_address, ip));
             tvLanAddress.setVisibility(View.VISIBLE);
             tvLanAddress.setOnClickListener(v -> {

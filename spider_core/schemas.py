@@ -9,7 +9,7 @@ class TaskConfig(BaseModel):
     cookie: str = ""
     user_agent: str = ""
     filename: str = ""
-    proxies: str = None
+    proxies: str | None = None
     crawl_mode: str = ""
     collection_type: str = COLLECTION_TYPE_ACTOR
     ranking_category: str = ""
@@ -33,7 +33,7 @@ class TagConfigRequest(BaseModel):
     url: str
     cookie: str = ""
     user_agent: str = ""
-    proxies: str = None
+    proxies: str | None = None
 
 class DeleteRequest(BaseModel):
     filenames: list[str]

@@ -16,9 +16,7 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.WindowManager;
-import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
-import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
@@ -40,6 +38,11 @@ public class SpiderService extends Service {
     private static final String CHANNEL_ID = "spider_channel";
     private static final String ACTION_STOP_SERVICE = "com.javdb_spider.app.STOP_SERVICE";
 
+    // 后端就绪探测：轮询本机端口直到 uvicorn 开始监听。
+    private static final long BACKEND_READY_TIMEOUT_MS = 30000L;
+    private static final long BACKEND_READY_POLL_MS = 400L;
+    private static final int BACKEND_READY_CONNECT_TIMEOUT_MS = 800;
+
     private WindowManager windowManager;
     private WebView stealthWebView;
     private Handler mainHandler;
@@ -60,6 +63,7 @@ public class SpiderService extends Service {
         statusHandler = new Handler(statusThread.getLooper());
 
         WebViewBridge.activeService = this;
+        WebViewBridge.backendReady = false;
         startForeground(1, createNotification());
         initStealthWebView();
         startStatusUpdater();
@@ -80,6 +84,7 @@ public class SpiderService extends Service {
         if (!backendStarted) {
             backendStarted = true;
             startPythonBackend();
+            startBackendReadyProbe();
         }
         return START_STICKY;
     }
@@ -88,10 +93,7 @@ public class SpiderService extends Service {
         windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
         stealthWebView = new WebView(this);
 
-        WebSettings settings = stealthWebView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        CookieManager.getInstance().setAcceptThirdPartyCookies(stealthWebView, true);
+        WebViewConfig.configure(stealthWebView);
 
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(
                 1,
@@ -161,7 +163,7 @@ public class SpiderService extends Service {
     }
 
     private void startPythonBackend() {
-        final String host = lanMode ? "0.0.0.0" : "127.0.0.1";
+        final String host = lanMode ? Constants.HOST_LAN : Constants.HOST_LOCAL;
         new Thread(() -> {
             try {
                 if (!Python.isStarted()) {
@@ -183,16 +185,58 @@ public class SpiderService extends Service {
         }).start();
     }
 
+    /**
+     * 轮询本机端口直到 uvicorn 开始监听，置 {@link WebViewBridge#backendReady} 并刷新通知。
+     * uvicorn.run 会阻塞后端线程，无法直接回报就绪，故用独立探测线程。
+     */
+    private void startBackendReadyProbe() {
+        new Thread(() -> {
+            long deadline = System.currentTimeMillis() + BACKEND_READY_TIMEOUT_MS;
+            while (System.currentTimeMillis() < deadline) {
+                // 服务已销毁（手动停止 / 后端退出）则放弃探测，避免发出过期通知。
+                if (!backendStarted || WebViewBridge.activeService != this) {
+                    return;
+                }
+                try (java.net.Socket socket = new java.net.Socket()) {
+                    socket.connect(
+                            new java.net.InetSocketAddress(Constants.HOST_LOCAL, Constants.BACKEND_PORT),
+                            BACKEND_READY_CONNECT_TIMEOUT_MS);
+                    WebViewBridge.backendReady = true;
+                    mainHandler.post(() -> notifyForeground(createNotification()));
+                    return;
+                } catch (Exception probing) {
+                    try {
+                        Thread.sleep(BACKEND_READY_POLL_MS);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }
+            }
+        }, "spider-ready-probe").start();
+    }
+
     private void onPythonBackendStopped(String reason) {
         WebViewBridge.activeService = null;
+        WebViewBridge.backendReady = false;
+        backendStarted = false;
         notifyForeground(buildNotification(
                 getString(R.string.notification_backend_stopped),
                 getString(R.string.notification_backend_restart_hint, reason),
                 false
         ));
+        // 后端已退出，前台服务不再有存在意义：清理自身，避免遗留僵尸前台服务。
+        stopSelf();
     }
 
     private Notification createNotification() {
+        if (!WebViewBridge.backendReady) {
+            return buildNotification(
+                    getString(R.string.notification_title_initializing),
+                    getString(R.string.notification_initializing_text),
+                    true
+            );
+        }
         return buildNotification(
                 getString(R.string.notification_title_running),
                 lanMode ? getString(R.string.notification_lan_text) : getString(R.string.notification_local_text),
@@ -319,6 +363,7 @@ public class SpiderService extends Service {
     public void onDestroy() {
         super.onDestroy();
         WebViewBridge.activeService = null;
+        WebViewBridge.backendReady = false;
         if (statusUpdater != null && statusHandler != null) {
             statusHandler.removeCallbacks(statusUpdater);
         }

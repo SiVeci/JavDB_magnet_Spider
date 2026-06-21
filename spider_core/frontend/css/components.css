@@ -59,6 +59,15 @@
     animation: menu-in var(--t, 160ms) var(--ease, ease) both;
 }
 
+/*
+ * 表单字段错误态：校验失败时给输入框红框 + 轻微高亮，配合 aria-invalid 供读屏识别。
+ * 用设计令牌 --c-danger，避免新增 Tailwind 语义色类（需 config 注册否则静默失效）。
+ */
+.is-invalid {
+    border-color: var(--c-danger) !important;
+    box-shadow: 0 0 0 1px var(--c-danger);
+}
+
 /* 加载态旋转圈：用于数据库等异步区域的加载占位 */
 .spinner-ring {
     display: inline-block;

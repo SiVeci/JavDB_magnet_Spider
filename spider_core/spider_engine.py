@@ -16,18 +16,18 @@ from storage_utils import (
     read_json_file,
 )
 
-# ======= 1. 鐜鍡呮帰涓庤矾寰勯厤缃?=======
+# ======= 1. 环境嗅探与路径配置 =======
 try:
     from java import jclass
     IS_ANDROID = True
-    # 鑾峰彇瀹夊崜 App 鐨勪笓灞炲唴閮ㄦ矙鐩掕矾寰?(缁濆瀹夊叏鍙啓)
+    # 获取安卓 App 的专属内部沙盒路径 (绝对安全可写)
     context = jclass("com.chaquo.python.Python").getInstance().getPlatform().getApplication()
     BASE_DIR = str(context.getFilesDir().getAbsolutePath())
 except ImportError:
     IS_ANDROID = False
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# 鎵€鏈夌殑鏂囦欢閮戒細淇濆瓨鍦ㄨ繖涓畨鍏ㄧ殑 data 鏂囦欢澶归噷
+# 所有的文件都会保存在这个安全的 data 文件夹里
 DATA_DIR = os.path.join(BASE_DIR, 'data')
 os.makedirs(DATA_DIR, exist_ok=True)
 db_store.configure(DATA_DIR)
@@ -37,6 +37,8 @@ TASK_CONTEXT = threading.local()
 STATUS_FILE = os.path.join(DATA_DIR, 'status.json')
 CHECKPOINT_FILE = os.path.join(DATA_DIR, 'checkpoint.json')
 HTTP_TIMEOUT_SECONDS = 15
+HTTP_MAX_RETRIES = 2
+HTTP_RETRY_BACKOFF_SECONDS = 1.0
 PAGE_DELAY_SECONDS = 1.5
 DETAIL_DELAY_SECONDS = 0.1
 RETRY_DELAY_SECONDS = 2.0
@@ -46,33 +48,42 @@ DEFAULT_HEADERS = {
     'Referer': 'https://javdb.com/',
 }
 
-# ======= 2. HTML 鎻愬彇搴曞眰缃戝叧鎶借薄 =======
+# ======= 2. HTML 提取底层网关抽象 =======
 class MockResponse:
-    """涓轰簡璁╁畨鍗撶鐨勮繑鍥炵粨鏋滀篃鑳藉儚 requests 涓€鏍疯皟鐢?.text 鍜?.status_code"""
+    """为了让安卓端的返回结果也能像 requests 一样调用 .text 和 .status_code"""
     def __init__(self, text, status_code):
         self.text = text
         self.status_code = status_code
 
 def fetch_html(url, headers=None, proxies=None):
-    """缁熶竴鐨勬簮鐮佽幏鍙栨帴鍙ｏ細鏍规嵁杩愯鐜鑷姩鍒囨崲鐖櫕鍐呮牳"""
+    """统一的源码获取接口：根据运行环境自动切换爬虫内核"""
     if IS_ANDROID:
-        # 璧板畨鍗撶鍘熺敓 WebView 鑾峰彇婧愮爜 (Java 灞傜殑妗ユ帴绫?
+        # 走安卓端原生 WebView 获取源码 (Java 层的桥接类)
         WebViewBridge = jclass("com.javdb_spider.app.WebViewBridge")
         html_content = WebViewBridge.getHtmlBlocking(url)
 
-        # 绠€鍗曟ā鎷熺姸鎬佺爜锛氬鏋?WebView 杩斿洖鐨?HTML 鍖呭惈 CF 鐩剧殑鐗瑰緛璇嶏紝妯℃嫙杩斿洖 403 瑙﹀彂鏁戞彺
+        # 简单模拟状态码：如果 WebView 返回的 HTML 包含 CF 盾的特征词，模拟返回 403 触发救援
         if html_content and ("Engine Timeout" in html_content or "Engine Error" in html_content):
             return MockResponse(html_content, 503)
         if not html_content or "Just a moment..." in html_content or "Cloudflare" in html_content:
             return MockResponse(html_content, 403)
         return MockResponse(html_content, 200)
     else:
-        # 璧?PC 绔殑 curl_cffi (蹇呴』鏀惧湪灞€閮ㄥ鍏ワ紝闃叉瀹夊崜绔姤閿?
+        # 走 PC 端的 curl_cffi (必须放在局部导入，防止安卓端报错)
         from curl_cffi import requests
-        return requests.get(url, headers=headers, proxies=proxies, impersonate="chrome", timeout=HTTP_TIMEOUT_SECONDS)
+        # 网络层瞬时异常(连接重置/超时等)做有限次指数退避重试；403/503 等正常响应不在此处理
+        last_exc = None
+        for attempt in range(HTTP_MAX_RETRIES + 1):
+            try:
+                return requests.get(url, headers=headers, proxies=proxies, impersonate="chrome", timeout=HTTP_TIMEOUT_SECONDS)
+            except Exception as exc:
+                last_exc = exc
+                if attempt < HTTP_MAX_RETRIES:
+                    time.sleep(HTTP_RETRY_BACKOFF_SECONDS * (2 ** attempt))
+        raise last_exc
 
 
-# ======= 3. 鏍稿績涓氬姟閫昏緫 =======
+# ======= 3. 核心业务逻辑 =======
 
 def get_current_task_id():
     return getattr(TASK_CONTEXT, "task_id", None)
@@ -198,8 +209,8 @@ def evaluate_magnet(item_soup):
     size_str = item_soup.select_one('.meta').text.strip() if item_soup.select_one('.meta') else ''
 
     has_uncensored = bool(re.search(r'\b(uc|uncensored|u)\b', name))
-    has_sub = bool(re.search(r'\b(c|chs)\b', name)) or ('瀛楀箷' in tags)
-    has_hd = ('楂樻竻' in tags) or bool(re.search(r'\b(1080p|4k|2160p)\b', name))
+    has_sub = bool(re.search(r'\b(c|chs)\b', name)) or ('字幕' in tags)
+    has_hd = ('高清' in tags) or bool(re.search(r'\b(1080p|4k|2160p)\b', name))
 
     rank = 0
     if has_uncensored: rank += 100
@@ -219,7 +230,7 @@ def parse_movie_tags(soup):
         if not label:
             continue
         label_text = label.get_text(strip=True).rstrip(':：')
-        if label_text not in {'类别', '類別', '椤炲垾', '绫诲埆'}:
+        if label_text not in {'类别', '類別'}:
             continue
         tags = []
         seen = set()
@@ -288,7 +299,7 @@ def run_spider(
             os.remove(CHECKPOINT_FILE)
         update_status("running", "0/0", "初始化", "任务全新启动，开始拉取目录...", clear_log=True)
 
-    # === 闃舵涓€锛氳幏鍙栨竻鍗?===
+    # === 阶段一：获取清单 ===
     if phase == 1:
         while current_url:
             if pause_or_cancel_task(
@@ -301,7 +312,7 @@ def run_spider(
                 return
             update_status("running", f"第 {page} 页", "拉取目录", f"正在抓取列表页: {current_url}")
             try:
-                # 銆愪慨鏀圭偣銆戣皟鐢ㄦ娊璞＄殑 fetch_html 鏇夸唬 requests.get
+                # 【修改点】调用抽象的 fetch_html 替代 requests.get
                 res = fetch_html(current_url, headers=headers, proxies=proxies)
 
                 if res.status_code in [403, 401, 503]:
@@ -327,7 +338,7 @@ def run_spider(
                 next_btn = soup.select_one('nav.pagination a.pagination-next')
                 next_url = urllib.parse.urljoin('https://javdb.com', next_btn.get('href')) if (next_btn and next_btn.get('href')) else None
 
-                # ======== 鏂板锛氬姩鎬佸懡鍚嶄笌妯″紡閫夋嫨 ========
+                # ======== 新增：动态命名与模式选择 ========
                 if not output_filename:
                     if collection_type == COLLECTION_TYPE_RANKING:
                         output_filename = ranking_filename(ranking_category, ranking_period)
@@ -343,11 +354,11 @@ def run_spider(
                         else:
                             timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
                             output_filename = make_csv_filename_from_label(f"javdb_{timestamp}")
-                    
+
                     update_status("running", f"第 {page} 页", "生成文件名", f"已自动命名为: {output_filename}", final_filename=output_filename)
 
                 final_csv_path, output_filename = get_safe_csv_path(DATA_DIR, output_filename)
-                
+
                 if page == 1 and (db_store.collection_exists(output_filename) or os.path.exists(final_csv_path)) and not crawl_mode:
                     save_checkpoint({"phase": 1, "current_url": next_url, "page": page + 1 if next_url else page, "movie_links": movie_links})
                     update_status("paused_need_choice", f"第 {page} 页", "等待选择", f"发现历史记录：{output_filename}，请选择爬取模式。", final_filename=output_filename)
@@ -374,7 +385,7 @@ def run_spider(
     if not is_resume or phase == 1:
         update_status("running", f"0/{total_movies}", "准备就绪", f"目录拉取完成，共 {total_movies} 部影片，开始深度提取...")
 
-    # === 闃舵浜岋細鎻愬彇纾佸姏 ===
+    # === 阶段二：提取磁力 ===
     if phase == 2:
         if not output_filename:
             if collection_type == COLLECTION_TYPE_RANKING:
@@ -401,17 +412,17 @@ def run_spider(
                 ):
                     return
                 progress_str = f"{i+1}/{total_movies}"
-                
-                # 澧為噺璺宠繃鍒ゆ柇
+
+                # 增量跳过判断
                 if crawl_mode == 'incremental' and movie['code'] in existing_codes:
                     update_status("running", progress_str, movie['code'], "跳过: 本地记录已存在")
-                    time.sleep(DETAIL_DELAY_SECONDS) # 绋嶅井寤惰繜璁︰I鏈夋椂闂村埛鏂?
+                    time.sleep(DETAIL_DELAY_SECONDS) # 稍微延迟让 UI 有时间刷新
                     continue
 
                 update_status("running", progress_str, movie['code'], "正在解析详情页...")
 
                 try:
-                    # 銆愪慨鏀圭偣銆戣皟鐢ㄦ娊璞＄殑 fetch_html 鏇夸唬 requests.get
+                    # 【修改点】调用抽象的 fetch_html 替代 requests.get
                     res = fetch_html(movie['url'], headers=headers, proxies=proxies)
 
                     if res.status_code in [403, 401, 503]:

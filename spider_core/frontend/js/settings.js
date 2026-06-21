@@ -7,11 +7,30 @@ function defaultUA() {
     return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0';
 }
 
+// 切换字段的视觉错误态 + aria-invalid（供读屏识别），配合 .is-invalid 样式。
+function markFieldInvalid(id, invalid) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.toggle('is-invalid', !!invalid);
+    if (invalid) {
+        el.setAttribute('aria-invalid', 'true');
+    } else {
+        el.removeAttribute('aria-invalid');
+    }
+}
+
 function getProxyValue() {
     const host = document.getElementById('proxy_host').value.trim();
     const port = document.getElementById('proxy_port').value.trim();
+    // 每次校验先清除上一次的错误态
+    markFieldInvalid('proxy_host', false);
+    markFieldInvalid('proxy_port', false);
     if (!host && !port) return '';
-    if (!host || !port) throw new Error('代理地址和端口必须同时填写');
+    if (!host || !port) {
+        if (!host) markFieldInvalid('proxy_host', true);
+        if (!port) markFieldInvalid('proxy_port', true);
+        throw new Error('代理地址和端口必须同时填写');
+    }
     return `http://${host.replace(/^https?:\/\//, '')}:${port}`;
 }
 
