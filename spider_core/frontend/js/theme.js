@@ -17,6 +17,9 @@ function getSavedTheme() {
 /* 将 data-theme 设置到 <html> 上 */
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
+    // 与 data-theme 同步声明 color-scheme，确保每次手动切换都重新告知浏览器“本页自带深色方案”，
+    // 关闭移动浏览器的网页自动深色（否则三星浏览器会无视手动切换、强行跟随系统）
+    document.documentElement.style.colorScheme = theme;
     updateThemeSwitch(theme);
 }
 

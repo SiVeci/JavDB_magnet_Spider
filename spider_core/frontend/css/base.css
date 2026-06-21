@@ -15,6 +15,16 @@ body {
     text-rendering: optimizeLegibility;
     font-variant-numeric: tabular-nums;
 }
+
+/* 固定应用视口：用于列表型页面，根页面不滚动，内容交给组件内部滚动容器。 */
+html.app-view-locked,
+body.app-view-locked {
+    height: 100dvh;
+    overflow: hidden;
+}
+body.app-view-locked {
+    min-height: 100dvh;
+}
 code, pre, textarea.font-mono, .font-mono {
     font-family: var(--font-mono);
 }

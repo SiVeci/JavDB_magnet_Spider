@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "spider-backend",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["main.py"],
+      "cwd": "spider_core",
+      "port": 8000
+    }
+  ]
+}

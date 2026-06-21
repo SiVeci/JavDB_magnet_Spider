@@ -10,11 +10,13 @@
             var saved = localStorage.getItem('javdb_theme');
             var pref = saved === 'dark' ? 'dark' : 'light';
             document.documentElement.setAttribute('data-theme', pref);
+            // 首屏即声明 color-scheme，阻止移动浏览器（三星浏览器等）的“网页自动深色”跟随系统接管渲染
+            document.documentElement.style.colorScheme = pref;
         })();
     </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="/css/variables.css?v=20260615-redesign1">
-    <link rel="stylesheet" href="/css/base.css?v=20260615-redesign1">
+    <link rel="stylesheet" href="/css/base.css?v=20260622-actors-root-lock">
     <link rel="stylesheet" href="/css/components.css?v=20260615-redesign1">
     <link rel="stylesheet" href="/css/pages.css?v=20260615-redesign1">
     <!--
@@ -210,9 +212,10 @@
                     </button>
                 </div>
             </div>
-            <nav class="grid w-full grid-cols-3 rounded-lg border border-[color:var(--c-border)] bg-[color:var(--c-surface-sunken)] p-1 text-sm font-bold shadow-sm md:w-80" aria-label="主导航">
+            <nav class="grid w-full grid-cols-4 rounded-lg border border-[color:var(--c-border)] bg-[color:var(--c-surface-sunken)] p-1 text-sm font-bold shadow-sm md:w-[26rem]" aria-label="主导航">
                 <button id="nav-tasks" type="button" onclick="navigateToView('tasks')" class="nav-seg">任务</button>
                 <button id="nav-database" type="button" onclick="navigateToView('database')" class="nav-seg">数据库</button>
+                <button id="nav-actors" type="button" onclick="navigateToView('actors')" class="nav-seg">收藏演员</button>
                 <button id="nav-settings" type="button" onclick="navigateToView('settings')" class="nav-seg">设置</button>
             </nav>
         </header>
@@ -379,10 +382,35 @@
                 </div>
             </section>
         </section>
+
+        <section id="view-actors" data-view="actors" class="hidden space-y-4">
+            <section class="card flex h-[calc(100dvh-190px)] min-h-0 min-w-0 flex-col overflow-hidden">
+                <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-3 text-sm font-semibold">收藏演员</div>
+                <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-2 pt-2 space-y-2">
+                    <div class="flex min-w-0 items-center gap-2">
+                        <div id="actorCategoryTabs" class="w-[130px] shrink-0"></div>
+                        <button id="actorRefreshBtn" type="button" onclick="refreshActors()" class="btn btn-icon-md btn-info" title="刷新当前分类" aria-label="刷新当前分类">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M3 16v5h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M21 3v5h-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            <span class="sr-only">刷新当前分类</span>
+                        </button>
+                        <span id="actorRefreshInfo" class="min-w-0 truncate text-xs text-[color:var(--c-text-muted)]">尚未刷新</span>
+                    </div>
+                    <div id="actorRefreshBanner" class="hidden rounded border border-[color:var(--c-warning)] bg-warning-soft px-3 py-2 text-xs text-warning-text"></div>
+                </div>
+                <div id="actor-list" class="min-h-0 flex-1 divide-y divide-[color:var(--c-border)] overflow-y-auto overscroll-contain">
+                    <div class="empty-state flex-1">点击刷新按钮从 JavDB 获取收藏演员</div>
+                </div>
+            </section>
+        </section>
     </main>
 
     <!-- 前端脚本：以普通脚本顺序加载，保持全局作用域，确保内联 onclick 处理器可用 -->
-    <script src="/js/theme.js?v=20260620-theme-switch"></script>
+    <script src="/js/theme.js?v=20260622-color-scheme"></script>
     <script src="/js/state.js?v=20260619-p1-architecture"></script>
     <script src="/js/utils.js?v=20260619-p1-architecture"></script>
     <script src="/js/meta.js?v=20260619-p1-architecture"></script>
@@ -394,6 +422,7 @@
     <script src="/js/magnets.js?v=20260619-p1-architecture"></script>
     <script src="/js/tasks.js?v=20260619-p1-architecture"></script>
     <script src="/js/settings.js?v=20260619-p1-architecture"></script>
-    <script src="/js/app.js?v=20260619-p1-architecture"></script>
+    <script src="/js/actors.js?v=20260622-actors-fit-height"></script>
+    <script src="/js/app.js?v=20260622-actors-root-lock"></script>
 </body>
 </html>

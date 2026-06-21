@@ -35,6 +35,14 @@ class TagConfigRequest(BaseModel):
     user_agent: str = ""
     proxies: str | None = None
 
+class ActorRefreshRequest(BaseModel):
+    category: str = "all"
+
+class ActorTaskRequest(BaseModel):
+    actor_id: str
+    tags: list[dict] = []
+    crawl_mode: str = ""
+
 class DeleteRequest(BaseModel):
     filenames: list[str]
 

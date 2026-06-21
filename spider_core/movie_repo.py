@@ -29,6 +29,7 @@ from storage_utils import UnsafeFilenameError, get_safe_csv_path, normalize_csv_
 __all__ = [
     "ensure_collection",
     "collection_exists",
+    "get_actor_collection_filename_by_actor_id",
     "get_collection_source_url",
     "clear_collection",
     "get_existing_codes",
@@ -85,6 +86,24 @@ def collection_exists(filename):
     with connect() as conn:
         row = conn.execute("SELECT 1 FROM collections WHERE filename = ?", (safe_name,)).fetchone()
         return row is not None
+
+
+def get_actor_collection_filename_by_actor_id(actor_id):
+    """按 {actor_id} 查找已存在的演员类数据集合文件名，找不到返回空串（PRD §9.5/§10.4）。"""
+    actor_id = str(actor_id or "").strip()
+    if not actor_id:
+        return ""
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT filename FROM collections
+            WHERE collection_type = ? AND actor_id = ?
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (COLLECTION_TYPE_ACTOR, actor_id),
+        ).fetchone()
+    return row["filename"] if row else ""
 
 
 def get_collection_source_url(filename):

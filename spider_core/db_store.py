@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import os
+import re
 import sqlite3
 import time
 import uuid
@@ -83,6 +84,7 @@ def init_database():
                 collection_type TEXT DEFAULT 'actor',
                 ranking_category TEXT DEFAULT '',
                 ranking_period TEXT DEFAULT '',
+                actor_id TEXT DEFAULT '',
                 tags_json TEXT DEFAULT '[]',
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL
@@ -177,6 +179,20 @@ def init_database():
                 source_url TEXT DEFAULT '',
                 updated_at REAL NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS collection_actors (
+                actor_id TEXT PRIMARY KEY,
+                actor_name TEXT NOT NULL DEFAULT '',
+                actor_url TEXT NOT NULL DEFAULT '',
+                category TEXT NOT NULL DEFAULT '',
+                source_category_url TEXT NOT NULL DEFAULT '',
+                last_task_tags TEXT NOT NULL DEFAULT '[]',
+                refreshed_at REAL NOT NULL DEFAULT 0,
+                created_at REAL NOT NULL DEFAULT 0
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_collection_actors_category
+                ON collection_actors(category, actor_name);
             """
         )
     _migrate_task_runtime_columns()
@@ -184,6 +200,7 @@ def init_database():
     _migrate_tag_columns()
     _migrate_magnet_check_columns()
     _migrate_runtime_tracker_column()
+    _migrate_actor_id_column()
 
 
 def _ensure_column(conn, table, column, definition):
@@ -215,6 +232,33 @@ def _migrate_magnet_check_columns():
 def _migrate_runtime_tracker_column():
     with connect() as conn:
         _ensure_column(conn, "runtime_config", "tracker_list_json", "TEXT DEFAULT '[]'")
+
+
+def _extract_actor_id(url):
+    """从 /actors/{actor_id} 形式的 URL 中解析演员唯一标识，找不到返回空串。"""
+    match = re.search(r"/actors/([^/?#]+)", url or "")
+    return match.group(1) if match else ""
+
+
+def _migrate_actor_id_column():
+    with connect() as conn:
+        _ensure_column(conn, "collections", "actor_id", "TEXT DEFAULT ''")
+        rows = conn.execute(
+            """
+            SELECT id, source_url FROM collections
+            WHERE collection_type = 'actor'
+              AND IFNULL(actor_id, '') = ''
+              AND IFNULL(source_url, '') != ''
+            """
+        ).fetchall()
+        now = _now()
+        for row in rows:
+            actor_id = _extract_actor_id(row["source_url"])
+            if actor_id:
+                conn.execute(
+                    "UPDATE collections SET actor_id = ?, updated_at = ? WHERE id = ?",
+                    (actor_id, now, row["id"]),
+                )
 
 
 def _migrate_collection_type_columns():
@@ -512,12 +556,14 @@ def _collection_id(
     collection_type=COLLECTION_TYPE_ACTOR,
     ranking_category="",
     ranking_period="",
+    actor_id="",
 ):
     safe_name = normalize_csv_filename(filename)
     now = _now()
     collection_type = (collection_type or COLLECTION_TYPE_ACTOR).strip()
     ranking_category = (ranking_category or "").strip()
     ranking_period = (ranking_period or "").strip()
+    actor_id = (actor_id or "").strip()
     ranking = parse_ranking_url(source_url)
     if ranking:
         collection_type = COLLECTION_TYPE_RANKING
@@ -540,12 +586,19 @@ def _collection_id(
         collection_type = COLLECTION_TYPE_ACTOR
         ranking_category = ""
         ranking_period = ""
+    # 仅演员类集合记录 actor_id；榜单集合强制留空（PRD §10.6）。
+    if collection_type == COLLECTION_TYPE_ACTOR:
+        if not actor_id:
+            actor_id = _extract_actor_id(source_url)
+    else:
+        actor_id = ""
     conn.execute(
         """
         INSERT INTO collections(
-            filename, source_url, collection_type, ranking_category, ranking_period, created_at, updated_at
+            filename, source_url, collection_type, ranking_category, ranking_period,
+            actor_id, created_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(filename) DO UPDATE SET
             source_url = CASE
                 WHEN excluded.source_url != '' THEN excluded.source_url
@@ -554,9 +607,13 @@ def _collection_id(
             collection_type = excluded.collection_type,
             ranking_category = excluded.ranking_category,
             ranking_period = excluded.ranking_period,
+            actor_id = CASE
+                WHEN excluded.actor_id != '' THEN excluded.actor_id
+                ELSE collections.actor_id
+            END,
             updated_at = excluded.updated_at
         """,
-        (safe_name, source_url or "", collection_type, ranking_category, ranking_period, now, now),
+        (safe_name, source_url or "", collection_type, ranking_category, ranking_period, actor_id, now, now),
     )
     row = conn.execute("SELECT id FROM collections WHERE filename = ?", (safe_name,)).fetchone()
     return row["id"]
@@ -678,6 +735,7 @@ from movie_repo import (  # noqa: E402,F401
     get_collection_movie_ids,
     get_collection_movies,
     get_collection_source_url,
+    get_actor_collection_filename_by_actor_id,
     get_existing_codes,
     get_history,
     get_magnet_links,
@@ -693,6 +751,12 @@ from movie_repo import (  # noqa: E402,F401
     save_movie_result,
     select_movie_magnet,
     update_magnet_check_result,
+)
+from actor_collection_repo import (  # noqa: E402,F401
+    get_collection_actor,
+    list_collection_actors,
+    replace_category_snapshot,
+    set_actor_last_task_tags,
 )
 from settings_repo import get_runtime_config, save_runtime_config  # noqa: E402,F401
 from task_repo import (  # noqa: E402,F401

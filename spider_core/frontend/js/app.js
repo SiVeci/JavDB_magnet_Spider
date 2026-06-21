@@ -115,15 +115,18 @@ function handleDocumentClick(event) {
 
 function normalizeView(value) {
     const root = String(value || '').split('/')[0];
-    return ['tasks', 'database', 'settings'].includes(root) ? root : 'tasks';
+    return ['tasks', 'database', 'actors', 'settings'].includes(root) ? root : 'tasks';
 }
 
 function setActiveView(view) {
     activeView = normalizeView(view);
+    const lockViewport = activeView === 'actors';
+    document.documentElement.classList.toggle('app-view-locked', lockViewport);
+    document.body.classList.toggle('app-view-locked', lockViewport);
     document.querySelectorAll('[data-view]').forEach(section => {
         section.classList.toggle('hidden', section.dataset.view !== activeView);
     });
-    ['tasks', 'database', 'settings'].forEach(item => {
+    ['tasks', 'database', 'actors', 'settings'].forEach(item => {
         const button = document.getElementById(`nav-${item}`);
         if (!button) return;
         const active = item === activeView;
@@ -137,6 +140,11 @@ function setActiveView(view) {
     if (activeView === 'database') {
         if (typeof renderDatabaseRoute === 'function') renderDatabaseRoute();
         fitMovieTags();
+    }
+    if (activeView === 'actors') {
+        window.scrollTo({ top: 0, left: 0 });
+        if (typeof renderActorsView === 'function') renderActorsView();
+        if (typeof fitActorsLayout === 'function') requestAnimationFrame(fitActorsLayout);
     }
     if (activeView === 'settings') {
     }
@@ -186,6 +194,7 @@ window.onload = async function() {
     window.addEventListener('resize', debounce(() => {
         fitMovieTags();
         if (typeof fitTasksLayout === 'function') fitTasksLayout();
+        if (activeView === 'actors' && typeof fitActorsLayout === 'function') fitActorsLayout();
     }, 150));
     document.addEventListener('click', handleDocumentClick);
     document.getElementById('start_url').value = localStorage.getItem('javdb_url') || '';
