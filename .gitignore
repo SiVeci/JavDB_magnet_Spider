@@ -12,6 +12,7 @@ local.properties
 
 # 忽略 app 模块下的编译产物
 /app/build/
+/app/*.jks
 
 # ================= Python 忽略 =================
 # 字节码缓存
