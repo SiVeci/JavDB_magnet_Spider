@@ -33,3 +33,9 @@ spider_core/status.json
 spider_core/checkpoint.json
 MANUAL_TEST_PLAN.md
 analysis_results.md
+
+.claude/
+
+.gemini/
+
+.agent/
