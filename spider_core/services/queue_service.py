@@ -3,6 +3,7 @@
 import threading
 
 import db_store
+from services.event_bus import broadcast
 from services.task_service import task_to_response
 from spider_engine import STATUS_FILE, run_task
 from storage_utils import atomic_write_json
@@ -11,7 +12,7 @@ QUEUE_LOCK = threading.RLock()
 QUEUE_THREAD = None
 
 
-def write_status_mirror(task=None):
+def write_status_mirror(task=None, collections_changed: bool = False):
     if not task:
         empty_status = {
             "state": "idle",
@@ -20,9 +21,30 @@ def write_status_mirror(task=None):
             "logs": ["等待任务启动..."],
         }
         atomic_write_json(STATUS_FILE, empty_status, indent=2)
+        _broadcast_update(None, collections_changed)
         return
     data = task_to_response(task, include_logs=True)
     atomic_write_json(STATUS_FILE, data, indent=2)
+    _broadcast_update(task, collections_changed)
+
+
+def _broadcast_update(task=None, collections_changed: bool = False):
+    """构造全量快照并广播给所有 SSE 订阅者。"""
+    try:
+        tasks = db_store.list_tasks(limit=100)
+        queue = get_queue_status_data()
+        task_data = task_to_response(task, include_logs=True) if task else {
+            "state": "idle", "progress": "0/0", "current": "-", "logs": ["等待任务启动..."]
+        }
+        broadcast({
+            "type": "update",
+            "tasks": [task_to_response(t) for t in tasks],
+            "queue": queue,
+            "logs": task_data.get("logs", []),
+            "collectionsChanged": collections_changed,
+        })
+    except Exception:
+        pass
 
 def queue_worker():
     global QUEUE_THREAD
@@ -44,7 +66,8 @@ def queue_worker():
                     error_message=str(e),
                 )
             current = db_store.get_task(task["task_id"])
-            write_status_mirror(current)
+            finished_state = current and current["state"] == "finished"
+            write_status_mirror(current, collections_changed=bool(finished_state))
             if current and current["state"] in {"paused", "waiting_cookie", "waiting_choice", "failed"}:
                 return
     finally:

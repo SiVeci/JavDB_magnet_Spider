@@ -1,0 +1,110 @@
+/*
+ * variables.css — 设计系统令牌（从旧 frontend/css/variables.css 迁移）
+ */
+:root {
+    --c-primary:       #4f46e5;
+    --c-primary-hover: #4338ca;
+    --c-primary-soft:  #eef2ff;
+    --c-primary-text:  #3730a3;
+    --c-primary-ring:  #c7d2fe;
+
+    --c-success:      #059669;
+    --c-success-soft: #ecfdf5;
+    --c-success-text: #047857;
+    --c-warning:      #d97706;
+    --c-warning-soft: #fffbeb;
+    --c-warning-text: #b45309;
+    --c-danger:       #dc2626;
+    --c-danger-soft:  #fef2f2;
+    --c-danger-text:  #b91c1c;
+    --c-info:         #2563eb;
+    --c-info-soft:    #eff6ff;
+    --c-info-text:    #1d4ed8;
+    --c-neutral:      #475569;
+    --c-neutral-soft: #f1f5f9;
+    --c-neutral-text: #334155;
+
+    --c-bg:            #f1f5f9;
+    --c-surface:       #ffffff;
+    --c-surface-sunken:#f8fafc;
+    --c-border:        #e2e8f0;
+    --c-border-soft:   #f1f5f9;
+    --c-text:          #1e293b;
+    --c-text-muted:    #64748b;
+    --c-text-subtle:   #94a3b8;
+
+    --radius-sm:   4px;
+    --radius:      6px;
+    --radius-lg:   10px;
+    --radius-full: 9999px;
+
+    --shadow-sm:  0 1px 2px 0 rgb(15 23 42 / .05);
+    --shadow:     0 1px 3px 0 rgb(15 23 42 / .08), 0 1px 2px -1px rgb(15 23 42 / .06);
+    --shadow-md:  0 4px 12px -2px rgb(15 23 42 / .10);
+    --shadow-pop: 0 8px 24px -4px rgb(15 23 42 / .18);
+
+    --t-fast: 120ms;
+    --t:      160ms;
+    --ease:   cubic-bezier(.2, .6, .3, 1);
+
+    --font-sans:
+        -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+        'PingFang SC', 'HarmonyOS Sans SC', 'Source Han Sans SC',
+        'Noto Sans CJK SC', 'Microsoft YaHei', 'WenQuanYi Micro Hei',
+        'Helvetica Neue', Arial, sans-serif;
+    --font-mono:
+        ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code',
+        Consolas, 'Roboto Mono', monospace;
+
+    --c-scrollbar-thumb: #cbd5e1;
+
+    --toast-info-bg:    var(--c-text);
+    --toast-success-bg: var(--c-success-text);
+    --toast-error-bg:   var(--c-danger);
+    --toast-text:       #f8fafc;
+}
+
+[data-theme="dark"] {
+    --c-primary:       #818cf8;
+    --c-primary-hover: #a5b4fc;
+    --c-primary-soft:  #1e1b4b;
+    --c-primary-text:  #a5b4fc;
+    --c-primary-ring:  #4338ca;
+
+    --c-success:      #34d399;
+    --c-success-soft: #022c22;
+    --c-success-text: #6ee7b7;
+    --c-warning:      #fbbf24;
+    --c-warning-soft: #451a03;
+    --c-warning-text: #fcd34d;
+    --c-danger:       #f87171;
+    --c-danger-soft:  #450a0a;
+    --c-danger-text:  #fca5a5;
+    --c-info:         #60a5fa;
+    --c-info-soft:    #172554;
+    --c-info-text:    #93c5fd;
+    --c-neutral:      #94a3b8;
+    --c-neutral-soft: #1e293b;
+    --c-neutral-text: #cbd5e1;
+
+    --c-bg:            #0f172a;
+    --c-surface:       #1e293b;
+    --c-surface-sunken:#0f172a;
+    --c-border:        #334155;
+    --c-border-soft:   #1e293b;
+    --c-text:          #f1f5f9;
+    --c-text-muted:    #94a3b8;
+    --c-text-subtle:   #64748b;
+
+    --shadow-sm:  0 1px 2px 0 rgb(0 0 0 / .20);
+    --shadow:     0 1px 3px 0 rgb(0 0 0 / .30), 0 1px 2px -1px rgb(0 0 0 / .24);
+    --shadow-md:  0 4px 12px -2px rgb(0 0 0 / .40);
+    --shadow-pop: 0 8px 24px -4px rgb(0 0 0 / .50);
+
+    --c-scrollbar-thumb: #475569;
+
+    --toast-info-bg:    #e2e8f0;
+    --toast-success-bg: #34d399;
+    --toast-error-bg:   #f87171;
+    --toast-text:       #0f172a;
+}

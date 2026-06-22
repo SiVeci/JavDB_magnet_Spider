@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="spider_core/frontend/logo.png" alt="JavDB Magnet Spider Logo" width="180">
+  <img src="spider_core/frontend_dist/favicon.png" alt="JavDB Magnet Spider Logo" width="180">
   <h1>JavDB Magnet Spider</h1>
   <p>
     <img src="https://img.shields.io/badge/Platform-Android%20%7C%20Docker%20%7C%20PC-brightgreen" alt="Platform">
@@ -102,6 +102,22 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --no-access-log
 
 *注：增加 `--no-access-log` 命令行参数可过滤前端长轮询（Long Polling）心跳探测接口产生的 `GET /api/... 200 OK` 冗余状态日志，推荐在非故障诊断模式下开启以降低标准输出（STDOUT）系统开销。*
 
+### 前端开发与构建（Vue3 + Vite）
+
+```bash
+cd spider_core/web
+
+# 开发模式（热更新）
+npm install
+npm run dev      # Vite dev server，代理 /api/ 到 127.0.0.1:8000
+
+# 生产构建（输出到 spider_core/frontend_dist/，由 FastAPI 托管）
+npm run build    # vue-tsc 类型检查 + vite build
+```
+
+> 构建产物 `frontend_dist/` 已入库，部署时无需执行 `npm run build`，直接启动 Python 服务即可。
+> 如需切换 CI 构建，在 `.github/workflows/` 中添加 Node 步骤执行 `npm run build` 并将产物提交或作为 artifact 托管。
+
 ---
 
 ## 核心操作与链路调用指南
@@ -189,26 +205,19 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8000 --no-access-log
 │   │   ├── magnet_service.py   # Magnet Selection & Scoring Algorithms
 │   │   ├── queue_service.py    # Background Queue & Thread Management
 │   │   └── task_service.py     # Task Preparation & Payload Serialization
-│   ├── frontend/               # WebUI Assets (SPA Frontend)
-│   │   ├── index.html          # WebUI Entrypoint
-│   │   ├── css/                # CSS Tokens & Styles
-│   │   │   ├── variables.css   # Theme Variables
-│   │   │   ├── base.css        # Base HTML Elements
-│   │   │   ├── components.css  # UI Components
-│   │   │   └── pages.css       # Page Layouts
-│   │   └── js/                 # JS Modules
-│   │       ├── api.js          # Backend API Client & Error Handling
-│   │       ├── app.js          # Frontend Initialization & Core Events
-│   │       ├── magnet-table.js # Magnet Table Rendering & Interaction Logic
-│   │       ├── magnets.js      # Magnet Task Management UI Logic
-│   │       ├── meta.js         # Meta Data & Env Variables
-│   │       ├── movies.js       # Movie Collection & Filter UI Logic
-│   │       ├── ranking.js      # Ranking View & Category Filtering Logic
-│   │       ├── routing.js      # SPA Router & Hash Navigation Interceptor
-│   │       ├── settings.js     # Settings Panel UI Logic
-│   │       ├── state.js        # Global State Store
-│   │       ├── tasks.js        # Task Queue & Status UI Logic
-│   │       └── utils.js        # Frontend Utilities
+│   ├── web/                    # Vue3+Vite 前端源码（重写后）
+│   │   ├── src/                # Vue SFC 源码
+│   │   │   ├── views/          # 页面级组件（Tasks/Database/Actors/Settings）
+│   │   │   ├── stores/         # Pinia 状态（auth/tasks/settings/actors/database）
+│   │   │   ├── composables/    # 复用逻辑（useToast/useTheme/useClipboard）
+│   │   │   ├── api/            # apiFetch 封装
+│   │   │   ├── router/         # Vue Router（hash 模式）
+│   │   │   └── types/          # 对照后端 schemas.py 的 TS 类型
+│   │   ├── package.json
+│   │   └── vite.config.ts      # build.outDir → ../frontend_dist
+│   ├── frontend_dist/          # Vite 构建产物（本机构建后入库）
+│   │   ├── index.html          # 单页入口（FastAPI 托管）
+│   │   └── assets/             # JS/CSS（FastAPI 挂载 /assets）
 │   ├── tests/                  # Python Unit Test Suite
 │   │   ├── test_api_endpoints.py
 │   │   ├── test_magnet_checker.py

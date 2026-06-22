@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JavDB Magnet Spider</title>
+    <script>
+      (function() {
+        var saved = localStorage.getItem('javdb_theme');
+        var pref = saved === 'dark' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', pref);
+        document.documentElement.style.colorScheme = pref;
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-Cf5HavLK.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DscPJjql.css">
+  </head>
+  <body>
+    <div id="toast-container" aria-live="polite" aria-atomic="true"></div>
+    <div id="app"></div>
+  </body>
+</html>

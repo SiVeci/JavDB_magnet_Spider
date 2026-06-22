@@ -1,0 +1,248 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---- 全局基线 ---- */
+@layer base {
+    html {
+        -webkit-text-size-adjust: 100%;
+    }
+    body {
+        font-family: var(--font-sans);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+        font-variant-numeric: tabular-nums;
+        background-color: var(--c-bg);
+        color: var(--c-text);
+    }
+    html.app-view-locked,
+    body.app-view-locked {
+        height: 100dvh;
+        overflow: hidden;
+    }
+    body.app-view-locked {
+        min-height: 100dvh;
+    }
+    * {
+        transition: background-color var(--t) var(--ease),
+                    color var(--t) var(--ease),
+                    border-color var(--t) var(--ease),
+                    box-shadow var(--t) var(--ease);
+    }
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+            transition-duration: 0.01ms !important;
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            scroll-behavior: auto !important;
+        }
+    }
+    .sr-only {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+    .log-box::-webkit-scrollbar { width: 6px; }
+    .log-box::-webkit-scrollbar-thumb { background-color: var(--c-scrollbar-thumb); border-radius: 4px; }
+}
+
+/* ---- 按钮：基础 + 尺寸 + 语义变体 ---- */
+@layer components {
+    .btn { @apply inline-flex items-center justify-center gap-1.5 rounded font-bold
+                  transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed
+                  focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--c-primary-ring)]; }
+    .btn-sm { @apply h-7 px-2 text-xs; }
+    .btn-md { @apply h-9 px-3 text-sm; }
+    .btn-lg { @apply h-10 px-4 text-sm; }
+    .btn-icon-sm { @apply h-7 w-7 shrink-0 p-0; }
+    .btn-icon-md { @apply h-9 w-9 shrink-0 p-0; }
+    .btn-icon-lg { @apply h-10 w-10 shrink-0 p-0; }
+
+    .btn-primary { @apply bg-primary text-white hover:bg-primary-hover; }
+    .btn-soft    { @apply bg-surface text-[color:var(--c-text-muted)] ring-1 ring-[color:var(--c-border)] hover:bg-surface-sunken; }
+    .btn-success { @apply bg-success-soft text-success-text hover:brightness-95; }
+    .btn-warning { @apply bg-warning-soft text-warning-text hover:brightness-95; }
+    .btn-danger  { @apply bg-danger-soft  text-danger-text  hover:brightness-95; }
+    .btn-info    { @apply bg-info-soft     text-info-text    hover:brightness-95; }
+    .btn-neutral { @apply bg-neutral-soft text-neutral-text hover:brightness-95; }
+
+    .btn-split-primary { @apply inline-flex items-center justify-center rounded-l border border-r-0 border-[color:var(--c-success)] bg-success-soft font-bold text-success-text transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:border-[color:var(--c-border)] disabled:bg-surface-sunken disabled:text-[color:var(--c-text-subtle)]; }
+    .btn-split-toggle  { @apply inline-flex items-center justify-center rounded-r border border-[color:var(--c-success)] bg-success-soft font-bold text-success-text transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:border-[color:var(--c-border)] disabled:bg-surface-sunken disabled:text-[color:var(--c-text-subtle)]; }
+    .btn-split-stop    { @apply inline-flex items-center justify-center rounded-r border border-[color:var(--c-danger)] bg-danger-soft font-bold text-danger-text transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:border-[color:var(--c-border)] disabled:bg-surface-sunken disabled:text-[color:var(--c-text-subtle)]; }
+    .btn-split-disabled{ @apply cursor-not-allowed border-[color:var(--c-border)] bg-surface-sunken text-[color:var(--c-text-subtle)]; }
+
+    /* ---- 主题切换按钮 ---- */
+    .theme-switch {
+        position: relative;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        align-items: center;
+        width: 3.125rem;
+        height: 1.5rem;
+        padding: 0.125rem;
+        border: 1px solid var(--c-border);
+        border-radius: var(--radius-full);
+        background: var(--c-surface-sunken);
+        box-shadow: var(--shadow-sm);
+        color: var(--c-text-muted);
+        transition: border-color var(--t) var(--ease), background-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
+    }
+    .theme-switch:hover {
+        border-color: var(--c-primary);
+        box-shadow: var(--shadow);
+    }
+    .theme-switch:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px var(--c-primary-ring), var(--shadow);
+    }
+    .theme-switch__icon {
+        position: relative;
+        z-index: 1;
+        display: inline-flex;
+        width: 1.125rem;
+        height: 1.125rem;
+        align-items: center;
+        justify-content: center;
+        justify-self: center;
+        font-size: 0.75rem;
+        line-height: 1;
+        opacity: .48;
+        transition: color var(--t) var(--ease), opacity var(--t) var(--ease), transform var(--t) var(--ease);
+    }
+    .theme-switch__icon--light { color: var(--c-warning); }
+    .theme-switch__icon--dark { color: var(--c-neutral); }
+    .theme-switch__thumb {
+        position: absolute;
+        top: 0.125rem;
+        left: 0.125rem;
+        z-index: 0;
+        width: 1.125rem;
+        height: 1.125rem;
+        border-radius: var(--radius-full);
+        background: var(--c-surface);
+        box-shadow: var(--shadow);
+        transition: transform var(--t) var(--ease), background-color var(--t) var(--ease);
+    }
+    .theme-switch[data-theme-state="dark"] .theme-switch__thumb {
+        transform: translateX(1.625rem);
+    }
+    .theme-switch[data-theme-state="light"] .theme-switch__icon--light,
+    .theme-switch[data-theme-state="dark"] .theme-switch__icon--dark {
+        opacity: 1;
+        transform: scale(1.04);
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .theme-switch,
+        .theme-switch__icon,
+        .theme-switch__thumb {
+            transition: none;
+        }
+    }
+
+    /* ---- 卡片 / 面板 ---- */
+    .card       { @apply rounded-lg border border-[color:var(--c-border)] bg-surface; }
+    .card-head  { @apply flex items-center justify-between border-b border-[color:var(--c-border-soft)] px-5 py-2; }
+    .card-title { @apply text-base font-semibold; }
+    .toolbar    { @apply border-b border-[color:var(--c-border-soft)] bg-surface-sunken; }
+
+    /* ---- 徽章 ---- */
+    .badge { @apply inline-flex items-center justify-center rounded px-1.5 py-0.5 text-xs font-bold leading-none; }
+    .badge-success { @apply bg-success-soft text-success-text; }
+    .badge-warning { @apply bg-warning-soft text-warning-text; }
+    .badge-danger  { @apply bg-danger-soft  text-danger-text; }
+    .badge-info    { @apply bg-info-soft     text-info-text; }
+    .badge-neutral { @apply bg-neutral-soft text-neutral-text; }
+
+    /* ---- 表单 ---- */
+    .input { @apply w-full rounded border border-[color:var(--c-border)] bg-surface px-3 py-2 text-sm
+                    outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-[color:var(--c-primary-ring)]
+                    placeholder:text-[color:var(--c-text-subtle)]; }
+    .input-mono  { @apply font-mono text-xs; }
+    .field-label { @apply mb-1 block text-[color:var(--c-text-muted)]; }
+
+    /* ---- 下拉 / 弹层 ---- */
+    .menu      { @apply absolute z-30 mt-1 rounded-lg border border-[color:var(--c-border)] bg-surface p-1 shadow-pop; }
+    .menu-item { @apply flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-sunken; }
+
+    /* ---- 导航分段控件 ---- */
+    .nav-seg         { @apply rounded-md px-3 py-2 text-sm font-bold text-[color:var(--c-text-muted)] transition-colors hover:bg-surface-sunken; }
+    .nav-seg--active { @apply bg-primary text-white shadow-sm hover:bg-primary-hover; }
+
+    /* ---- 空态 ---- */
+    .empty-state { @apply flex items-center justify-center p-8 text-center text-sm text-[color:var(--c-text-subtle)]; }
+
+    /* ---- Toast ---- */
+    #toast-container {
+        position: fixed;
+        top: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 60;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        pointer-events: none;
+        width: max-content;
+        max-width: 90vw;
+    }
+    .toast {
+        pointer-events: auto;
+        max-width: 90vw;
+        padding: 10px 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        line-height: 1.4;
+        color: var(--toast-text);
+        background-color: var(--toast-info-bg);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
+        word-break: break-word;
+        white-space: pre-wrap;
+        opacity: 0;
+        transform: translateY(-8px);
+        transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+    .toast-show {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    .toast-success { background-color: var(--toast-success-bg); }
+    .toast-error { background-color: var(--toast-error-bg); }
+
+    /* ---- 菜单入场动画 ---- */
+    @keyframes menu-in {
+        from { opacity: 0; transform: translateY(-4px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    .menu-animated {
+        animation: menu-in var(--t, 160ms) var(--ease, ease) both;
+    }
+
+    /* ---- 表单错误态 ---- */
+    .is-invalid {
+        border-color: var(--c-danger) !important;
+        box-shadow: 0 0 0 1px var(--c-danger);
+    }
+
+    /* ---- 加载旋转圈 ---- */
+    .spinner-ring {
+        display: inline-block;
+        width: 1.5rem;
+        height: 1.5rem;
+        border: 2px solid var(--c-border);
+        border-top-color: var(--c-primary);
+        border-radius: 9999px;
+        animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+}
+

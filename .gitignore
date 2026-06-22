@@ -25,6 +25,16 @@ venv/
 .venv/
 env/
 ENV/
+spider_core/.venv-test/
+
+# ================= 前端 Vue3+Vite 忽略 =================
+# 依赖（构建时安装，不入库）
+spider_core/web/node_modules/
+# Vite 缓存
+spider_core/web/.vite/
+# 类型检查缓存
+spider_core/web/node_modules/.tmp/
+# 注意：frontend_dist/ 是构建产物，本机构建后入库，不在忽略列表
 
 # ================= 爬虫业务隐私数据忽略 =================
 spider_core/data/

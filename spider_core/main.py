@@ -20,6 +20,7 @@ class _QuietPollFilter(logging.Filter):
         "GET /api/tasks HTTP/",
         "GET /api/tasks/queue_status HTTP/",
         "GET /api/status HTTP/",
+        "GET /api/events HTTP/",
     )
 
     def filter(self, record: logging.LogRecord) -> bool:
@@ -49,13 +50,11 @@ async def custom_http_exception_handler(request, exc):
         content={"code": exc.status_code, "msg": exc.detail},
     )
 
-# 挂载前端静态资源（拆分后的 css/ 与 js/ 目录）。
-# 这些路径不以 /api/ 开头，因此与 "/"、"/favicon.png" 一样无需访问令牌。
-_FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend")
-for _sub in ("css", "js"):
-    _static_dir = os.path.join(_FRONTEND_DIR, _sub)
-    if os.path.isdir(_static_dir):
-        app.mount(f"/{_sub}", StaticFiles(directory=_static_dir), name=_sub)
+# 挂载 Vue3+Vite 构建产物的静态资源目录
+_FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "frontend_dist")
+_assets_dir = os.path.join(_FRONTEND_DIR, "assets")
+if os.path.isdir(_assets_dir):
+    app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
 
 db_store.configure(DATA_DIR)
 db_store.import_existing_csvs(DATA_DIR)
@@ -75,7 +74,7 @@ async def require_api_token(request: Request, call_next):
 @app.get("/")
 def read_root():
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    html_path = os.path.join(base_dir, "frontend", "index.html")
+    html_path = os.path.join(base_dir, "frontend_dist", "index.html")
     if os.path.exists(html_path):
         with open(html_path, "r", encoding="utf-8") as f:
             return HTMLResponse(f.read())
@@ -85,7 +84,7 @@ def read_root():
 @app.get("/favicon.png")
 def get_favicon():
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    file_path = os.path.join(base_dir, "frontend", "favicon.png")
+    file_path = os.path.join(base_dir, "frontend_dist", "favicon.png")
     if os.path.exists(file_path):
         return FileResponse(file_path, media_type="image/png")
     return JSONResponse(status_code=404, content={"error": "Favicon file not found."})
@@ -98,6 +97,7 @@ from routers import rankings as _rankings_router  # noqa: E402
 from routers import settings as _settings_router  # noqa: E402
 from routers import storage as _storage_router  # noqa: E402
 from routers import actors as _actors_router    # noqa: E402
+from routers import events as _events_router    # noqa: E402
 
 app.include_router(_tasks_router.router)
 app.include_router(_movies_router.router)
@@ -106,6 +106,7 @@ app.include_router(_rankings_router.router)
 app.include_router(_settings_router.router)
 app.include_router(_storage_router.router)
 app.include_router(_actors_router.router)
+app.include_router(_events_router.router)
 
 
 def start_server(host="127.0.0.1"):
