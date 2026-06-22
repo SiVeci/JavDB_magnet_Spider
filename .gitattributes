@@ -1,6 +1,10 @@
 # 排除所有 GitHub 自动化相关的配置
 .github/ export-ignore
 
+# Shell 脚本强制 LF 换行：避免 Windows checkout 出 CRLF，
+# 导致容器内 entrypoint.sh 报 "no such file or directory"
+*.sh text eol=lf
+
 # 排除 Git 自身的配置文件
 .gitignore export-ignore
 .gitattributes export-ignore
