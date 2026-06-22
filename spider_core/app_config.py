@@ -6,6 +6,10 @@ import secrets
 APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "2.0.0")
 AUTH_HEADER = "X-JavDB-Token"
 PUBLIC_API_PATHS = {"/api/version"}
+# 自行鉴权路径：这些端点不走 header 中间件校验，因为它们在端点内部用其他方式鉴权。
+# /api/events 是 SSE，浏览器 EventSource 无法设置自定义请求头，只能用 ?token= query 校验，
+# 故必须放行中间件（否则没有 X-JavDB-Token 头会被中间件直接 401，SSE 永远连不上）。
+SELF_AUTH_API_PATHS = {"/api/events"}
 
 
 def _env_truthy(name: str) -> bool:

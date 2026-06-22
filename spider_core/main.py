@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from app_config import APP_VERSION, AUTH_HEADER, PUBLIC_API_PATHS, is_api_authorized, is_auth_required
+from app_config import APP_VERSION, AUTH_HEADER, PUBLIC_API_PATHS, SELF_AUTH_API_PATHS, is_api_authorized, is_auth_required
 from schemas import *  # noqa: F403
 from utils import *  # noqa: F403
 
@@ -71,7 +71,7 @@ class RequireApiTokenMiddleware:
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
             path = scope.get("path", "")
-            if path.startswith("/api/") and path not in PUBLIC_API_PATHS:
+            if path.startswith("/api/") and path not in PUBLIC_API_PATHS and path not in SELF_AUTH_API_PATHS:
                 headers = dict(scope.get("headers", []))
                 auth_header = AUTH_HEADER.lower().encode("utf-8")
                 token = headers.get(auth_header, b"").decode("utf-8")
