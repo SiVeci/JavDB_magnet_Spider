@@ -73,7 +73,17 @@ android {
         main {
             // 告诉 Chaquopy，Python 代码不在默认的 src/main/python 里了，
             // 而是在 app 文件夹上一级的 spider_core 文件夹里！
-            python.srcDir "../spider_core"
+            python {
+                srcDir "../spider_core"
+                // 排除运行时无关内容，防止被 Chaquopy 打进 APK（节省约 130M）。
+                // Chaquopy 默认会打包 srcDir 下所有文件（不止 .py），故需显式排除。
+                exclude "web/**"            // Vite 前端开发目录 + node_modules (~106M)
+                exclude ".venv-test/**"     // 测试虚拟环境 (~23M)
+                exclude "tests/**"          // 单元测试，运行时不需要
+                exclude "**/__pycache__/**" // Python 字节码缓存
+                exclude "data/**"           // 本机运行时数据库（设备上会在沙盒自动重建）
+                // 保留：所有 .py、routers/、services/、frontend_dist/（后端 serve 给浏览器的前端）
+            }
         }
     }
 }
