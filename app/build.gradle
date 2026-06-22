@@ -82,6 +82,12 @@ android {
                 exclude "tests/**"          // 单元测试，运行时不需要
                 exclude "**/__pycache__/**" // Python 字节码缓存
                 exclude "data/**"           // 本机运行时数据库（设备上会在沙盒自动重建）
+                exclude "task_config.json"  // 本地任务配置（设备运行时自建）
+                exclude "status.json"       // 本地运行状态
+                exclude "checkpoint.json"   // 本地断点续传记录
+                exclude "*.db"              // 数据库文件兜底
+                exclude "*.sqlite"
+                exclude "*.sqlite3"
                 // 保留：所有 .py、routers/、services/、frontend_dist/（后端 serve 给浏览器的前端）
             }
         }

@@ -451,14 +451,14 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
       <div v-if="pageMode === 'collection-list'" class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-2 pt-2">
         <div class="mb-3 text-xs text-[color:var(--c-text-muted)]">{{ db.collections.length }} 个集合 · {{ db.totalMovies() }} 部影片</div>
         <div class="flex flex-wrap gap-2">
-          <button type="button" title="按评分自动选择磁力" aria-label="按评分自动选择磁力" class="btn btn-md btn-warning" @click="autoSelect()">★ 自动选择</button>
+          <button type="button" title="按评分自动选择磁力" aria-label="按评分自动选择磁力" class="btn btn-sm btn-warning" @click="autoSelect()">★ 自动选择</button>
           <MagnetCheckButton scope="all" target="all" />
           <button
             v-if="selectedCollections.size > 0"
             type="button"
             :title="`批量删除 ${selectedCollections.size} 个数据集合`"
             :aria-label="`批量删除 ${selectedCollections.size} 个数据集合`"
-            class="btn btn-icon-md btn-danger relative"
+            class="btn btn-icon-sm btn-danger relative"
             @click="batchDeleteSelected"
           >
             <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -466,7 +466,7 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
             </svg>
             <span class="absolute -right-1 -top-1 min-w-4 rounded-full bg-red-600 px-1 text-center text-[10px] leading-4 text-white">{{ selectedCollections.size }}</span>
           </button>
-          <button type="button" title="刷新" aria-label="刷新数据集合" class="btn btn-icon-md btn-soft" @click="db.loadCollections()">
+          <button type="button" title="刷新" aria-label="刷新数据集合" class="btn btn-icon-sm btn-soft" @click="db.loadCollections()">
             <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 12a9 9 0 1 1-2.64-6.36"></path><path d="M21 3v6h-6"></path>
             </svg>

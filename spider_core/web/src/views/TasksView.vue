@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useTasksStore, isTerminal, isPausable, isResumable, isCancelable } from '@/stores/tasks'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
@@ -22,11 +22,12 @@ const actorBaseParams = ref(new URLSearchParams())
 const tagsCollapsed = ref(false)
 const showTagsPanel = ref(false)
 const logCollapsed = ref(true)
-
-// Layout
-const taskListEl = ref<HTMLElement | null>(null)
-const monitorBodyEl = ref<HTMLElement | null>(null)
-const layoutFrame = ref<number | null>(null)
+const logBodyEl = ref<HTMLElement | null>(null)
+const logBodyHeight = ref('90px')
+const LOG_MIN_HEIGHT = 90
+const LOG_LAYOUT_GAP = 4
+let layoutFrame: number | null = null
+let layoutObserver: ResizeObserver | null = null
 
 function buildActorUrl(tagValues: string | null = null): string {
   const params = new URLSearchParams(actorBaseParams.value)
@@ -205,35 +206,60 @@ function stateMeta(s: string) { return STATE_META[s] || { label: s || '-', badge
 
 const currentTask = computed(() => tasks.currentTask)
 
-function scheduleFitLayout() {
-  if (layoutFrame.value) return
-  layoutFrame.value = requestAnimationFrame(() => { layoutFrame.value = null; fitTasksLayout() })
+function scheduleFitLogLayout() {
+  if (layoutFrame !== null) return
+  layoutFrame = requestAnimationFrame(() => {
+    layoutFrame = null
+    fitLogLayout()
+  })
 }
 
-function fitTasksLayout() {
-  const view = document.getElementById('view-tasks')
-  if (!view) return
-  const rect = view.getBoundingClientRect()
-  const vh = window.innerHeight || document.documentElement.clientHeight || 0
+function fitLogLayout() {
+  if (logCollapsed.value || !logBodyEl.value) return
+  const rect = logBodyEl.value.getBoundingClientRect()
+  const monitorCard = logBodyEl.value.closest('.card')
+  const monitorRect = monitorCard?.getBoundingClientRect()
+  const outerTailHeight = monitorRect ? Math.max(0, monitorRect.bottom - rect.bottom) : 0
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0
   const documentTop = rect.top + (window.scrollY || 0)
-  const bodyStyle = window.getComputedStyle(document.body)
-  const bodyBottom = parseFloat(bodyStyle.paddingBottom) || 0
-  const available = Math.floor(vh - documentTop - bodyBottom - 16)
-  if (available > 0) { view.style.height = `${available}px`; view.style.overflow = 'hidden' }
+  const main = logBodyEl.value.closest('main')
+  const mainBottomPadding = main ? parseFloat(window.getComputedStyle(main).paddingBottom) || 0 : 16
+  const availableHeight = Math.floor(viewportHeight - documentTop - mainBottomPadding - outerTailHeight - LOG_LAYOUT_GAP)
+  logBodyHeight.value = `${Math.max(LOG_MIN_HEIGHT, availableHeight)}px`
 }
 
-const resizeHandler = () => scheduleFitLayout()
+function toggleLogCollapsed() {
+  logCollapsed.value = !logCollapsed.value
+  scheduleFitLogLayout()
+}
+
+const resizeHandler = () => scheduleFitLogLayout()
+watch([logCollapsed, currentTask, showTagsPanel, tagsCollapsed], async () => {
+  await nextTick()
+  scheduleFitLogLayout()
+})
+
 onMounted(() => {
   window.addEventListener('resize', resizeHandler)
-  scheduleFitLayout()
+  if (typeof ResizeObserver !== 'undefined') {
+    layoutObserver = new ResizeObserver(() => scheduleFitLogLayout())
+    const view = document.getElementById('view-tasks')
+    if (view) layoutObserver.observe(view)
+  }
+  scheduleFitLogLayout()
 })
-onUnmounted(() => { window.removeEventListener('resize', resizeHandler) })
+
+onUnmounted(() => {
+  window.removeEventListener('resize', resizeHandler)
+  if (layoutFrame !== null) cancelAnimationFrame(layoutFrame)
+  layoutObserver?.disconnect()
+})
 </script>
 
 <template>
   <section
     id="view-tasks"
-    class="grid min-h-0 grid-cols-1 content-start items-start gap-4 overflow-hidden xl:grid-cols-[430px_1fr] xl:gap-6"
+    class="grid min-h-0 grid-cols-1 content-start items-start gap-4 xl:grid-cols-[430px_1fr] xl:gap-6"
   >
     <!-- 左栏：任务配置 -->
     <div class="shrink-0 space-y-2 overflow-visible">
@@ -320,9 +346,9 @@ onUnmounted(() => { window.removeEventListener('resize', resizeHandler) })
                 :disabled="!tasks.queueStatus.can_start"
                 title="开始任务队列"
                 aria-label="开始任务队列"
-                class="btn btn-icon-lg bg-emerald-600 text-white hover:bg-emerald-700"
+                class="btn btn-icon-sm bg-emerald-600 text-white hover:bg-emerald-700"
               >
-                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="currentColor">
+                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor">
                   <path d="M8 5.5v13l10-6.5-10-6.5z"></path>
                 </svg>
               </button>
@@ -333,9 +359,9 @@ onUnmounted(() => { window.removeEventListener('resize', resizeHandler) })
                   v-if="isPausable(currentTask.state)"
                   @click="pauseTask(currentTask.task_id)"
                   title="暂停当前任务" aria-label="暂停当前任务"
-                  class="btn btn-icon-lg btn-warning"
+                  class="btn btn-icon-sm btn-warning"
                 >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="currentColor">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor">
                     <path d="M7 5h4v14H7z"></path><path d="M13 5h4v14h-4z"></path>
                   </svg>
                 </button>
@@ -343,9 +369,9 @@ onUnmounted(() => { window.removeEventListener('resize', resizeHandler) })
                   v-if="isResumable(currentTask.state)"
                   @click="resumeTask(currentTask.task_id)"
                   title="恢复当前任务" aria-label="恢复当前任务"
-                  class="btn btn-icon-lg btn-info"
+                  class="btn btn-icon-sm btn-info"
                 >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M4 7v6h6"></path><path d="M20 17a8 8 0 0 0-13.66-5.66L4 13"></path>
                   </svg>
                 </button>
@@ -353,9 +379,9 @@ onUnmounted(() => { window.removeEventListener('resize', resizeHandler) })
                   v-if="isCancelable(currentTask.state)"
                   @click="cancelTask(currentTask.task_id)"
                   title="取消当前任务" aria-label="取消当前任务"
-                  class="btn btn-icon-lg btn-danger"
+                  class="btn btn-icon-sm btn-danger"
                 >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="9"></circle>
                     <path d="M9 9l6 6"></path><path d="M15 9l-6 6"></path>
                   </svg>
@@ -366,9 +392,9 @@ onUnmounted(() => { window.removeEventListener('resize', resizeHandler) })
                 @click="tasks.toggleShowFinished()"
                 :title="tasks.showFinished ? '隐藏已结束' : '显示已结束'"
                 :aria-label="tasks.showFinished ? '隐藏已结束' : '显示已结束'"
-                class="btn btn-icon-lg btn-neutral"
+                class="btn btn-icon-sm btn-neutral"
               >
-                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M3 6h18"></path><path d="M3 12h18"></path><path d="M3 18h18"></path>
                 </svg>
               </button>
@@ -376,14 +402,14 @@ onUnmounted(() => { window.removeEventListener('resize', resizeHandler) })
                 @click="cleanupFinished"
                 :disabled="(tasks.queueStatus.finished_count || 0) <= 0"
                 title="清理已结束" aria-label="清理已结束"
-                class="btn btn-icon-lg btn-danger"
+                class="btn btn-icon-sm btn-danger"
               >
-                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M3 6h18"></path><path d="M8 6V4h8v2"></path>
                   <path d="M6 6l1 15h10l1-15"></path><path d="M10 11v6"></path><path d="M14 11v6"></path>
                 </svg>
               </button>
-              <div class="flex h-10 min-w-0 flex-col justify-center text-xs leading-4 text-[color:var(--c-text-muted)]">
+              <div class="flex min-w-0 items-center gap-3 text-xs text-[color:var(--c-text-muted)]">
                 <span>待处理 {{ tasks.queueStatus.active_count || 0 }} 个</span>
                 <span>已结束 {{ tasks.queueStatus.finished_count || 0 }} 个</span>
               </div>
@@ -448,7 +474,7 @@ onUnmounted(() => { window.removeEventListener('resize', resizeHandler) })
           <div class="min-h-0 overflow-hidden rounded-lg border border-[color:var(--c-border)]">
             <button
               type="button"
-              @click="logCollapsed = !logCollapsed"
+              @click="toggleLogCollapsed"
               class="w-full px-3 py-2 bg-surface-sunken border-b border-[color:var(--c-border)] text-sm font-semibold flex items-center justify-between text-left"
             >
               <span>运行日志</span>
@@ -458,9 +484,10 @@ onUnmounted(() => { window.removeEventListener('resize', resizeHandler) })
               </div>
             </button>
             <div
+              ref="logBodyEl"
               v-show="!logCollapsed"
               class="overflow-y-auto log-box bg-surface p-3 font-mono text-xs text-[color:var(--c-text-muted)]"
-              style="max-height: 400px;"
+              :style="{ height: logBodyHeight, minHeight: `${LOG_MIN_HEIGHT}px` }"
             >
               <div v-if="!tasks.logs.length">等待任务启动...</div>
               <div v-for="(log, i) in tasks.logs" :key="i" class="mb-1 border-b border-[color:var(--c-border-soft)] pb-1">{{ log }}</div>

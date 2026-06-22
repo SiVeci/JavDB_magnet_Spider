@@ -3,6 +3,7 @@
 .gradle
 .idea
 __pycache__
+**/__pycache__/
 *.pyc
 app/
 gradle/
@@ -12,3 +13,16 @@ spider_core/tests/
 spider_core/data/
 diff_output.txt
 local.properties
+# 前端源码与依赖（运行时只需 CI 生成的 frontend_dist 产物，不需要源码/node_modules）
+spider_core/web/
+# 本地过程文件（严禁烤进镜像）
+spider_core/task_config.json
+spider_core/status.json
+spider_core/checkpoint.json
+# 测试虚拟环境
+spider_core/.venv-test/
+# 数据库文件兜底
+*.db
+*.sqlite
+*.sqlite3
+# 注意：不要排除 spider_core/frontend_dist —— CI 在 docker build 前已现场生成，需进 build context

@@ -34,18 +34,34 @@ spider_core/web/node_modules/
 spider_core/web/.vite/
 # 类型检查缓存
 spider_core/web/node_modules/.tmp/
-# 注意：frontend_dist/ 是构建产物，本机构建后入库，不在忽略列表
+# 构建产物：改为 CI 现场构建，本地产物严禁上云
+spider_core/frontend_dist/
 
 # ================= 爬虫业务隐私数据忽略 =================
 spider_core/data/
 spider_core/task_config.json
 spider_core/status.json
 spider_core/checkpoint.json
+# 数据库文件兜底（防止换路径后漏忽略）
+*.db
+*.sqlite
+*.sqlite3
+
+# ================= 过程/规划文档忽略 =================
 MANUAL_TEST_PLAN.md
 analysis_results.md
+FRONTEND_MIGRATION_PLAN.md
 
+# ================= AI 工具/Agent 文件忽略（严禁上云） =================
 .claude/
-
 .gemini/
-
 .agent/
+.agents/
+.cursor/
+.aider*
+.continue/
+.windsurf/
+.codeium/
+AGENTS.md
+CLAUDE.md
+GEMINI.md

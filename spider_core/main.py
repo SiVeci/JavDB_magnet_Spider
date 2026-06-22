@@ -1,5 +1,6 @@
 import logging
 import os
+import asyncio
 
 import db_store
 from contextlib import asynccontextmanager
@@ -38,7 +39,10 @@ class _QuietPollFilter(logging.Filter):
 @asynccontextmanager
 async def _lifespan(app):
     logging.getLogger("uvicorn.access").addFilter(_QuietPollFilter())
-    yield
+    try:
+        yield
+    except asyncio.CancelledError:
+        pass
 
 app = FastAPI(lifespan=_lifespan)
 
@@ -60,16 +64,32 @@ db_store.configure(DATA_DIR)
 db_store.import_existing_csvs(DATA_DIR)
 db_store.recover_interrupted_tasks()
 
-@app.middleware("http")
-async def require_api_token(request: Request, call_next):
-    path = request.url.path
-    if path.startswith("/api/") and path not in PUBLIC_API_PATHS:
-        if not is_api_authorized(request.headers.get(AUTH_HEADER)):
-            return JSONResponse(
-                status_code=401,
-                content={"code": 401, "msg": "访问令牌缺失或无效"},
-            )
-    return await call_next(request)
+class RequireApiTokenMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            path = scope.get("path", "")
+            if path.startswith("/api/") and path not in PUBLIC_API_PATHS:
+                headers = dict(scope.get("headers", []))
+                auth_header = AUTH_HEADER.lower().encode("utf-8")
+                token = headers.get(auth_header, b"").decode("utf-8")
+                if not is_api_authorized(token):
+                    response = JSONResponse(
+                        status_code=401,
+                        content={"code": 401, "msg": "访问令牌缺失或无效"},
+                    )
+                    await response(scope, receive, send)
+                    return
+        try:
+            await self.app(scope, receive, send)
+        except asyncio.CancelledError:
+            # 屏蔽由于 Uvicorn 强制退出时，底层 StreamingResponse/AnyIO 任务组被取消
+            # 而漏出的 CancelledError，防止 Uvicorn 打印 Exception in ASGI application 堆栈
+            pass
+
+app.add_middleware(RequireApiTokenMiddleware)
 
 @app.get("/")
 def read_root():

@@ -48,6 +48,9 @@ async def _event_generator(request: Request, queue: asyncio.Queue, sub_id: str):
             except asyncio.TimeoutError:
                 # 发送心跳保持连接
                 yield ": ping\n\n"
+    except asyncio.CancelledError:
+        # 服务器退出或强制断开时吞掉取消异常，避免底层 AnyIO 抛出 ASGI Error
+        pass
     finally:
         event_bus.unsubscribe(sub_id)
 

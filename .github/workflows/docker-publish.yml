@@ -18,6 +18,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
@@ -30,7 +34,7 @@ jobs:
       - name: Guard Pydantic v1/v2 compatibility
         run: |
           if grep -rnE '(model_dump|model_validate|model_config|ConfigDict|field_validator|parse_obj|parse_raw)' spider_core --include='*.py'; then
-            echo "::error::Found Pydantic version-specific API; keep schemas in the v1/v2 common subset (see AGENTS.md)."
+            echo "::error::Found Pydantic version-specific API; keep schemas in the v1/v2 common subset."
             exit 1
           fi
           echo "Pydantic compatibility guard passed."
@@ -48,6 +52,15 @@ jobs:
           tags: |
             type=raw,value=${{ github.event.inputs.version }}
             type=raw,value=latest
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build frontend (生成 frontend_dist 供镜像 COPY)
+        run: |
+          cd spider_core/web
+          npm ci
+          npm run build
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:

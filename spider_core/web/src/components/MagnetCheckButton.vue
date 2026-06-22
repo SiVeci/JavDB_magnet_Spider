@@ -22,7 +22,7 @@ const menuOpen = ref(false)
 // 尺寸档：mini(movie) / std(all) / toolbar(collection,ranking)
 const SIZE = {
   mini: { primary: 'h-5 w-6 text-[11px] leading-none', toggle: 'h-5 w-5 text-[10px] leading-none', spinner: 'h-2.5 w-2.5' },
-  std: { primary: 'h-9 w-14 text-xs shadow-sm', toggle: 'h-9 w-7 text-xs shadow-sm', spinner: 'h-3 w-3' },
+  std: { primary: 'h-7 w-11 text-xs shadow-sm', toggle: 'h-7 w-6 text-xs shadow-sm', spinner: 'h-3 w-3' },
   toolbar: { primary: 'h-7 w-7 text-[11px] leading-none', toggle: 'h-7 w-6 text-[10px] leading-none', spinner: 'h-3 w-3' },
 }
 const sizeKey = computed<'mini' | 'std' | 'toolbar'>(() =>
