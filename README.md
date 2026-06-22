@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="spider_core/frontend_dist/favicon.png" alt="JavDB Magnet Spider Logo" width="180">
+  <img src="spider_core/web/public/favicon.png" alt="JavDB Magnet Spider Logo" width="180">
   <h1>JavDB Magnet Spider</h1>
   <p>
     <img src="https://img.shields.io/badge/Platform-Android%20%7C%20Docker%20%7C%20PC-brightgreen" alt="Platform">
@@ -18,7 +18,7 @@
 ## 核心特性
 
 * **任务调度机制（Task Queue）**：
-  * **核心对象/组件/路由（`spider_engine.py` / `/api/v1/tasks`）**：在后端引擎中引入基于内存的状态机与任务队列。支持批量下发采集指令，系统按序执行后台调度。前端控制面板通过轮询或状态同步获取实时进度，并暴露 API 路由实现对运行中任务的原子级暂停、恢复与终止操作。
+  * **核心对象/组件/路由（`spider_engine.py` / `/api/v1/events`）**：在后端引擎中引入基于内存的状态机与任务队列。支持批量下发采集指令，系统按序执行后台调度。前端控制面板通过 Server-Sent Events (SSE) 事件总线获取毫秒级实时进度与日志推送，并暴露 API 路由实现对运行中任务的原子级暂停、恢复与终止操作。
 
 * **排行榜解析引擎（Ranking Parser）**：
   * **核心对象/组件/路由（`ranking_utils.py` / `/api/v1/rankings`）**：通过底层工具模块解析日/周/月常规榜单、热播流及支持多维度查询（年份/分类）的 TOP250 榜单数据。底层打通排行榜视图与爬虫任务队列，支持通过一键操作将榜单全量转化为采集任务。同时在前端页面耦合磁力可用性校验模块与多维标签交并集过滤模块。
@@ -48,10 +48,10 @@
   * **核心对象/组件/路由（`settings_repo.py` / `routers/settings.py`）**：在全局配置模块中开放自定义 Tracker 地址簿的注入接口。系统在发起网络探测前，会动态聚合链路内嵌（dn 字段）Tracker、用户注入的自定义 Tracker 列表以及底层封装的默认公共 Tracker，以提高嗅探机制的可用率与网络覆盖度。
 
 * **特征标签解析引擎（Tag Extraction & Filtering）**：
-  * **核心对象/组件/路由（`frontend/js/movies.js`）**：在 HTML 解析阶段提取实体的业务标签（类别、特征等）并持久化至关联表。前端层级实现了基于交、并、差集的复杂布尔查询逻辑，可作用于常规集合视图与排行榜视图。支持在过滤结果集上原子级触发数据序列化与导出任务。
+  * **核心对象/组件/路由（`web/src/composables/useMovieTags.ts`）**：在 HTML 解析阶段提取实体的业务标签（类别、特征等）并持久化至关联表。前端层级实现了基于交、并、差集的复杂布尔查询逻辑，可作用于常规集合视图与排行榜视图。支持在过滤结果集上原子级触发数据序列化与导出任务。
 
 * **自适应控制面板与主题系统（Adaptive WebUI & Theme System）**：
-  * **核心对象/组件/路由（`frontend/css/variables.css` / `theme.js`）**：基于无框架（Vanilla JS）构建的前端单页应用（SPA）控制台。系统通过语义化 CSS 变量（CSS Custom Properties）剥离硬编码色值，构建了高度解耦的动态主题引擎。支持随系统级偏好（`prefers-color-scheme`）或用户手动配置，无缝在浅色（Light Mode）与深色（Dark Mode）外观范式间切换，提升数据查阅的人机工效学体验。
+  * **核心对象/组件/路由（`spider_core/web/src` / `Tailwind CSS` / `Vue 3`）**：基于 Vue 3 + Vite 构建的现代化响应式前端控制台。系统通过 Tailwind CSS 结合语义化 CSS 变量，构建了高度解耦的动态主题引擎。支持随系统级偏好（`prefers-color-scheme`）或用户手动配置，无缝在浅色（Light Mode）与深色（Dark Mode）外观范式间切换，提升数据查阅的人机工效学体验。
 
 * **流量混淆与防护穿透（WAF Bypass）**：
   * **核心对象/组件/路由（`curl_cffi` / `spider_engine.py`）**：底层 HTTP Client 集成 curl_cffi 库。通过复刻主流浏览器的 TLS Client Hello 指纹与 JA3 特征，规避并稳定穿透基于四层与七层协议分析的 Web 应用防火墙（如 Cloudflare），提供更稳健的网络连通性。
@@ -100,7 +100,7 @@ cd spider_core
 python -m uvicorn main:app --host 0.0.0.0 --port 8000 --no-access-log
 ```
 
-*注：增加 `--no-access-log` 命令行参数可过滤前端长轮询（Long Polling）心跳探测接口产生的 `GET /api/... 200 OK` 冗余状态日志，推荐在非故障诊断模式下开启以降低标准输出（STDOUT）系统开销。*
+*注：推荐在非故障诊断模式下开启 `--no-access-log` 以过滤静态资源及心跳产生的状态日志，降低标准输出（STDOUT）系统开销。*
 
 ### 前端开发与构建（Vue3 + Vite）
 
@@ -115,8 +115,8 @@ npm run dev      # Vite dev server，代理 /api/ 到 127.0.0.1:8000
 npm run build    # vue-tsc 类型检查 + vite build
 ```
 
-> 构建产物 `frontend_dist/` 已入库，部署时无需执行 `npm run build`，直接启动 Python 服务即可。
-> 如需切换 CI 构建，在 `.github/workflows/` 中添加 Node 步骤执行 `npm run build` 并将产物提交或作为 artifact 托管。
+> 注意：为了保持仓库纯净，构建产物 `frontend_dist/` 已不再入库。对于 PC 源码部署，首次运行前需执行 `npm run build` 生成前端静态资源。
+> 对于 Docker 与 Android 产物，CI/CD 流水线（`.github/workflows/`）会在构建时自动执行前端编译打包环节，您可以直接下载发行版使用。
 
 ---
 
@@ -215,7 +215,7 @@ npm run build    # vue-tsc 类型检查 + vite build
 │   │   │   └── types/          # 对照后端 schemas.py 的 TS 类型
 │   │   ├── package.json
 │   │   └── vite.config.ts      # build.outDir → ../frontend_dist
-│   ├── frontend_dist/          # Vite 构建产物（本机构建后入库）
+│   ├── frontend_dist/          # Vite 构建产物（在 CI/CD 或本地手动构建，不再入库）
 │   │   ├── index.html          # 单页入口（FastAPI 托管）
 │   │   └── assets/             # JS/CSS（FastAPI 挂载 /assets）
 │   ├── tests/                  # Python Unit Test Suite

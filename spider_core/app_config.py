@@ -3,7 +3,7 @@
 import os
 import secrets
 
-APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "1.12.0")
+APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "2.0.0")
 AUTH_HEADER = "X-JavDB-Token"
 PUBLIC_API_PATHS = {"/api/version"}
 
