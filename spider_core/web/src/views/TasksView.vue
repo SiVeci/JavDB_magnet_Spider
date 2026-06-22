@@ -130,7 +130,6 @@ async function pauseTask(taskId: string) { await doTaskAction(taskId, 'pause') }
 async function resumeTask(taskId: string) {
   await settings.save(false)
   await doTaskAction(taskId, 'resume')
-  tasks.startPolling()
 }
 async function cancelTask(taskId: string) {
   if (!confirm('确定取消这个任务吗？')) return
@@ -142,7 +141,6 @@ async function deleteTask(taskId: string) {
 }
 async function refreshCookie(taskId: string) {
   await doTaskAction(taskId, 'refresh_cookie')
-  tasks.startPolling()
 }
 async function submitManualCookie(taskId: string) {
   const cookie = prompt('请粘贴 JavDB Cookie：')
@@ -155,7 +153,6 @@ async function submitManualCookie(taskId: string) {
     }).then((r: Response) => r.json())
     if (res.code !== 200) { showToast(res.msg || '设置 Cookie 失败'); return }
     showToast(res.msg || 'Cookie 已更新')
-    tasks.startPolling()
     await tasks.refresh()
   } catch (err: unknown) {
     showToast(err instanceof Error ? err.message : '操作失败')
@@ -172,7 +169,6 @@ async function clearLogs() {
 }
 async function setTaskMode(taskId: string, mode: string) {
   await doTaskAction(taskId, 'mode', { body: { mode } })
-  tasks.startPolling()
 }
 
 async function copyIncrementalMagnets(taskId: string) {

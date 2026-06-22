@@ -55,10 +55,8 @@ async function startApp() {
     tasksStore.refresh(),
     dbStore.loadCollections(),
   ])
-  // 优先用 SSE，SSE 断线时自动回退到轮询
+  // 使用 SSE 推送任务状态，运行中进度由后端主动广播。
   tasksStore.startSSE(() => sessionStorage.getItem('javdb_auth_token') || '')
-  // SSE 未就绪前先用轮询兜底，SSE 连接成功后会自动停轮询
-  tasksStore.startPolling(2500)
 }
 
 const themeLabel = computed(() => theme.value === 'dark' ? '切换到亮色' : '切换到暗色')

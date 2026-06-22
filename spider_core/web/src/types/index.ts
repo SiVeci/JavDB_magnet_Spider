@@ -39,34 +39,64 @@ export interface RuntimeConfig {
 
 export interface Collection {
   name: string
-  filename: string
-  movie_count: number
-  size_mb: number
-  has_unchecked: boolean
-  has_weak: boolean
-  has_dead: boolean
+  count: number
+  collection_type?: string
+  ranking_category?: string
+  ranking_period?: string
+  tags?: string[]
+  time?: string
+  timestamp?: number
+  has_source_url?: boolean
 }
 
 export interface Movie {
   id: number
   code: string
   title?: string
+  url?: string
   tags?: string[]
+  best_magnet_name?: string
+  best_magnet_link?: string
+  priority_score?: number
+  magnet_date?: string
+  size_mb?: number
+  candidate_count?: number
+  active_count?: number
+  weak_count?: number
+  dead_count?: number
+  failed_count?: number
+  checked_count?: number
   magnet_health?: string
   magnets?: Magnet[]
 }
 
 export interface Magnet {
   id: number
-  url: string
+  movie_id?: number
   name?: string
+  link: string
+  base_priority_score?: number
+  priority_score?: number
+  magnet_date?: string
   size_mb?: number
-  is_hd?: boolean
-  has_subtitle?: boolean
-  checked_at?: string
-  check_status?: string
-  check_error?: string
   is_selected?: boolean
+  position?: number
+  created_at?: number
+  check_status?: string
+  seeders?: number
+  leechers?: number
+  checked_at?: string
+  check_error?: string
+}
+
+export interface MagnetCheckJob {
+  job_id: string
+  scope: string
+  target: string | number
+  running: boolean
+  cancelled?: boolean
+  completed?: number
+  total?: number
 }
 
 export interface Actor {

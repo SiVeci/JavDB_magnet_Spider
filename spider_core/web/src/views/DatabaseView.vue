@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useDatabaseStore, RANKING_CATEGORIES, RANKING_PERIODS } from '@/stores/database'
+import { apiDownloadBlob } from '@/api'
+import { useDatabaseStore, RANKING_CATEGORIES, RANKING_PERIODS, HEALTH_ITEMS } from '@/stores/database'
 import { useTasksStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
 import { useClipboard } from '@/composables/useClipboard'
-import { apiFetch } from '@/api'
-import type { Collection, Movie, Magnet } from '@/types'
+import { fitMovieTags } from '@/composables/useMovieTags'
+import MagnetCheckButton from '@/components/MagnetCheckButton.vue'
+import MagnetTable from '@/components/MagnetTable.vue'
+import type { Collection, Movie, Magnet, MagnetCheckJob } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,14 +18,24 @@ const tasks = useTasksStore()
 const { showToast } = useToast()
 const { copyText } = useClipboard()
 
-// Route interpretation
-const routeType = computed(() => (route.params.type as string) || null)
-const routeCategory = computed(() => (route.params.category as string) || null)
-const routePeriod = computed(() => (route.params.period as string) || null)
-const routeMovieId = computed(() => (route.params.movieId as string) || null)
+// ===== 路由解析（演员 3 级 / 排行 4 级）=====
+const segments = computed(() => {
+  // route.path 形如 /database 或 /database/actor/xxx
+  const parts = route.path.replace(/^\/+|\/+$/g, '').split('/')
+  return parts.slice(1).map((p) => decodeURIComponent(p)) // 去掉 'database'
+})
+const routeType = computed(() => segments.value[0] || null)
+const routeCategory = computed(() => (routeType.value === 'actor' || routeType.value === 'ranking' ? segments.value[1] || null : null))
+// 演员：seg[2]=movieId；排行：seg[2]=period, seg[3]=movieId
+const routePeriod = computed(() => (routeType.value === 'ranking' ? segments.value[2] || null : null))
+const routeMovieId = computed(() => {
+  if (routeType.value === 'actor') return segments.value[2] || null
+  if (routeType.value === 'ranking') return segments.value[3] || null
+  return null
+})
 
 type PageMode = 'type-select' | 'collection-list' | 'movie-list' | 'magnet-list' |
-                'ranking-category' | 'ranking-period' | 'ranking-movie-list' | 'ranking-magnet-list'
+  'ranking-category' | 'ranking-period' | 'ranking-movie-list' | 'ranking-magnet-list'
 
 const pageMode = computed<PageMode>(() => {
   const t = routeType.value
@@ -41,60 +54,116 @@ const pageMode = computed<PageMode>(() => {
   return 'type-select'
 })
 
-// Data
-const movies = ref<Movie[]>([])
-const magnets = ref<Magnet[]>([])
+// ===== 本地状态 =====
 const loading = ref(false)
 const searchQuery = ref('')
 const selectedCollections = ref<Set<string>>(new Set())
+const magnets = ref<Magnet[]>([])
+// 标签/排除下拉互斥开关：'tag' | 'exclude' | 'check' + key，null 全关
+const openMenu = ref<string | null>(null)
+const top250Error = ref('')
 
-const filteredCollections = computed(() => {
+function displayName(val: string) { return db.displayName(val) }
+
+// ===== 集合列表 =====
+const filteredCollections = computed<Collection[]>(() => {
   const q = searchQuery.value.trim().toLowerCase()
   if (!q) return db.collections
-  return db.collections.filter((c: Record<string, unknown>) => {
-    const n = String(c.name || '').toLowerCase()
-    return n.includes(q)
-  })
+  return db.collections.filter((c: Collection) =>
+    displayName(c.name).toLowerCase().includes(q) || String(c.name).toLowerCase().includes(q)
+  )
 })
 
-const totalCount = computed(() =>
-  db.collections.reduce((s: number, c: Record<string, unknown>) => s + Number((c as { count?: number }).count || 0), 0)
+function toggleSelect(name: string) {
+  const s = new Set(selectedCollections.value)
+  if (s.has(name)) s.delete(name); else s.add(name)
+  selectedCollections.value = s
+}
+function toggleSelectAll(checked: boolean) {
+  if (checked) selectedCollections.value = new Set(filteredCollections.value.map((c) => c.name))
+  else selectedCollections.value = new Set()
+}
+const allSelected = computed(() =>
+  filteredCollections.value.length > 0 && filteredCollections.value.every((c) => selectedCollections.value.has(c.name))
 )
 
-function displayName(val: string) { return String(val || '').replace(/\.csv$/i, '') }
+// ===== 当前集合/排行影片数据 =====
+const currentMovieData = computed(() => {
+  if (routeType.value === 'actor' && routeCategory.value) return db.collectionData(routeCategory.value)
+  if (routeType.value === 'ranking' && routeCategory.value && routePeriod.value) return db.rankingData(routeCategory.value, routePeriod.value)
+  return { movies: [], available_tags: [], total_count: 0 }
+})
 
-function rankingCategoryMeta(key: string) { return RANKING_CATEGORIES.find((c: { key: string }) => c.key === key) || null }
-function rankingPeriodMeta(key: string) { return RANKING_PERIODS.find((p: { key: string }) => p.key === key) || null }
+// 当前过滤 key
+const currentFilterKey = computed(() => {
+  if (routeType.value === 'ranking' && routeCategory.value && routePeriod.value) return db.rankingFilterKey(routeCategory.value, routePeriod.value)
+  return routeCategory.value || ''
+})
 
+function movieMatchesTags(movie: Movie, selected: string[], excluded: string[]): boolean {
+  const movieTags = new Set(movie.tags || [])
+  if (excluded.length && excluded.some((t) => movieTags.has(t))) return false
+  if (!selected.length) return true
+  return selected.every((t) => movieTags.has(t))
+}
+
+const filteredMovies = computed<Movie[]>(() => {
+  const key = currentFilterKey.value
+  const selected = db.getTagFilter(key)
+  const excluded = db.getExcludeFilter(key)
+  return (currentMovieData.value.movies || []).filter((m) => movieMatchesTags(m, selected, excluded))
+})
+
+// 健康度四宫格统计（按影片 magnet_health 计数，等价旧版 collectionHealthCounts）
+function healthByMovieHealth(movies: Movie[]) {
+  const counts: Record<string, number> = { active: 0, weak: 0, dead: 0, failed: 0 }
+  for (const m of movies) {
+    if (m.magnet_health && counts[m.magnet_health] !== undefined) counts[m.magnet_health] += 1
+  }
+  return counts
+}
+const healthMap = computed(() => healthByMovieHealth(filteredMovies.value))
+function healthValue(itemKey: string): string {
+  const map: Record<string, string> = { active_count: 'active', weak_count: 'weak', dead_count: 'dead', failed_count: 'failed' }
+  const v = healthMap.value[map[itemKey]] || 0
+  return v ? String(v) : '-'
+}
+
+const currentCollection = computed(() => routeCategory.value ? db.getCollection(routeCategory.value) : undefined)
+
+// 当前影片（磁力页头部）
+const currentMovie = computed<Movie | undefined>(() => {
+  if (!routeMovieId.value) return undefined
+  if (routeType.value === 'actor' && routeCategory.value) return db.movieById(routeCategory.value, routeMovieId.value)
+  if (routeType.value === 'ranking' && routeCategory.value && routePeriod.value) return db.rankingMovieById(routeCategory.value, routePeriod.value, routeMovieId.value)
+  return undefined
+})
+
+// ===== 排行 meta =====
+function rankingCategoryMeta(key: string) { return RANKING_CATEGORIES.find((c) => c.key === key) || null }
+function rankingPeriodMeta(key: string) { return RANKING_PERIODS.find((p) => p.key === key) || null }
 function rankingPeriodForCategory(catKey: string, periodKey: string) {
   const cat = rankingCategoryMeta(catKey)
   if (!cat) return null
   if ((cat as { dynamicOptions?: boolean }).dynamicOptions) {
-    const opt = (db.top250Options || []).find((o: { key: string; label: string }) => o.key === periodKey)
+    const opt = (db.top250Options || []).find((o) => o.key === periodKey)
     if (opt) return opt
     return /^[A-Za-z0-9_-]{1,32}$/.test(periodKey || '') ? { key: periodKey, label: periodKey } : null
   }
   return rankingPeriodMeta(periodKey)
 }
 
-// Navigation
+// ===== 导航 =====
 function goType(type: string) { router.push(`/database/${type}`) }
-function goCollection(name: string) { router.push(`/database/actor/${encodeURIComponent(name)}`) }
-function goMovie(collectionName: string, movieId: string | number) {
-  router.push(`/database/actor/${encodeURIComponent(collectionName)}/${encodeURIComponent(String(movieId))}`)
-}
-function goBack() { router.go(-1) }
 function goCollectionList() { router.push('/database/actor') }
+function goCollection(name: string) { router.push(`/database/actor/${encodeURIComponent(name)}`) }
+function goMovie(movieId: string | number) { router.push(`/database/actor/${encodeURIComponent(routeCategory.value!)}/${encodeURIComponent(String(movieId))}`) }
 function goRankingCategory() { router.push('/database/ranking') }
 function goRankingPeriod(catKey: string) { router.push(`/database/ranking/${encodeURIComponent(catKey)}`) }
-function goRankingMovieList(catKey: string, periodKey: string) {
-  router.push(`/database/ranking/${encodeURIComponent(catKey)}/${encodeURIComponent(periodKey)}`)
-}
-function goRankingMagnet(catKey: string, periodKey: string, movieId: string | number) {
-  router.push(`/database/ranking/${encodeURIComponent(catKey)}/${encodeURIComponent(periodKey)}/${encodeURIComponent(String(movieId))}`)
-}
+function goRankingMovieList(catKey: string, periodKey: string) { router.push(`/database/ranking/${encodeURIComponent(catKey)}/${encodeURIComponent(periodKey)}`) }
+function goRankingMagnet(movieId: string | number) { router.push(`/database/ranking/${encodeURIComponent(routeCategory.value!)}/${encodeURIComponent(routePeriod.value!)}/${encodeURIComponent(String(movieId))}`) }
 
-// Breadcrumb items
+// ===== 面包屑 =====
 const breadcrumbs = computed(() => {
   const items: { label: string; onClick?: () => void }[] = [
     { label: '数据库', onClick: () => router.push('/database') },
@@ -102,197 +171,266 @@ const breadcrumbs = computed(() => {
   const t = routeType.value
   if (t === 'actor') {
     items.push({ label: '演员', onClick: goCollectionList })
-    const cn = routeCategory.value
-    if (cn) {
-      items.push({ label: displayName(cn), onClick: () => goCollection(cn) })
-      const mid = routeMovieId.value
-      if (mid && movies.value.length) {
-        const m = movies.value.find((mv: Movie) => String(mv.id) === mid)
-        if (m) items.push({ label: m.code || String(m.id) })
-      }
+    if (routeCategory.value) {
+      items.push({ label: displayName(routeCategory.value), onClick: () => goCollection(routeCategory.value!) })
+      if (routeMovieId.value && currentMovie.value) items.push({ label: currentMovie.value.code || String(currentMovie.value.id) })
     }
   } else if (t === 'ranking') {
     items.push({ label: '排行榜', onClick: goRankingCategory })
-    const catKey = routeCategory.value
-    if (catKey) {
-      const cat = rankingCategoryMeta(catKey)
-      items.push({ label: cat?.label || catKey, onClick: () => goRankingPeriod(catKey) })
-      const periodKey = routePeriod.value
-      if (periodKey) {
-        const period = rankingPeriodForCategory(catKey, periodKey)
-        items.push({ label: period?.label || periodKey, onClick: () => goRankingMovieList(catKey, periodKey) })
-        const mid = routeMovieId.value
-        if (mid && movies.value.length) {
-          const m = movies.value.find((mv: Movie) => String(mv.id) === mid)
-          if (m) items.push({ label: m.code || String(m.id) })
-        }
+    if (routeCategory.value) {
+      const cat = rankingCategoryMeta(routeCategory.value)
+      items.push({ label: cat?.label || routeCategory.value, onClick: () => goRankingPeriod(routeCategory.value!) })
+      if (routePeriod.value) {
+        const period = rankingPeriodForCategory(routeCategory.value, routePeriod.value)
+        items.push({ label: period?.label || routePeriod.value, onClick: () => goRankingMovieList(routeCategory.value!, routePeriod.value!) })
+        if (routeMovieId.value && currentMovie.value) items.push({ label: currentMovie.value.code || String(currentMovie.value.id) })
       }
     }
   }
   return items
 })
 
-// Data loading
+// ===== 数据加载 =====
 async function loadData() {
   loading.value = true
+  top250Error.value = ''
   try {
     const mode = pageMode.value
     if (mode === 'movie-list') {
-      const cn = routeCategory.value!
-      const ok = await db.ensureMovies(cn)
-      if (ok) movies.value = db.collectionMovies[cn] || []
+      await db.ensureMovies(routeCategory.value!)
     } else if (mode === 'magnet-list') {
-      const cn = routeCategory.value!
-      const mid = routeMovieId.value!
-      const ok = await db.ensureMovies(cn)
-      if (ok) movies.value = db.collectionMovies[cn] || []
-      magnets.value = await db.loadMovieMagnets(cn, mid)
-    } else if (mode === 'ranking-movie-list') {
-      movies.value = await db.loadRankingMovies(routeCategory.value!, routePeriod.value!)
-    } else if (mode === 'ranking-magnet-list') {
-      movies.value = await db.loadRankingMovies(routeCategory.value!, routePeriod.value!)
-      magnets.value = await db.loadMovieMagnets(
-        `ranking:${routeCategory.value}:${routePeriod.value}`,
-        routeMovieId.value!
-      )
+      await db.ensureMovies(routeCategory.value!)
+      magnets.value = await db.loadMovieMagnets(routeMovieId.value!)
     } else if (mode === 'ranking-period' && rankingCategoryMeta(routeCategory.value!)?.dynamicOptions) {
-      if (!db.top250Options) await db.loadTop250Options()
+      try { if (!db.top250Options) await db.loadTop250Options() }
+      catch (e: unknown) { top250Error.value = e instanceof Error ? e.message : 'TOP250 分类加载失败' }
+    } else if (mode === 'ranking-movie-list') {
+      if (rankingCategoryMeta(routeCategory.value!)?.dynamicOptions && !db.top250Options) {
+        try { await db.loadTop250Options() } catch { /* ignore */ }
+      }
+      await db.ensureRankingMovies(routeCategory.value!, routePeriod.value!)
+    } else if (mode === 'ranking-magnet-list') {
+      await db.ensureRankingMovies(routeCategory.value!, routePeriod.value!)
+      magnets.value = await db.loadMovieMagnets(routeMovieId.value!)
     }
   } catch (err: unknown) {
     showToast(err instanceof Error ? err.message : '加载失败')
   } finally {
     loading.value = false
+    await nextTick()
+    fitMovieTags(document)
   }
 }
 
-watch(() => route.fullPath, loadData, { immediate: false })
+watch(() => route.fullPath, () => { openMenu.value = null; loadData() })
 
 onMounted(async () => {
   if (!db.collections.length) await db.loadCollections()
+  // 注册磁力检测轮询回调：tick 刷新当前磁力行，done 重载目标
+  db.registerCheckCallbacks(onMagnetCheckTick, onMagnetCheckDone)
+  await db.restoreMagnetCheckJob()
   await loadData()
+  window.addEventListener('resize', onResize)
+  window.addEventListener('click', onGlobalClick)
 })
 
-// Tasks store watch for cross-view update
-// SSE 方式：collectionsChanged 由 SSE 事件直接设置；轮询兜底：监听任务完成
-watch(() => tasks.collectionsChanged, async (changed) => {
-  if (changed) {
-    await db.loadCollections()
-    tasks.clearCollectionsChanged()
+onBeforeUnmount(() => {
+  db.registerCheckCallbacks(null, null)
+  window.removeEventListener('resize', onResize)
+  window.removeEventListener('click', onGlobalClick)
+})
+
+function onResize() { fitMovieTags(document) }
+function onGlobalClick() { openMenu.value = null }
+
+// SSE 集合变化联动
+async function refreshAfterCollectionsChanged() {
+  await db.loadCollections()
+  if (routeType.value === 'actor' && routeCategory.value) {
+    await db.ensureMovies(routeCategory.value, true)
+  } else if (routeType.value === 'ranking' && routeCategory.value && routePeriod.value) {
+    await db.ensureRankingMovies(routeCategory.value, routePeriod.value, true)
   }
-})
-// 轮询兜底（SSE 未连接时）
-watch(() => tasks.tasks.length, async () => {
-  if (tasks.sseConnected) return
-  const finishedTask = tasks.tasks.find((t: { state: string }) => t.state === 'finished')
-  if (finishedTask) await db.loadCollections()
-})
+  if ((pageMode.value === 'magnet-list' || pageMode.value === 'ranking-magnet-list') && routeMovieId.value) {
+    magnets.value = await db.loadMovieMagnets(routeMovieId.value)
+    db.syncSelectedMagnetToCache(routeMovieId.value, magnets.value)
+  }
+  await nextTick()
+  fitMovieTags(document)
+}
 
-// Collection actions
-async function deleteCollection(name: string) {
-  if (!confirm(`确定删除集合 ${displayName(name)} 吗？此操作不可恢复。`)) return
+watch(() => tasks.collectionsChanged, async (changed) => {
+  if (!changed) return
+  tasks.clearCollectionsChanged()
+  db.invalidateMovieCaches()
   try {
-    await db.deleteCollection(name)
-    showToast('已删除')
+    await refreshAfterCollectionsChanged()
+  } catch (err: unknown) {
+    showToast(err instanceof Error ? err.message : '刷新数据失败')
+  }
+}, { immediate: true })
+
+// ===== 磁力检测轮询回调 =====
+async function onMagnetCheckTick() {
+  // 当前在磁力页且 job 命中当前影片/集合/排行 → 刷新磁力行
+  const job = db.activeMagnetCheckJob
+  if (!job) return
+  if ((pageMode.value === 'magnet-list' || pageMode.value === 'ranking-magnet-list') && routeMovieId.value) {
+    magnets.value = await db.loadMovieMagnets(routeMovieId.value)
+  }
+}
+async function onMagnetCheckDone(job: MagnetCheckJob) {
+  // 检测完成：按 scope 重载对应数据
+  if (job.scope === 'collection' && routeCategory.value) {
+    await db.ensureMovies(routeCategory.value, true)
+  } else if (job.scope === 'ranking' && routeCategory.value && routePeriod.value) {
+    await db.ensureRankingMovies(routeCategory.value, routePeriod.value, true)
+  } else if (job.scope === 'all') {
+    await db.loadCollections()
+    if (routeType.value === 'actor' && routeCategory.value) await db.ensureMovies(routeCategory.value, true)
+  } else if (job.scope === 'movie') {
+    if (routeType.value === 'actor' && routeCategory.value) await db.ensureMovies(routeCategory.value, true)
+    if (routeType.value === 'ranking' && routeCategory.value && routePeriod.value) await db.ensureRankingMovies(routeCategory.value, routePeriod.value, true)
+  }
+  if ((pageMode.value === 'magnet-list' || pageMode.value === 'ranking-magnet-list') && routeMovieId.value) {
+    magnets.value = await db.loadMovieMagnets(routeMovieId.value)
+  }
+  await nextTick()
+  fitMovieTags(document)
+}
+
+// ===== 操作 =====
+async function selectMagnet(magnetId: number) {
+  if (!routeMovieId.value) return
+  try {
+    await db.selectMagnet(routeMovieId.value, magnetId)
+    magnets.value = await db.loadMovieMagnets(routeMovieId.value)
+    db.syncSelectedMagnetToCache(routeMovieId.value, magnets.value)
+  } catch (err: unknown) {
+    showToast(err instanceof Error ? err.message : '更新失败')
+  }
+}
+
+async function autoSelect(collectionName?: string) {
+  const names = collectionName ? [collectionName] : (selectedCollections.value.size ? Array.from(selectedCollections.value) : db.collections.map((c) => c.name))
+  if (!names.length) { showToast('暂无可自动选择的集合'); return }
+  const scopeText = collectionName ? `「${displayName(collectionName)}」` : (selectedCollections.value.size ? `${selectedCollections.value.size} 个已选集合` : '全部集合')
+  if (!confirm(`按评分自动选择 ${scopeText} 的推荐磁力？`)) return
+  try {
+    const msg = await db.autoSelectMagnets(names)
+    showToast(msg)
+    await db.loadCollections()
+    if (collectionName) await db.ensureMovies(collectionName, true)
+  } catch (err: unknown) {
+    showToast(err instanceof Error ? err.message : '自动选择失败')
+  }
+}
+
+async function deleteCollection(name: string) {
+  if (!confirm(`确定删除 1 个数据库集合吗？`)) return
+  try {
+    const msg = await db.deleteCollection(name)
+    showToast(msg)
     if (pageMode.value !== 'collection-list') goCollectionList()
   } catch (err: unknown) {
     showToast(err instanceof Error ? err.message : '删除失败')
   }
 }
 
-async function autoSelect(collectionName?: string) {
-  try {
-    const msg = await db.autoSelectMagnets(collectionName)
+function batchDeleteSelected() {
+  const names = Array.from(selectedCollections.value)
+  if (!names.length) return
+  if (!confirm(`确定删除 ${names.length} 个数据库集合吗？`)) return
+  db.batchDeleteCollections(names).then((msg) => {
+    selectedCollections.value = new Set()
     showToast(msg)
-    if (pageMode.value === 'movie-list' && routeCategory.value) {
-      const ok = await db.ensureMovies(routeCategory.value)
-      if (ok) movies.value = db.collectionMovies[routeCategory.value] || []
-    }
-  } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '自动选择失败')
-  }
-}
-
-async function selectMagnet(movieId: string | number, magnetId: number) {
-  if (!routeCategory.value) return
-  await db.selectMagnet(routeCategory.value, movieId, magnetId)
-  magnets.value = await db.loadMovieMagnets(routeCategory.value, movieId)
+  }).catch((err: unknown) => showToast(err instanceof Error ? err.message : '批量删除失败'))
 }
 
 async function copyCollectionMagnets(name: string) {
   try {
-    const res = await apiFetch(`/api/magnets?name=${encodeURIComponent(name)}`).then((r: Response) => r.json())
-    if (res.code !== 200) { showToast(res.msg || '读取失败'); return }
-    const links: string[] = res.data || []
-    if (!links.length) { showToast('该集合暂无已选磁力'); return }
-    const copied = await copyText(links.join('\n'))
-    showToast(copied ? `已复制 ${links.length} 条磁力` : '自动复制失败，请手动复制')
+    const links = await db.getCollectionMagnetLinks(name)
+    if (!links.length) { showToast('暂无磁力链接可复制'); return }
+    const ok = await copyText(links.join('\n'))
+    showToast(ok ? `已复制 ${links.length} 条磁力链接` : '自动复制失败，请在弹窗中手动复制磁力链接')
   } catch (err: unknown) {
     showToast(err instanceof Error ? err.message : '复制失败')
   }
 }
 
-async function copyRankingMagnets(catKey: string, periodKey: string) {
-  try {
-    const links = await db.getRankingMagnets(catKey, periodKey)
-    if (!links.length) { showToast('该排行榜暂无已选磁力'); return }
-    const copied = await copyText(links.join('\n'))
-    showToast(copied ? `已复制 ${links.length} 条磁力` : '自动复制失败，请手动复制')
-  } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '复制失败')
-  }
+async function downloadCsv(name: string) {
+  try { await apiDownloadBlob(db.getCollectionDownloadUrl(name), name) }
+  catch (err: unknown) { showToast(err instanceof Error ? err.message : '下载失败') }
 }
 
-async function handleRankingUpdateTask(catKey: string, periodKey: string) {
+async function enqueueIncremental(name: string) {
+  if (!confirm(`确定对「${displayName(name)}」执行增量爬取吗？`)) return
   try {
-    const res = await db.createRankingUpdateTask(catKey, periodKey)
-    if (res.code === 409 && res.needs_mode) {
-      const useIncremental = confirm(`检测到已有数据：${res.filename || ''}\n确定使用增量，取消使用覆盖。`)
-      if (useIncremental) {
-        // 重试增量
-        await db.createRankingUpdateTask(catKey, periodKey)
-      }
-      return
-    }
-    if (res.code !== 200) { showToast(res.msg || '添加任务失败'); return }
-    showToast(res.msg || '排行榜更新任务已加入队列')
+    const msg = await db.enqueueCollectionIncremental(name)
+    showToast(msg)
     await tasks.refresh()
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '添加任务失败')
+    showToast(err instanceof Error ? err.message : '添加增量任务失败')
   }
 }
 
-function batchDeleteSelected() {
-  const names = Array.from(selectedCollections.value)
-  if (!names.length) return
-  if (!confirm(`确定删除选中的 ${names.length} 个集合吗？此操作不可恢复。`)) return
-  db.batchDeleteCollections(names).then(() => {
-    selectedCollections.value.clear()
-    showToast('已批量删除')
-  }).catch((err: unknown) => showToast(err instanceof Error ? err.message : '批量删除失败'))
+// ===== 排行操作 =====
+async function copyRankingMagnets(catKey: string, periodKey: string) {
+  try {
+    const links = await db.getRankingMagnetLinks(catKey, periodKey)
+    if (!links.length) { showToast('暂无磁力链接可复制'); return }
+    const ok = await copyText(links.join('\n'))
+    showToast(ok ? `已复制 ${links.length} 条磁力链接` : '自动复制失败，请在弹窗中手动复制磁力链接')
+  } catch (err: unknown) {
+    showToast(err instanceof Error ? err.message : '复制失败')
+  }
 }
 
-function toggleSelect(name: string) {
-  const s = new Set(selectedCollections.value)
-  if (s.has(name)) s.delete(name)
-  else s.add(name)
-  selectedCollections.value = s
+async function downloadRankingCsv(catKey: string, periodKey: string) {
+  try { await apiDownloadBlob(db.getRankingDownloadUrl(catKey, periodKey), `ranking_${catKey}_${periodKey}.csv`) }
+  catch (err: unknown) { showToast(err instanceof Error ? err.message : '下载失败') }
 }
 
-// Magnet display
-const MAGNET_STATUS: Record<string, { icon: string; title: string; cls: string }> = {
-  active: { icon: '🟢', title: '有效', cls: 'text-success-text' },
-  weak:   { icon: '🟡', title: '弱',   cls: 'text-warning-text' },
-  dead:   { icon: '🔴', title: '无效', cls: 'text-danger-text' },
-}
-function magnetStatusMeta(m: Magnet) {
-  if (m.check_error && !m.check_status) return { icon: '❌', title: m.check_error, cls: 'text-[color:var(--c-text-muted)]' }
-  if (!m.checked_at) return { icon: '⚪', title: '未检测', cls: 'text-[color:var(--c-text-subtle)]' }
-  const meta = MAGNET_STATUS[m.check_status || '']
-  if (meta) return m.check_status === 'dead' ? { ...meta, title: m.check_error || meta.title } : meta
-  return { icon: '❌', title: m.check_error || '检测失败', cls: 'text-[color:var(--c-text-muted)]' }
+async function updateRankingList(catKey: string, periodKey: string) {
+  try {
+    const res = await db.createRankingUpdateTask(catKey, periodKey)
+    if (res.code !== 200) { showToast(res.msg || '添加更新任务失败'); return }
+    showToast(res.msg || '榜单更新任务已加入队列')
+    await tasks.refresh()
+  } catch (err: unknown) {
+    showToast(err instanceof Error ? err.message : '添加更新任务失败')
+  }
 }
 
-function formatGb(mb: number) { return `${(Number(mb || 0) / 1024).toFixed(1)} GB` }
+async function clearRankingList(catKey: string, periodKey: string) {
+  if (!confirm('确定清空当前榜单吗？')) return
+  try {
+    const msg = await db.clearRankingList(catKey, periodKey)
+    showToast(msg)
+    await db.ensureRankingMovies(catKey, periodKey, true)
+  } catch (err: unknown) {
+    showToast(err instanceof Error ? err.message : '清空失败')
+  }
+}
+
+async function refreshTop250() {
+  try {
+    await db.loadTop250Options(true)
+    showToast('TOP250 分类已刷新')
+    top250Error.value = ''
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : '刷新分类失败'
+    top250Error.value = msg
+    showToast(msg)
+  }
+}
+
+// ===== 标签下拉交互 =====
+function toggleMenu(kind: string, key: string) {
+  const id = `${kind}:${key}`
+  openMenu.value = openMenu.value === id ? null : id
+}
+function isMenuOpen(kind: string, key: string) { return openMenu.value === `${kind}:${key}` }
 </script>
 
 <template>
@@ -309,18 +447,26 @@ function formatGb(mb: number) { return `${(Number(mb || 0) / 1024).toFixed(1)} G
         </div>
       </div>
 
-      <!-- 集合列表工具栏 -->
+      <!-- 集合列表工具栏（仅集合列表页可见）-->
       <div v-if="pageMode === 'collection-list'" class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-2 pt-2">
-        <div class="mb-3 text-xs text-[color:var(--c-text-muted)]">{{ db.collections.length }} 个集合 · {{ totalCount }} 部影片</div>
+        <div class="mb-3 text-xs text-[color:var(--c-text-muted)]">{{ db.collections.length }} 个集合 · {{ db.totalMovies() }} 部影片</div>
         <div class="flex flex-wrap gap-2">
-          <button @click="autoSelect()" class="btn btn-md btn-warning">★ 自动选择</button>
-          <button v-if="selectedCollections.size > 0" @click="batchDeleteSelected" class="btn btn-icon-md btn-danger relative">
+          <button type="button" title="按评分自动选择磁力" aria-label="按评分自动选择磁力" class="btn btn-md btn-warning" @click="autoSelect()">★ 自动选择</button>
+          <MagnetCheckButton scope="all" target="all" />
+          <button
+            v-if="selectedCollections.size > 0"
+            type="button"
+            :title="`批量删除 ${selectedCollections.size} 个数据集合`"
+            :aria-label="`批量删除 ${selectedCollections.size} 个数据集合`"
+            class="btn btn-icon-md btn-danger relative"
+            @click="batchDeleteSelected"
+          >
             <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 15h10l1-15"></path><path d="M10 11v6"></path><path d="M14 11v6"></path>
             </svg>
             <span class="absolute -right-1 -top-1 min-w-4 rounded-full bg-red-600 px-1 text-center text-[10px] leading-4 text-white">{{ selectedCollections.size }}</span>
           </button>
-          <button @click="db.loadCollections()" class="btn btn-icon-md btn-soft">
+          <button type="button" title="刷新" aria-label="刷新数据集合" class="btn btn-icon-md btn-soft" @click="db.loadCollections()">
             <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 12a9 9 0 1 1-2.64-6.36"></path><path d="M21 3v6h-6"></path>
             </svg>
@@ -341,7 +487,7 @@ function formatGb(mb: number) { return `${(Number(mb || 0) / 1024).toFixed(1)} G
           <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-3">
             <div class="text-sm font-bold text-[color:var(--c-text)]">类型</div>
           </div>
-          <div class="min-h-0 flex-1 overflow-y-auto p-4">
+          <div class="min-h-0 flex-1 overflow-y-auto bg-surface-sunken p-4">
             <div class="grid gap-3 md:grid-cols-2">
               <button type="button" @click="goType('ranking')" class="group flex min-h-[92px] flex-col items-start justify-between rounded border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft">
                 <span class="text-base font-bold text-[color:var(--c-text)]">排行榜</span>
@@ -349,7 +495,7 @@ function formatGb(mb: number) { return `${(Number(mb || 0) / 1024).toFixed(1)} G
               </button>
               <button type="button" @click="goType('actor')" class="group flex min-h-[92px] flex-col items-start justify-between rounded border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft">
                 <span class="text-base font-bold text-[color:var(--c-text)]">演员</span>
-                <span class="text-xs font-bold text-[color:var(--c-text-subtle)] group-hover:text-primary-text">{{ db.collections.length }} 个集合 · {{ totalCount }} 部影片</span>
+                <span class="text-xs font-bold text-[color:var(--c-text-subtle)] group-hover:text-primary-text">{{ db.collections.length }} 个集合 · {{ db.totalMovies() }} 部影片</span>
               </button>
             </div>
           </div>
@@ -360,222 +506,302 @@ function formatGb(mb: number) { return `${(Number(mb || 0) / 1024).toFixed(1)} G
           <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-4 pb-4 pt-3">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <input v-model="searchQuery" type="search" class="input md:max-w-sm" placeholder="搜索数据集合" />
-              <label class="flex items-center gap-2 text-xs font-bold text-[color:var(--c-text-muted)]">
-                <input type="checkbox" class="accent-[color:var(--c-primary)]"
-                  :checked="selectedCollections.size === filteredCollections.length && filteredCollections.length > 0"
-                  @change="(e) => { if ((e.target as HTMLInputElement).checked) { filteredCollections.forEach((c: { name: string }) => selectedCollections.add(c.name)) } else { selectedCollections.clear() } }"
-                />
-                全选当前列表
+              <label v-if="db.collections.length" class="flex items-center gap-2 text-xs font-bold text-[color:var(--c-text-muted)]">
+                <input type="checkbox" class="accent-[color:var(--c-primary)]" :checked="allSelected" @change="toggleSelectAll(($event.target as HTMLInputElement).checked)" />
+                <span>全选当前列表</span>
               </label>
             </div>
           </div>
-          <div class="min-h-0 flex-1 divide-y divide-[color:var(--c-border)] overflow-y-auto">
+          <div class="min-h-0 flex-1 divide-y divide-[color:var(--c-border)] overflow-y-auto bg-surface-sunken">
             <div v-if="!filteredCollections.length" class="empty-state px-6 py-10">
               {{ db.collections.length ? '没有匹配的数据集合' : '暂无数据库集合' }}
             </div>
-            <div
-              v-for="item in filteredCollections"
-              :key="item.name"
-              class="group flex items-start gap-3 px-4 py-3 hover:bg-surface-sunken"
-            >
-              <input
-                type="checkbox"
-                class="mt-1 accent-[color:var(--c-primary)]"
-                :checked="selectedCollections.has(item.name)"
-                @change="toggleSelect(item.name)"
-                @click.stop
-              />
+            <div v-for="item in filteredCollections" :key="item.name" class="group flex items-start gap-3 px-4 py-3 hover:bg-surface-sunken">
+              <input type="checkbox" class="mt-1 accent-[color:var(--c-primary)]" :checked="selectedCollections.has(item.name)" @change="toggleSelect(item.name)" @click.stop />
               <button type="button" @click="goCollection(item.name)" class="min-w-0 flex-1 text-left">
                 <div class="flex min-w-0 items-center justify-between gap-2">
                   <div class="truncate font-bold text-[color:var(--c-text)]" :title="displayName(item.name)">{{ displayName(item.name) }}</div>
-                  <span class="badge badge-info shrink-0 text-[11px]">{{ (item as { count?: number }).count || 0 }}</span>
+                  <span class="badge badge-info shrink-0 text-[11px]">{{ item.count }}</span>
                 </div>
-                <div class="mt-1 truncate text-xs text-[color:var(--c-text-subtle)]">
-                  {{ (item as { time?: string }).time || '' }} · {{ ((item as { tags?: unknown[] }).tags || []).length }} 个标签
-                </div>
+                <div class="mt-1 truncate text-xs text-[color:var(--c-text-subtle)]">{{ item.time }} · {{ (item.tags || []).length }} 个标签</div>
               </button>
             </div>
           </div>
         </template>
-
-        <!-- 影片列表 -->
+        <!-- 影片列表（演员集合）-->
         <template v-else-if="pageMode === 'movie-list'">
-          <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-2 flex items-center justify-between gap-2 text-xs text-[color:var(--c-text-muted)]">
-            <span>{{ movies.length }} 部影片</span>
-            <div class="flex gap-1">
-              <button @click="autoSelect(routeCategory!)" class="btn btn-sm btn-warning">★ 自动选择</button>
-              <button @click="copyCollectionMagnets(routeCategory!)" class="btn btn-icon-sm btn-info text-xs" title="复制磁力">⧉</button>
-              <button @click="deleteCollection(routeCategory!)" class="btn btn-icon-sm btn-danger" title="删除集合">
-                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 15h10l1-15"></path>
-                </svg>
-              </button>
-            </div>
-          </div>
-          <div class="min-h-0 flex-1 divide-y divide-[color:var(--c-border)] overflow-y-auto">
-            <div v-if="!movies.length" class="empty-state">暂无影片数据</div>
-            <div
-              v-for="movie in movies"
-              :key="movie.id"
-              @click="goMovie(routeCategory!, movie.id)"
-              class="flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-surface-sunken text-sm"
-            >
+          <!-- 集合工具栏头：影片/标签数 + 健康四宫格 + 集合级检测 -->
+          <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-2 pt-2">
+            <div class="flex min-w-0 items-center justify-between gap-2 text-xs text-[color:var(--c-text-muted)]">
               <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2">
-                  <span class="font-bold">{{ movie.code }}</span>
-                  <span v-if="movie.magnet_health" :class="['badge text-[10px]',
-                    movie.magnet_health === 'active' ? 'badge-success' :
-                    movie.magnet_health === 'weak' ? 'badge-warning' :
-                    movie.magnet_health === 'dead' ? 'badge-danger' : 'badge-neutral'
-                  ]">{{ ({ active: '有效', weak: '弱', dead: '无效' } as Record<string, string>)[movie.magnet_health as string] || movie.magnet_health }}</span>
-                </div>
-                <div v-if="movie.title" class="mt-0.5 truncate text-xs text-[color:var(--c-text-subtle)]">{{ movie.title }}</div>
-                <div v-if="movie.tags?.length" class="mt-1 flex flex-wrap gap-0.5">
-                  <span v-for="tag in movie.tags.slice(0, 4)" :key="tag" class="px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[11px]">{{ tag }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
-
-        <!-- 磁力列表 -->
-        <template v-else-if="pageMode === 'magnet-list'">
-          <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-3">
-            <div v-if="movies.find((m: Movie) => String(m.id) === routeMovieId)" class="text-sm">
-              <div class="font-bold">{{ movies.find((m: Movie) => String(m.id) === routeMovieId)?.code }}</div>
-              <div class="text-xs text-[color:var(--c-text-muted)]">{{ movies.find((m: Movie) => String(m.id) === routeMovieId)?.title }}</div>
-            </div>
-          </div>
-          <div class="min-h-0 flex-1 overflow-y-auto p-4 space-y-2">
-            <div v-if="!magnets.length" class="empty-state">暂无磁力数据</div>
-            <div
-              v-for="mag in magnets"
-              :key="mag.id"
-              :class="['rounded border p-3 text-sm cursor-pointer transition-colors',
-                mag.is_selected ? 'border-[color:var(--c-success)] bg-success-soft' : 'border-[color:var(--c-border)] bg-surface hover:bg-surface-sunken'
-              ]"
-              @click="selectMagnet(routeMovieId!, mag.id)"
-            >
-              <div class="flex items-start gap-2">
-                <span :class="['shrink-0 mt-0.5', magnetStatusMeta(mag).cls]" :title="magnetStatusMeta(mag).title">{{ magnetStatusMeta(mag).icon }}</span>
-                <div class="min-w-0 flex-1">
-                  <div class="truncate text-xs font-mono">{{ mag.url }}</div>
-                  <div class="mt-1 flex flex-wrap gap-2 text-xs text-[color:var(--c-text-muted)]">
-                    <span v-if="mag.size_mb">{{ formatGb(mag.size_mb) }}</span>
-                    <span v-if="mag.is_hd" class="badge badge-info">HD</span>
-                    <span v-if="mag.has_subtitle" class="badge badge-success">字幕</span>
-                    <span v-if="mag.is_selected" class="badge badge-success">已选</span>
+                <div class="flex min-w-0 flex-wrap items-center gap-2">
+                  <span class="shrink-0">{{ Number(currentCollection?.count || 0) }} 部影片 · {{ (currentCollection?.tags || []).length }} 个标签</span>
+                  <div class="flex shrink-0 items-center gap-1" aria-label="磁力检测影片统计">
+                    <span v-for="h in HEALTH_ITEMS" :key="h.key" :title="h.title" class="badge min-w-[4ch] px-1 text-[10px]" :class="h.badge">{{ healthValue(h.key) }}</span>
                   </div>
                 </div>
+                <div class="mt-0.5 truncate text-[11px] leading-none text-[color:var(--c-text-subtle)]">{{ currentCollection?.time || '-' }}</div>
+              </div>
+              <MagnetCheckButton scope="collection" :target="routeCategory!" />
+            </div>
+          </div>
+          <!-- 过滤行 + 影片列表 -->
+          <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-sunken px-4 pb-4 pt-3 text-sm text-[color:var(--c-text-muted)]">
+            <div class="mb-3 flex shrink-0 flex-wrap items-center gap-2">
+              <!-- 标签过滤下拉 -->
+              <div class="relative min-w-0">
+                <button type="button" class="flex h-7 min-w-[104px] items-center justify-between gap-2 rounded border border-[color:var(--c-border)] bg-surface px-2 text-left text-xs font-bold text-[color:var(--c-neutral-text)] transition-colors hover:bg-surface-sunken" @click.stop="toggleMenu('tag', currentFilterKey)">
+                  <span class="min-w-0 truncate">筛选: {{ filteredMovies.length }}/{{ currentMovieData.movies.length }}</span>
+                  <span class="shrink-0">{{ isMenuOpen('tag', currentFilterKey) ? '▲' : '▼' }}</span>
+                </button>
+                <div v-if="isMenuOpen('tag', currentFilterKey)" class="menu w-64 max-h-72 overflow-y-auto" @click.stop>
+                  <label class="menu-item">
+                    <input type="checkbox" class="accent-[color:var(--c-primary)]" :checked="db.getTagFilter(currentFilterKey).length === 0" @change="db.toggleTag(currentFilterKey, 'all')" />
+                    <span class="truncate">全部</span>
+                  </label>
+                  <label v-for="tag in currentMovieData.available_tags" :key="tag" class="menu-item">
+                    <input type="checkbox" class="accent-[color:var(--c-primary)]" :checked="db.getTagFilter(currentFilterKey).includes(tag)" @change="db.toggleTag(currentFilterKey, tag)" />
+                    <span class="truncate" :title="tag">{{ tag }}</span>
+                  </label>
+                </div>
+              </div>
+              <!-- 排除下拉 -->
+              <div class="relative shrink-0">
+                <button
+                  type="button"
+                  class="flex h-7 min-w-[68px] items-center justify-between gap-1 rounded border px-2 text-left text-xs font-bold transition-colors"
+                  :class="db.getExcludeFilter(currentFilterKey).length ? 'border-[color:var(--c-danger)] bg-danger-soft text-danger-text' : 'border-[color:var(--c-border)] bg-surface text-[color:var(--c-text-muted)] hover:bg-surface-sunken'"
+                  @click.stop="toggleMenu('exclude', currentFilterKey)"
+                >
+                  <span class="min-w-0 truncate">{{ db.getExcludeFilter(currentFilterKey).length ? `排除: ${db.getExcludeFilter(currentFilterKey).length}个` : '排除' }}</span>
+                  <span class="shrink-0">{{ isMenuOpen('exclude', currentFilterKey) ? '▲' : '▼' }}</span>
+                </button>
+                <div v-if="isMenuOpen('exclude', currentFilterKey)" class="menu w-64 max-h-72 overflow-y-auto" @click.stop>
+                  <label class="menu-item text-danger-text font-bold">
+                    <input type="checkbox" @change="db.clearExclude(currentFilterKey)" />
+                    <span>清除排除</span>
+                  </label>
+                  <label v-for="tag in currentMovieData.available_tags" :key="tag" class="menu-item hover:bg-danger-soft">
+                    <input type="checkbox" class="accent-[color:var(--c-danger)]" :checked="db.getExcludeFilter(currentFilterKey).includes(tag)" @change="db.toggleExclude(currentFilterKey, tag)" />
+                    <span class="truncate" :class="db.getExcludeFilter(currentFilterKey).includes(tag) ? 'text-danger-text font-bold' : ''" :title="tag">{{ tag }}</span>
+                  </label>
+                </div>
+              </div>
+              <!-- 工具栏动作 -->
+              <div class="ml-auto flex shrink-0 items-center gap-1">
+                <button type="button" title="复制集合磁力" aria-label="复制集合磁力" class="btn btn-icon-sm btn-info text-xs" @click="copyCollectionMagnets(routeCategory!)">⧉</button>
+                <button type="button" title="下载 CSV" aria-label="下载 CSV" class="btn btn-icon-sm btn-success text-xs" @click="downloadCsv(routeCategory!)">⇩</button>
+                <button v-if="currentCollection?.has_source_url" type="button" title="增量爬取此集合" aria-label="增量爬取此集合" class="btn btn-icon-sm btn-info text-xs" @click="enqueueIncremental(routeCategory!)">⟳</button>
+                <button v-else type="button" disabled title="缺少原始 URL，无法快捷增量" aria-label="缺少原始 URL，无法快捷增量" class="btn btn-icon-sm btn-soft text-xs">⟳</button>
+                <button type="button" title="删除集合" aria-label="删除集合" class="btn btn-icon-sm btn-danger" @click="deleteCollection(routeCategory!)">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 15h10l1-15"></path><path d="M10 11v6"></path><path d="M14 11v6"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <!-- 影片列表 -->
+            <div v-if="!filteredMovies.length" class="empty-state">暂无匹配影片记录</div>
+            <div v-else class="min-h-0 flex-1 max-w-full divide-y divide-[color:var(--c-border)] overflow-y-auto rounded-lg border border-[color:var(--c-border)] bg-surface">
+              <div v-for="movie in filteredMovies" :key="movie.id" class="p-3">
+                <button type="button" @click="goMovie(movie.id)" class="block w-full min-w-0 text-left">
+                  <div class="truncate font-bold" :title="`${movie.code} ${movie.title || ''}`"><span>{{ movie.code }}</span> <span class="font-normal text-[color:var(--c-text-muted)]">{{ movie.title || '' }}</span></div>
+                  <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-[color:var(--c-text-muted)]">
+                    <span class="badge badge-info shrink-0 whitespace-nowrap">候选 {{ movie.candidate_count || 0 }}</span>
+                    <span class="min-w-0 truncate" :title="movie.best_magnet_name || '未选中磁力'">{{ movie.best_magnet_name || '未选中磁力' }}</span>
+                  </div>
+                  <div v-if="(movie.tags || []).length" class="movie-tags mt-2 flex max-w-full flex-nowrap gap-0.5 overflow-hidden" :title="(movie.tags || []).join(', ')">
+                    <span v-for="tag in movie.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[11px]">{{ tag }}</span>
+                    <span data-role="more" class="badge badge-info hidden shrink-0 text-[11px]" style="display:none">+0</span>
+                  </div>
+                </button>
               </div>
             </div>
           </div>
         </template>
 
+        <!-- 候选磁力表（演员）-->
+        <template v-else-if="pageMode === 'magnet-list'">
+          <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-4 pt-2">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div class="min-w-0">
+                <div class="truncate text-xs text-[color:var(--c-text-muted)]" :title="currentMovie?.title || currentMovie?.code || ''">{{ currentMovie?.title || currentMovie?.code || '' }}</div>
+                <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-[color:var(--c-text-muted)]">
+                  <MagnetCheckButton v-if="currentMovie" scope="movie" :target="currentMovie.id" />
+                  <div class="min-w-0 truncate" :title="currentMovie?.best_magnet_name || '未选中磁力'">{{ currentMovie?.best_magnet_name || '未选中磁力' }}</div>
+                </div>
+                <div v-if="(currentMovie?.tags || []).length" class="movie-tags mt-2 flex max-w-full flex-nowrap gap-0.5 overflow-hidden" :title="(currentMovie?.tags || []).join(', ')">
+                  <span v-for="tag in currentMovie?.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[11px]">{{ tag }}</span>
+                  <span data-role="more" class="badge badge-info hidden shrink-0 text-[11px]" style="display:none">+0</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-sunken p-4">
+            <MagnetTable :movie-id="routeMovieId!" :magnets="magnets" @select="selectMagnet" />
+          </div>
+        </template>
         <!-- 排行榜分类 -->
         <template v-else-if="pageMode === 'ranking-category'">
           <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-3">
             <div class="text-sm font-bold text-[color:var(--c-text)]">排行榜分类</div>
           </div>
-          <div class="min-h-0 flex-1 overflow-y-auto p-4">
+          <div class="min-h-0 flex-1 overflow-y-auto bg-surface-sunken p-4">
             <div class="grid gap-3 md:grid-cols-2">
-              <button
-                v-for="cat in RANKING_CATEGORIES"
-                :key="cat.key"
-                type="button"
-                @click="goRankingPeriod(cat.key)"
-                class="group flex min-h-[56px] items-center gap-3 rounded border border-[color:var(--c-border)] bg-surface px-4 py-3 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft"
-              >
-                <span class="shrink-0 text-base font-bold text-[color:var(--c-text)]">{{ cat.label }}</span>
-                <span class="text-xs font-bold text-[color:var(--c-text-subtle)] group-hover:text-primary-text">{{ (cat as { subLabel?: string }).subLabel || '日榜 · 周榜 · 月榜' }}</span>
+              <button v-for="cat in RANKING_CATEGORIES" :key="cat.key" type="button" @click="goRankingPeriod(cat.key)" class="group flex min-h-[56px] items-center gap-3 rounded border border-[color:var(--c-border)] bg-surface px-4 py-3 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft">
+                <span class="shrink-0 text-base font-bold leading-none text-[color:var(--c-text)]">{{ cat.label }}</span>
+                <span class="text-xs font-bold leading-none text-[color:var(--c-text-subtle)] group-hover:text-primary-text">{{ (cat as { subLabel?: string }).subLabel || '日榜 · 周榜 · 月榜' }}</span>
               </button>
             </div>
           </div>
         </template>
 
-        <!-- 排行榜周期 -->
+        <!-- 排行榜周期 / TOP250 动态选项 -->
         <template v-else-if="pageMode === 'ranking-period'">
-          <div class="min-h-0 flex-1 overflow-y-auto p-4">
-            <template v-if="rankingCategoryMeta(routeCategory!)?.dynamicOptions">
-              <div class="mb-3 flex items-center justify-between">
-                <span class="text-sm font-bold">TOP250 分类</span>
-                <button @click="db.loadTop250Options(true).catch(err => showToast(err.message || '刷新失败'))" class="btn btn-sm btn-soft">刷新分类</button>
+          <template v-if="rankingCategoryMeta(routeCategory!)?.dynamicOptions">
+            <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-3">
+              <div class="flex items-center justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="text-sm font-bold text-[color:var(--c-text)]">{{ rankingCategoryMeta(routeCategory!)?.label }}</div>
+                  <div class="mt-1 truncate text-xs text-[color:var(--c-text-subtle)]">{{ db.top250Stale ? '使用本地缓存' : '动态分类' }} · {{ (db.top250Options || []).length }} 个选项</div>
+                </div>
+                <button type="button" class="btn btn-sm btn-info shrink-0 text-xs" @click="refreshTop250">刷新分类</button>
               </div>
-              <div v-if="!db.top250Options?.length" class="empty-state">加载中...</div>
-              <div v-else class="grid gap-3 md:grid-cols-2">
-                <button
-                  v-for="opt in db.top250Options"
-                  :key="opt.key"
-                  type="button"
-                  @click="goRankingMovieList(routeCategory!, opt.key)"
-                  class="rounded border border-[color:var(--c-border)] bg-surface px-4 py-3 text-left text-sm font-bold hover:bg-primary-soft"
-                >{{ opt.label }}</button>
+            </div>
+            <div class="min-h-0 flex-1 overflow-y-auto bg-surface-sunken p-4">
+              <div v-if="top250Error" class="empty-state flex-1 flex-col gap-3 px-6 py-10">
+                <div>{{ top250Error }}</div>
+                <button type="button" class="btn btn-sm btn-info text-xs" @click="refreshTop250">刷新分类</button>
               </div>
-            </template>
-            <template v-else>
-              <div class="grid gap-3 md:grid-cols-2">
-                <button
-                  v-for="period in RANKING_PERIODS"
-                  :key="period.key"
-                  type="button"
-                  @click="goRankingMovieList(routeCategory!, period.key)"
-                  class="rounded border border-[color:var(--c-border)] bg-surface px-4 py-3 text-left text-sm font-bold hover:bg-primary-soft"
-                >{{ period.label }}</button>
+              <div v-else-if="!(db.top250Options || []).length" class="empty-state flex-1 flex-col gap-3 px-6 py-10">
+                <div>暂无 TOP250 分类，请点击刷新分类</div>
+                <button type="button" class="btn btn-sm btn-info text-xs" @click="refreshTop250">刷新分类</button>
               </div>
-            </template>
-          </div>
+              <div v-else class="grid gap-3 md:grid-cols-3">
+                <button v-for="opt in db.top250Options" :key="opt.key" type="button" @click="goRankingMovieList(routeCategory!, opt.key)" class="group flex min-h-[56px] items-center gap-3 rounded border border-[color:var(--c-border)] bg-surface px-4 py-3 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft">
+                  <span class="shrink-0 text-base font-bold leading-none text-[color:var(--c-text)]">{{ opt.label }}</span>
+                  <span class="text-xs font-bold leading-none text-[color:var(--c-text-subtle)] group-hover:text-primary-text">影片列表</span>
+                </button>
+              </div>
+            </div>
+          </template>
+          <template v-else>
+            <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-3">
+              <div class="text-sm font-bold text-[color:var(--c-text)]">{{ rankingCategoryMeta(routeCategory!)?.label }}</div>
+            </div>
+            <div class="min-h-0 flex-1 overflow-y-auto bg-surface-sunken p-4">
+              <div class="grid gap-3 md:grid-cols-3">
+                <button v-for="period in RANKING_PERIODS" :key="period.key" type="button" @click="goRankingMovieList(routeCategory!, period.key)" class="group flex min-h-[92px] flex-col items-start justify-between rounded border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft">
+                  <span class="text-base font-bold text-[color:var(--c-text)]">{{ period.label }}</span>
+                  <span class="text-xs font-bold text-[color:var(--c-text-subtle)] group-hover:text-primary-text">影片列表</span>
+                </button>
+              </div>
+            </div>
+          </template>
         </template>
 
         <!-- 排行榜影片列表 -->
         <template v-else-if="pageMode === 'ranking-movie-list'">
-          <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-2 flex items-center justify-end gap-1">
-            <button @click="handleRankingUpdateTask(routeCategory!, routePeriod!)" class="btn btn-sm btn-info" title="更新排行榜">↻ 更新</button>
-            <button @click="copyRankingMagnets(routeCategory!, routePeriod!)" class="btn btn-icon-sm btn-info text-xs" title="复制磁力">⧉</button>
-            <a :href="db.getRankingDownloadUrl(routeCategory!, routePeriod!)" class="btn btn-icon-sm btn-success text-xs" title="下载 CSV">⇩</a>
-          </div>
-          <div class="min-h-0 flex-1 divide-y divide-[color:var(--c-border)] overflow-y-auto">
-            <div v-if="!movies.length" class="empty-state">暂无排行榜数据</div>
-            <div
-              v-for="(movie, idx) in movies"
-              :key="movie.id"
-              @click="goRankingMagnet(routeCategory!, routePeriod!, movie.id)"
-              class="flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-surface-sunken text-sm"
-            >
-              <span class="shrink-0 w-6 text-center text-xs font-bold text-[color:var(--c-text-muted)]">{{ idx + 1 }}</span>
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2">
-                  <span class="font-bold">{{ movie.code }}</span>
+          <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-2 pt-2">
+            <div class="flex min-w-0 flex-wrap items-center justify-between gap-2 text-xs text-[color:var(--c-text-muted)]">
+              <div class="flex min-w-0 flex-wrap items-center gap-2">
+                <span class="min-w-0 truncate">{{ rankingCategoryMeta(routeCategory!)?.label }} · {{ rankingPeriodForCategory(routeCategory!, routePeriod!)?.label || routePeriod }} · {{ Number(currentMovieData.total_count || currentMovieData.movies.length) }} 部影片</span>
+                <div class="flex shrink-0 items-center gap-1" aria-label="磁力检测影片统计">
+                  <span v-for="h in HEALTH_ITEMS" :key="h.key" :title="h.title" class="badge min-w-[4ch] px-1 text-[10px]" :class="h.badge">{{ healthValue(h.key) }}</span>
                 </div>
-                <div v-if="movie.title" class="truncate text-xs text-[color:var(--c-text-subtle)]">{{ movie.title }}</div>
+              </div>
+              <MagnetCheckButton scope="ranking" :target="`${routeCategory}:${routePeriod}`" />
+            </div>
+          </div>
+          <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-sunken px-4 pb-4 pt-3 text-sm text-[color:var(--c-text-muted)]">
+            <div class="mb-3 flex shrink-0 flex-wrap items-center gap-2">
+              <!-- 标签过滤下拉 -->
+              <div class="relative min-w-0">
+                <button type="button" class="flex h-7 min-w-[104px] items-center justify-between gap-2 rounded border border-[color:var(--c-border)] bg-surface px-2 text-left text-xs font-bold text-[color:var(--c-neutral-text)] transition-colors hover:bg-surface-sunken" @click.stop="toggleMenu('tag', currentFilterKey)">
+                  <span class="min-w-0 truncate">筛选: {{ filteredMovies.length }}/{{ Number(currentMovieData.total_count || currentMovieData.movies.length) }}</span>
+                  <span class="shrink-0">{{ isMenuOpen('tag', currentFilterKey) ? '▲' : '▼' }}</span>
+                </button>
+                <div v-if="isMenuOpen('tag', currentFilterKey)" class="menu w-64 max-h-72 overflow-y-auto" @click.stop>
+                  <label class="menu-item">
+                    <input type="checkbox" class="accent-[color:var(--c-primary)]" :checked="db.getTagFilter(currentFilterKey).length === 0" @change="db.toggleTag(currentFilterKey, 'all')" />
+                    <span class="truncate">全部</span>
+                  </label>
+                  <label v-for="tag in currentMovieData.available_tags" :key="tag" class="menu-item">
+                    <input type="checkbox" class="accent-[color:var(--c-primary)]" :checked="db.getTagFilter(currentFilterKey).includes(tag)" @change="db.toggleTag(currentFilterKey, tag)" />
+                    <span class="truncate" :title="tag">{{ tag }}</span>
+                  </label>
+                </div>
+              </div>
+              <!-- 排除下拉 -->
+              <div class="relative shrink-0">
+                <button type="button" class="flex h-7 min-w-[68px] items-center justify-between gap-1 rounded border px-2 text-left text-xs font-bold transition-colors" :class="db.getExcludeFilter(currentFilterKey).length ? 'border-[color:var(--c-danger)] bg-danger-soft text-danger-text' : 'border-[color:var(--c-border)] bg-surface text-[color:var(--c-text-muted)] hover:bg-surface-sunken'" @click.stop="toggleMenu('exclude', currentFilterKey)">
+                  <span class="min-w-0 truncate">{{ db.getExcludeFilter(currentFilterKey).length ? `排除: ${db.getExcludeFilter(currentFilterKey).length}个` : '排除' }}</span>
+                  <span class="shrink-0">{{ isMenuOpen('exclude', currentFilterKey) ? '▲' : '▼' }}</span>
+                </button>
+                <div v-if="isMenuOpen('exclude', currentFilterKey)" class="menu w-64 max-h-72 overflow-y-auto" @click.stop>
+                  <label class="menu-item text-danger-text font-bold">
+                    <input type="checkbox" @change="db.clearExclude(currentFilterKey)" />
+                    <span>清除排除</span>
+                  </label>
+                  <label v-for="tag in currentMovieData.available_tags" :key="tag" class="menu-item hover:bg-danger-soft">
+                    <input type="checkbox" class="accent-[color:var(--c-danger)]" :checked="db.getExcludeFilter(currentFilterKey).includes(tag)" @change="db.toggleExclude(currentFilterKey, tag)" />
+                    <span class="truncate" :class="db.getExcludeFilter(currentFilterKey).includes(tag) ? 'text-danger-text font-bold' : ''" :title="tag">{{ tag }}</span>
+                  </label>
+                </div>
+              </div>
+              <!-- 榜单工具栏动作 -->
+              <div class="ml-auto flex shrink-0 items-center gap-1">
+                <button type="button" title="复制榜单磁力" aria-label="复制榜单磁力" class="btn btn-icon-sm btn-info text-xs" @click="copyRankingMagnets(routeCategory!, routePeriod!)">⧉</button>
+                <button type="button" title="下载榜单 CSV" aria-label="下载榜单 CSV" class="btn btn-icon-sm btn-success text-xs" @click="downloadRankingCsv(routeCategory!, routePeriod!)">⇩</button>
+                <button type="button" title="更新榜单" aria-label="更新榜单" class="btn btn-icon-sm btn-info text-xs" @click="updateRankingList(routeCategory!, routePeriod!)">⟳</button>
+                <button type="button" title="清空榜单" aria-label="清空榜单" class="btn btn-icon-sm btn-danger" @click="clearRankingList(routeCategory!, routePeriod!)">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 15h10l1-15"></path><path d="M10 11v6"></path><path d="M14 11v6"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <!-- 榜单影片列表 -->
+            <div v-if="!filteredMovies.length" class="min-h-0 flex-1 max-w-full overflow-y-auto rounded-lg border border-[color:var(--c-border)] bg-surface">
+              <div class="empty-state px-6 py-10">暂无榜单影片</div>
+            </div>
+            <div v-else class="min-h-0 flex-1 max-w-full divide-y divide-[color:var(--c-border)] overflow-y-auto rounded-lg border border-[color:var(--c-border)] bg-surface">
+              <div v-for="movie in filteredMovies" :key="movie.id" class="p-3">
+                <button type="button" @click="goRankingMagnet(movie.id)" class="block w-full min-w-0 text-left transition-colors hover:text-primary-text">
+                  <div class="truncate font-bold" :title="`${movie.code} ${movie.title || ''}`"><span>{{ movie.code }}</span> <span class="font-normal text-[color:var(--c-text-muted)]">{{ movie.title || '' }}</span></div>
+                  <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-[color:var(--c-text-muted)]">
+                    <span class="badge badge-info shrink-0 whitespace-nowrap">候选 {{ movie.candidate_count || 0 }}</span>
+                    <span class="min-w-0 truncate" :title="movie.best_magnet_name || '未选中磁力'">{{ movie.best_magnet_name || '未选中磁力' }}</span>
+                  </div>
+                  <div v-if="(movie.tags || []).length" class="movie-tags mt-2 flex max-w-full flex-nowrap gap-0.5 overflow-hidden" :title="(movie.tags || []).join(', ')">
+                    <span v-for="tag in movie.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[11px]">{{ tag }}</span>
+                    <span data-role="more" class="badge badge-info hidden shrink-0 text-[11px]" style="display:none">+0</span>
+                  </div>
+                </button>
               </div>
             </div>
           </div>
         </template>
 
-        <!-- 排行榜磁力列表 -->
+        <!-- 候选磁力表（排行榜）-->
         <template v-else-if="pageMode === 'ranking-magnet-list'">
-          <div class="min-h-0 flex-1 overflow-y-auto p-4 space-y-2">
-            <div v-if="!magnets.length" class="empty-state">暂无磁力数据</div>
-            <div
-              v-for="mag in magnets"
-              :key="mag.id"
-              :class="['rounded border p-3 text-sm',
-                mag.is_selected ? 'border-[color:var(--c-success)] bg-success-soft' : 'border-[color:var(--c-border)] bg-surface'
-              ]"
-            >
-              <div class="flex items-start gap-2">
-                <span :class="['shrink-0 mt-0.5', magnetStatusMeta(mag).cls]" :title="magnetStatusMeta(mag).title">{{ magnetStatusMeta(mag).icon }}</span>
-                <div class="min-w-0 flex-1">
-                  <div class="truncate text-xs font-mono">{{ mag.url }}</div>
-                  <div class="mt-1 flex flex-wrap gap-2 text-xs text-[color:var(--c-text-muted)]">
-                    <span v-if="mag.size_mb">{{ formatGb(mag.size_mb) }}</span>
-                    <span v-if="mag.is_hd" class="badge badge-info">HD</span>
-                    <span v-if="mag.has_subtitle" class="badge badge-success">字幕</span>
-                    <span v-if="mag.is_selected" class="badge badge-success">已选</span>
-                  </div>
+          <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-4 pt-2">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div class="min-w-0">
+                <div class="truncate text-xs text-[color:var(--c-text-muted)]" :title="currentMovie?.title || currentMovie?.code || ''">{{ currentMovie?.title || currentMovie?.code || '' }}</div>
+                <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-[color:var(--c-text-muted)]">
+                  <MagnetCheckButton v-if="currentMovie" scope="movie" :target="currentMovie.id" />
+                  <div class="min-w-0 truncate" :title="currentMovie?.best_magnet_name || '未选中磁力'">{{ currentMovie?.best_magnet_name || '未选中磁力' }}</div>
+                </div>
+                <div v-if="(currentMovie?.tags || []).length" class="movie-tags mt-2 flex max-w-full flex-nowrap gap-0.5 overflow-hidden" :title="(currentMovie?.tags || []).join(', ')">
+                  <span v-for="tag in currentMovie?.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[11px]">{{ tag }}</span>
+                  <span data-role="more" class="badge badge-info hidden shrink-0 text-[11px]" style="display:none">+0</span>
                 </div>
               </div>
             </div>
+          </div>
+          <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-sunken p-4">
+            <MagnetTable :movie-id="routeMovieId!" :magnets="magnets" @select="selectMagnet" />
           </div>
         </template>
       </div>

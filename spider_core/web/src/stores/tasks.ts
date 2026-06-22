@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { apiFetch, apiFetchJson, apiPost } from '@/api'
 import { useEventStream } from '@/composables/useEventStream'
 import type { Task, QueueStatus, ApiResponse } from '@/types'
@@ -27,7 +27,6 @@ export const useTasksStore = defineStore('tasks', () => {
   const sseConnected = ref(false)
   const collectionsChanged = ref(false)
 
-  let pollHandle: ReturnType<typeof setTimeout> | null = null
   let sseInstance: ReturnType<typeof useEventStream> | null = null
 
   const visibleTasks = computed(() =>
@@ -58,51 +57,25 @@ export const useTasksStore = defineStore('tasks', () => {
     logs.value = (statusRes as { logs?: string[] }).logs || []
   }
 
-  function startPolling(intervalMs = 2500) {
-    if (pollHandle) return
-    const tick = async () => {
-      try { await refresh() } catch (err) { console.error('轮询出错:', err) }
-      finally { if (pollHandle) pollHandle = setTimeout(tick, intervalMs) }
-    }
-    pollHandle = setTimeout(tick, intervalMs)
-  }
-
-  function stopPolling() {
-    if (pollHandle) { clearTimeout(pollHandle); pollHandle = null }
-  }
-
   function startSSE(getToken?: () => string) {
     if (sseInstance) return
     sseInstance = useEventStream(
       (event) => {
         applySSEEvent(event as { tasks: Task[]; queue: QueueStatus; logs: string[]; collectionsChanged: boolean })
-        if (!sseConnected.value) {
-          sseConnected.value = true
-          stopPolling()
-        }
       },
       getToken,
     )
-    sseInstance.status.value  // access to init watcher
-    // 监听连接状态：断开时回退轮询
-    const unwatchStatus = (sseInstance as { status: { value: string } }).status
-    const checkDisconnect = () => {
-      if (['disconnected', 'error'].includes(String(unwatchStatus.value)) && sseConnected.value) {
-        sseConnected.value = false
-        if (!pollHandle) startPolling()
-      }
-    }
-    // 每 5s 检查 SSE 状态，确保断线时能回退
-    const monitor = setInterval(checkDisconnect, 5000)
+    const stopStatusWatch = watch(sseInstance.status, (status) => {
+      sseConnected.value = status === 'connected'
+    }, { immediate: true })
+    ;(sseInstance as unknown as { _stopStatusWatch: () => void })._stopStatusWatch = stopStatusWatch
     sseInstance.connect()
-    // 清理函数挂到 store（在 app unmount 时调用）
-    ;(sseInstance as unknown as { _monitor: ReturnType<typeof setInterval> })._monitor = monitor
   }
 
   function stopSSE() {
     if (sseInstance) {
-      const m = (sseInstance as unknown as { _monitor?: ReturnType<typeof setInterval> })._monitor
-      if (m) clearInterval(m)
+      const stopStatusWatch = (sseInstance as unknown as { _stopStatusWatch?: () => void })._stopStatusWatch
+      if (stopStatusWatch) stopStatusWatch()
       sseInstance.disconnect()
       sseInstance = null
       sseConnected.value = false
@@ -116,7 +89,6 @@ export const useTasksStore = defineStore('tasks', () => {
   async function startQueue() {
     const res = await apiFetch('/api/tasks/start_queue', { method: 'POST' }).then((r: Response) => r.json())
     if (res.code !== 200) throw new Error(res.msg || '无法启动队列')
-    if (!sseConnected.value) startPolling()
     await refresh()
   }
 
@@ -166,7 +138,7 @@ export const useTasksStore = defineStore('tasks', () => {
   return {
     tasks, queueStatus, logs, showFinished, sseConnected, collectionsChanged,
     visibleTasks, currentTask,
-    refresh, startPolling, stopPolling, startSSE, stopSSE, toggleShowFinished, clearCollectionsChanged,
+    refresh, startSSE, stopSSE, toggleShowFinished, clearCollectionsChanged,
     startQueue, taskAction, addTask, cleanupFinished, fetchTags, getIncrementalMagnets,
   }
 })

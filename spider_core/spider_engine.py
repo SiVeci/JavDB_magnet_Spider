@@ -144,6 +144,12 @@ def update_status(state="idle", progress="", current="", log_msg=None, clear_log
         status_data["logs"].append(f"[{time_str}] {log_msg}")
 
     atomic_write_json(STATUS_FILE, status_data, indent=2)
+    if task_id:
+        try:
+            from services.queue_service import broadcast_update
+            broadcast_update(db_store.get_task(task_id))
+        except Exception:
+            pass
 
 def save_checkpoint(data):
     task_id = get_current_task_id()

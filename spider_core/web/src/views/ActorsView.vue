@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useActorsStore } from '@/stores/actors'
 import { useTasksStore } from '@/stores/tasks'
@@ -12,6 +12,7 @@ const tasksStore = useTasksStore()
 const { showToast } = useToast()
 
 const refreshing = ref(false)
+const layoutFrame = ref<number | null>(null)
 
 const refreshInfo = computed(() => {
   const actors = actorsStore.filtered
@@ -60,14 +61,46 @@ function goToCollection(filename: string) {
   router.push(`/database/actor/${encodeURIComponent(filename)}`)
 }
 
-onMounted(() => {
+function setPageScrollLocked(locked: boolean) {
+  document.documentElement.classList.toggle('app-view-locked', locked)
+  document.body.classList.toggle('app-view-locked', locked)
+}
+
+function scheduleFitLayout() {
+  if (layoutFrame.value) return
+  layoutFrame.value = requestAnimationFrame(() => { layoutFrame.value = null; fitActorsLayout() })
+}
+
+function fitActorsLayout() {
+  const view = document.getElementById('view-actors')
+  if (!view) return
+  const rect = view.getBoundingClientRect()
+  const vh = window.innerHeight || document.documentElement.clientHeight || 0
+  const documentTop = rect.top + (window.scrollY || 0)
+  const bodyStyle = window.getComputedStyle(document.body)
+  const bodyBottom = parseFloat(bodyStyle.paddingBottom) || 0
+  const available = Math.floor(vh - documentTop - bodyBottom - 16)
+  if (available > 0) { view.style.height = `${available}px`; view.style.overflow = 'hidden' }
+}
+
+const resizeHandler = () => scheduleFitLayout()
+onMounted(async () => {
+  setPageScrollLocked(true)
+  window.addEventListener('resize', resizeHandler)
   if (!actorsStore.loaded) actorsStore.load()
+  await nextTick()
+  scheduleFitLayout()
+})
+onUnmounted(() => {
+  window.removeEventListener('resize', resizeHandler)
+  if (layoutFrame.value) cancelAnimationFrame(layoutFrame.value)
+  setPageScrollLocked(false)
 })
 </script>
 
 <template>
-  <section class="space-y-4">
-    <section class="card flex h-[calc(100dvh-190px)] min-h-0 min-w-0 flex-col overflow-hidden">
+  <section id="view-actors" class="min-h-0 overflow-hidden">
+    <section class="card flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-3 text-sm font-semibold">收藏演员</div>
       <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-2 pt-2 space-y-2">
         <div class="flex min-w-0 items-center gap-2">
@@ -76,7 +109,7 @@ onMounted(() => {
             <select
               :value="actorsStore.category"
               @change="actorsStore.selectCategory(($event.target as HTMLSelectElement).value)"
-              class="h-9 w-full rounded border border-[color:var(--c-border)] bg-surface px-3 text-sm font-semibold text-[color:var(--c-text)] focus:border-primary focus:outline-none focus:ring-2 focus:ring-[color:var(--c-primary-ring)]"
+              class="h-7 w-full rounded border border-[color:var(--c-border)] bg-surface px-2 text-xs font-semibold text-[color:var(--c-text)] focus:border-primary focus:outline-none focus:ring-2 focus:ring-[color:var(--c-primary-ring)]"
             >
               <option
                 v-for="cat in actorsStore.categories"
@@ -88,10 +121,10 @@ onMounted(() => {
           <button
             @click="handleRefresh"
             :disabled="refreshing"
-            class="btn btn-icon-md btn-info"
+            class="btn btn-icon-sm btn-info"
             title="刷新当前分类" aria-label="刷新当前分类"
           >
-            <svg :class="['w-4 h-4', refreshing ? 'animate-spin' : '']" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <svg :class="['w-3.5 h-3.5', refreshing ? 'animate-spin' : '']" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               <path d="M3 16v5h5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
               <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>

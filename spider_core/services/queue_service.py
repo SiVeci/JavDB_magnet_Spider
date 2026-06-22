@@ -21,14 +21,14 @@ def write_status_mirror(task=None, collections_changed: bool = False):
             "logs": ["等待任务启动..."],
         }
         atomic_write_json(STATUS_FILE, empty_status, indent=2)
-        _broadcast_update(None, collections_changed)
+        broadcast_update(None, collections_changed)
         return
     data = task_to_response(task, include_logs=True)
     atomic_write_json(STATUS_FILE, data, indent=2)
-    _broadcast_update(task, collections_changed)
+    broadcast_update(task, collections_changed)
 
 
-def _broadcast_update(task=None, collections_changed: bool = False):
+def broadcast_update(task=None, collections_changed: bool = False):
     """构造全量快照并广播给所有 SSE 订阅者。"""
     try:
         tasks = db_store.list_tasks(limit=100)
