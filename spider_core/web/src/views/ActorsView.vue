@@ -166,7 +166,7 @@ onUnmounted(() => {
                   <span class="badge badge-neutral shrink-0">{{ actorsStore.categoryLabel(actor.category) }}</span>
                 </div>
                 <div v-if="actor.last_task_tags?.length" class="mt-1 flex flex-wrap gap-1">
-                  <span v-for="t in actor.last_task_tags" :key="t.value" class="badge badge-info">{{ t.name || t.value }}</span>
+                  <span v-for="t in actor.last_task_tags" :key="t.value" class="badge badge-info text-[10px]">{{ t.name || t.value }}</span>
                 </div>
               </div>
               <div class="flex shrink-0 items-center gap-1">

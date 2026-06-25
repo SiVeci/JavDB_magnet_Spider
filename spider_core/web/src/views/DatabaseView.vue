@@ -449,28 +449,30 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
 
       <!-- 集合列表工具栏（仅集合列表页可见）-->
       <div v-if="pageMode === 'collection-list'" class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-2 pt-2">
-        <div class="mb-3 text-xs text-[color:var(--c-text-muted)]">{{ db.collections.length }} 个集合 · {{ db.totalMovies() }} 部影片</div>
-        <div class="flex flex-wrap gap-2">
-          <button type="button" title="按评分自动选择磁力" aria-label="按评分自动选择磁力" class="btn btn-sm btn-warning" @click="autoSelect()">★ 自动选择</button>
-          <MagnetCheckButton scope="all" target="all" />
-          <button
-            v-if="selectedCollections.size > 0"
-            type="button"
-            :title="`批量删除 ${selectedCollections.size} 个数据集合`"
-            :aria-label="`批量删除 ${selectedCollections.size} 个数据集合`"
-            class="btn btn-icon-sm btn-danger relative"
-            @click="batchDeleteSelected"
-          >
-            <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 15h10l1-15"></path><path d="M10 11v6"></path><path d="M14 11v6"></path>
-            </svg>
-            <span class="absolute -right-1 -top-1 min-w-4 rounded-full bg-red-600 px-1 text-center text-[10px] leading-4 text-white">{{ selectedCollections.size }}</span>
-          </button>
-          <button type="button" title="刷新" aria-label="刷新数据集合" class="btn btn-icon-sm btn-soft" @click="db.loadCollections()">
-            <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12a9 9 0 1 1-2.64-6.36"></path><path d="M21 3v6h-6"></path>
-            </svg>
-          </button>
+        <div class="flex items-center justify-between gap-1">
+          <div class="shrink-0 whitespace-nowrap text-[11px] text-[color:var(--c-text-muted)]">{{ db.collections.length }} 个集合 · {{ db.totalMovies() }} 部影片</div>
+          <div class="flex shrink-0 items-center gap-1">
+            <button type="button" title="按评分自动选择磁力" aria-label="按评分自动选择磁力" class="btn btn-sm btn-warning" @click="autoSelect()">★ 自动选择</button>
+            <MagnetCheckButton scope="all" target="all" compact />
+            <button
+              v-if="selectedCollections.size > 0"
+              type="button"
+              :title="`批量删除 ${selectedCollections.size} 个数据集合`"
+              :aria-label="`批量删除 ${selectedCollections.size} 个数据集合`"
+              class="btn btn-icon-sm btn-danger relative"
+              @click="batchDeleteSelected"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="M6 6l1 15h10l1-15"></path><path d="M10 11v6"></path><path d="M14 11v6"></path>
+              </svg>
+              <span class="absolute -right-1 -top-1 min-w-4 rounded-full bg-red-600 px-1 text-center text-[10px] leading-4 text-white">{{ selectedCollections.size }}</span>
+            </button>
+            <button type="button" title="刷新" aria-label="刷新数据集合" class="btn btn-icon-sm btn-soft" @click="db.loadCollections()">
+              <svg aria-hidden="true" viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12a9 9 0 1 1-2.64-6.36"></path><path d="M21 3v6h-6"></path>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -489,13 +491,13 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
           </div>
           <div class="min-h-0 flex-1 overflow-y-auto bg-surface-sunken p-4">
             <div class="grid gap-3 md:grid-cols-2">
-              <button type="button" @click="goType('ranking')" class="group flex min-h-[92px] flex-col items-start justify-between rounded border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft">
-                <span class="text-base font-bold text-[color:var(--c-text)]">排行榜</span>
-                <span class="text-xs font-bold text-[color:var(--c-text-subtle)] group-hover:text-primary-text">{{ RANKING_CATEGORIES.length }} 个分类</span>
+              <button type="button" @click="goType('ranking')" class="group flex min-h-[56px] items-center justify-between gap-3 rounded border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft">
+                <span class="shrink-0 text-sm font-bold text-[color:var(--c-text)] md:text-base">排行榜</span>
+                <span class="min-w-0 truncate text-xs font-bold text-[color:var(--c-text-subtle)] group-hover:text-primary-text">{{ RANKING_CATEGORIES.length }} 个分类</span>
               </button>
-              <button type="button" @click="goType('actor')" class="group flex min-h-[92px] flex-col items-start justify-between rounded border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft">
-                <span class="text-base font-bold text-[color:var(--c-text)]">演员</span>
-                <span class="text-xs font-bold text-[color:var(--c-text-subtle)] group-hover:text-primary-text">{{ db.collections.length }} 个集合 · {{ db.totalMovies() }} 部影片</span>
+              <button type="button" @click="goType('actor')" class="group flex min-h-[56px] items-center justify-between gap-3 rounded border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft">
+                <span class="shrink-0 text-sm font-bold text-[color:var(--c-text)] md:text-base">演员</span>
+                <span class="min-w-0 truncate text-xs font-bold text-[color:var(--c-text-subtle)] group-hover:text-primary-text">{{ db.collections.length }} 个集合 · {{ db.totalMovies() }} 部影片</span>
               </button>
             </div>
           </div>
@@ -520,7 +522,7 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
               <input type="checkbox" class="mt-1 accent-[color:var(--c-primary)]" :checked="selectedCollections.has(item.name)" @change="toggleSelect(item.name)" @click.stop />
               <button type="button" @click="goCollection(item.name)" class="min-w-0 flex-1 text-left">
                 <div class="flex min-w-0 items-center justify-between gap-2">
-                  <div class="truncate font-bold text-[color:var(--c-text)]" :title="displayName(item.name)">{{ displayName(item.name) }}</div>
+                  <div class="truncate text-sm font-bold text-[color:var(--c-text)] md:text-base" :title="displayName(item.name)">{{ displayName(item.name) }}</div>
                   <span class="badge badge-info shrink-0 text-[11px]">{{ item.count }}</span>
                 </div>
                 <div class="mt-1 truncate text-xs text-[color:var(--c-text-subtle)]">{{ item.time }} · {{ (item.tags || []).length }} 个标签</div>
@@ -611,8 +613,8 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
                     <span class="min-w-0 truncate" :title="movie.best_magnet_name || '未选中磁力'">{{ movie.best_magnet_name || '未选中磁力' }}</span>
                   </div>
                   <div v-if="(movie.tags || []).length" class="movie-tags mt-2 flex max-w-full flex-nowrap gap-0.5 overflow-hidden" :title="(movie.tags || []).join(', ')">
-                    <span v-for="tag in movie.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[11px]">{{ tag }}</span>
-                    <span data-role="more" class="badge badge-info hidden shrink-0 text-[11px]" style="display:none">+0</span>
+                    <span v-for="tag in movie.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[10px]">{{ tag }}</span>
+                    <span data-role="more" class="badge badge-info hidden shrink-0 text-[10px]" style="display:none">+0</span>
                   </div>
                 </button>
               </div>
@@ -631,8 +633,8 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
                   <div class="min-w-0 truncate" :title="currentMovie?.best_magnet_name || '未选中磁力'">{{ currentMovie?.best_magnet_name || '未选中磁力' }}</div>
                 </div>
                 <div v-if="(currentMovie?.tags || []).length" class="movie-tags mt-2 flex max-w-full flex-nowrap gap-0.5 overflow-hidden" :title="(currentMovie?.tags || []).join(', ')">
-                  <span v-for="tag in currentMovie?.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[11px]">{{ tag }}</span>
-                  <span data-role="more" class="badge badge-info hidden shrink-0 text-[11px]" style="display:none">+0</span>
+                  <span v-for="tag in currentMovie?.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[10px]">{{ tag }}</span>
+                  <span data-role="more" class="badge badge-info hidden shrink-0 text-[10px]" style="display:none">+0</span>
                 </div>
               </div>
             </div>
@@ -649,7 +651,7 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
           <div class="min-h-0 flex-1 overflow-y-auto bg-surface-sunken p-4">
             <div class="grid gap-3 md:grid-cols-2">
               <button v-for="cat in RANKING_CATEGORIES" :key="cat.key" type="button" @click="goRankingPeriod(cat.key)" class="group flex min-h-[56px] items-center gap-3 rounded border border-[color:var(--c-border)] bg-surface px-4 py-3 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft">
-                <span class="shrink-0 text-base font-bold leading-none text-[color:var(--c-text)]">{{ cat.label }}</span>
+                <span class="shrink-0 text-sm font-bold leading-none text-[color:var(--c-text)] md:text-base">{{ cat.label }}</span>
                 <span class="text-xs font-bold leading-none text-[color:var(--c-text-subtle)] group-hover:text-primary-text">{{ (cat as { subLabel?: string }).subLabel || '日榜 · 周榜 · 月榜' }}</span>
               </button>
             </div>
@@ -678,9 +680,9 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
                 <button type="button" class="btn btn-sm btn-info text-xs" @click="refreshTop250">刷新分类</button>
               </div>
               <div v-else class="grid gap-3 md:grid-cols-3">
-                <button v-for="opt in db.top250Options" :key="opt.key" type="button" @click="goRankingMovieList(routeCategory!, opt.key)" class="group flex min-h-[56px] items-center gap-3 rounded border border-[color:var(--c-border)] bg-surface px-4 py-3 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft">
-                  <span class="shrink-0 text-base font-bold leading-none text-[color:var(--c-text)]">{{ opt.label }}</span>
-                  <span class="text-xs font-bold leading-none text-[color:var(--c-text-subtle)] group-hover:text-primary-text">影片列表</span>
+                <button v-for="opt in db.top250Options" :key="opt.key" type="button" @click="goRankingMovieList(routeCategory!, opt.key)" class="group flex min-h-[56px] items-center justify-between gap-3 rounded border border-[color:var(--c-border)] bg-surface px-4 py-3 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft">
+                  <span class="shrink-0 text-sm font-bold leading-none text-[color:var(--c-text)] md:text-base">{{ opt.label }}</span>
+                  <span class="min-w-0 truncate text-xs font-bold leading-none text-[color:var(--c-text-subtle)] group-hover:text-primary-text">影片列表</span>
                 </button>
               </div>
             </div>
@@ -691,9 +693,9 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
             </div>
             <div class="min-h-0 flex-1 overflow-y-auto bg-surface-sunken p-4">
               <div class="grid gap-3 md:grid-cols-3">
-                <button v-for="period in RANKING_PERIODS" :key="period.key" type="button" @click="goRankingMovieList(routeCategory!, period.key)" class="group flex min-h-[92px] flex-col items-start justify-between rounded border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft">
-                  <span class="text-base font-bold text-[color:var(--c-text)]">{{ period.label }}</span>
-                  <span class="text-xs font-bold text-[color:var(--c-text-subtle)] group-hover:text-primary-text">影片列表</span>
+                <button v-for="period in RANKING_PERIODS" :key="period.key" type="button" @click="goRankingMovieList(routeCategory!, period.key)" class="group flex min-h-[56px] items-center justify-between gap-3 rounded border border-[color:var(--c-border)] bg-surface p-4 text-left transition-colors hover:border-[color:var(--c-primary-ring)] hover:bg-primary-soft">
+                  <span class="shrink-0 text-sm font-bold text-[color:var(--c-text)] md:text-base">{{ period.label }}</span>
+                  <span class="min-w-0 truncate text-xs font-bold text-[color:var(--c-text-subtle)] group-hover:text-primary-text">影片列表</span>
                 </button>
               </div>
             </div>
@@ -774,8 +776,8 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
                     <span class="min-w-0 truncate" :title="movie.best_magnet_name || '未选中磁力'">{{ movie.best_magnet_name || '未选中磁力' }}</span>
                   </div>
                   <div v-if="(movie.tags || []).length" class="movie-tags mt-2 flex max-w-full flex-nowrap gap-0.5 overflow-hidden" :title="(movie.tags || []).join(', ')">
-                    <span v-for="tag in movie.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[11px]">{{ tag }}</span>
-                    <span data-role="more" class="badge badge-info hidden shrink-0 text-[11px]" style="display:none">+0</span>
+                    <span v-for="tag in movie.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[10px]">{{ tag }}</span>
+                    <span data-role="more" class="badge badge-info hidden shrink-0 text-[10px]" style="display:none">+0</span>
                   </div>
                 </button>
               </div>
@@ -794,8 +796,8 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
                   <div class="min-w-0 truncate" :title="currentMovie?.best_magnet_name || '未选中磁力'">{{ currentMovie?.best_magnet_name || '未选中磁力' }}</div>
                 </div>
                 <div v-if="(currentMovie?.tags || []).length" class="movie-tags mt-2 flex max-w-full flex-nowrap gap-0.5 overflow-hidden" :title="(currentMovie?.tags || []).join(', ')">
-                  <span v-for="tag in currentMovie?.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[11px]">{{ tag }}</span>
-                  <span data-role="more" class="badge badge-info hidden shrink-0 text-[11px]" style="display:none">+0</span>
+                  <span v-for="tag in currentMovie?.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[10px]">{{ tag }}</span>
+                  <span data-role="more" class="badge badge-info hidden shrink-0 text-[10px]" style="display:none">+0</span>
                 </div>
               </div>
             </div>

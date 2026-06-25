@@ -269,15 +269,41 @@ onUnmounted(() => {
         </div>
         <div class="px-5 py-2 space-y-2 text-sm">
           <div>
-            <label class="field-label">起始页面 URL</label>
-            <div class="flex gap-2">
-              <input
-                v-model="startUrl"
-                type="text"
-                class="input flex-1"
-                placeholder="https://javdb.com/actors/..."
-              />
-              <button type="button" @click="fetchTags" class="btn btn-md btn-info shrink-0">标签</button>
+            <div class="grid grid-cols-[112px_minmax(0,1fr)_32px_28px] gap-1.5 sm:grid-cols-[150px_minmax(0,1fr)_32px_28px] sm:gap-2">
+              <div class="min-w-0">
+                <label class="field-label whitespace-nowrap text-xs">任务/文件名</label>
+                <input
+                  v-model="filename"
+                  type="text"
+                  class="input h-7 min-w-0 px-2 py-0 text-xs"
+                  placeholder="留空自动命名"
+                />
+              </div>
+              <div class="min-w-0">
+                <label class="field-label whitespace-nowrap text-xs">起始页面 URL</label>
+                <input
+                  v-model="startUrl"
+                  type="text"
+                  class="input h-7 min-w-0 px-2 py-0 text-xs"
+                  placeholder="https://javdb.com/actors/..."
+                />
+              </div>
+              <div class="flex items-end">
+                <button type="button" @click="fetchTags" class="btn btn-info h-7 w-8 shrink-0 px-0 text-xs">tag</button>
+              </div>
+              <div class="flex items-end">
+                <button
+                  type="button"
+                  @click="addTask()"
+                  title="添加到任务列表"
+                  aria-label="添加到任务列表"
+                  class="btn btn-icon-lg btn-primary h-7 w-7 text-xs"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
+                    <path d="M12 5v14"></path><path d="M5 12h14"></path>
+                  </svg>
+                </button>
+              </div>
             </div>
             <div v-if="showTagsPanel" class="hidden mt-3 border border-[color:var(--c-primary-soft)] rounded-lg overflow-hidden" :class="{ '!block': showTagsPanel }">
               <button
@@ -302,28 +328,6 @@ onUnmounted(() => {
                   ]"
                 >{{ tag.name }}</button>
               </div>
-            </div>
-          </div>
-          <div>
-            <label class="field-label">自定义任务/文件名</label>
-            <div class="flex gap-2">
-              <input
-                v-model="filename"
-                type="text"
-                class="input min-w-0 flex-1"
-                placeholder="留空则入队时自动命名"
-              />
-              <button
-                type="button"
-                @click="addTask()"
-                title="添加到任务列表"
-                aria-label="添加到任务列表"
-                class="btn btn-icon-lg btn-primary"
-              >
-                <svg aria-hidden="true" viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round">
-                  <path d="M12 5v14"></path><path d="M5 12h14"></path>
-                </svg>
-              </button>
             </div>
           </div>
         </div>

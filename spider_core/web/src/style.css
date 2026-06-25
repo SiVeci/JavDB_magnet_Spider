@@ -151,7 +151,7 @@
     /* ---- 卡片 / 面板 ---- */
     .card       { @apply rounded-lg border border-[color:var(--c-border)] bg-surface; }
     .card-head  { @apply flex items-center justify-between border-b border-[color:var(--c-border-soft)] px-5 py-2; }
-    .card-title { @apply text-base font-semibold; }
+    .card-title { @apply text-sm font-semibold md:text-base; }
     .toolbar    { @apply border-b border-[color:var(--c-border-soft)] bg-surface-sunken; }
 
     /* ---- 徽章 ---- */
@@ -174,7 +174,7 @@
     .menu-item { @apply flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-sunken; }
 
     /* ---- 导航分段控件 ---- */
-    .nav-seg         { @apply rounded-md px-3 py-2 text-sm font-bold text-[color:var(--c-text-muted)] transition-colors hover:bg-surface-sunken; }
+    .nav-seg         { @apply rounded-md px-3 py-2 text-xs font-bold text-[color:var(--c-text-muted)] transition-colors hover:bg-surface-sunken md:text-sm; }
     .nav-seg--active { @apply bg-primary text-white shadow-sm hover:bg-primary-hover; }
 
     /* ---- 空态 ---- */

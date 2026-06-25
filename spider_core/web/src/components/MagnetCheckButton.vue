@@ -13,6 +13,7 @@ import type { MagnetCheckJob } from '@/types'
 const props = defineProps<{
   scope: 'movie' | 'collection' | 'all' | 'ranking'
   target: string | number
+  compact?: boolean
 }>()
 
 const db = useDatabaseStore()
@@ -26,7 +27,7 @@ const SIZE = {
   toolbar: { primary: 'h-7 w-7 text-[11px] leading-none', toggle: 'h-7 w-6 text-[10px] leading-none', spinner: 'h-3 w-3' },
 }
 const sizeKey = computed<'mini' | 'std' | 'toolbar'>(() =>
-  props.scope === 'movie' ? 'mini' : props.scope === 'all' ? 'std' : 'toolbar'
+  props.scope === 'movie' ? 'mini' : props.compact ? 'toolbar' : props.scope === 'all' ? 'std' : 'toolbar'
 )
 const size = computed(() => SIZE[sizeKey.value])
 

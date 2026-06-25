@@ -3,7 +3,7 @@
 import os
 import secrets
 
-APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "2.0.0")
+APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "2.0.1")
 AUTH_HEADER = "X-JavDB-Token"
 PUBLIC_API_PATHS = {"/api/version"}
 # 自行鉴权路径：这些端点不走 header 中间件校验，因为它们在端点内部用其他方式鉴权。

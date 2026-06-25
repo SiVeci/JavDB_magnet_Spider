@@ -110,7 +110,7 @@ onMounted(async () => {
       <div class="flex flex-col items-center gap-2 md:items-start">
         <div class="flex items-center gap-3">
           <img src="/favicon.png" alt="Logo" class="w-10 h-10 rounded-lg" />
-          <h1 class="text-3xl font-bold tracking-tight">JavDB Magnet Spider</h1>
+          <h1 class="text-[26px] font-bold tracking-tight md:text-3xl">JavDB Magnet Spider</h1>
         </div>
         <div class="flex items-center justify-center gap-2 md:justify-start">
           <span class="badge badge-info">{{ appVersion }}</span>
