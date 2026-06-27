@@ -65,3 +65,19 @@ FRONTEND_MIGRATION_PLAN.md
 AGENTS.md
 CLAUDE.md
 GEMINI.md
+
+# ================= Frontend redesign cleanup =================
+DESIGN.md
+FRONTEND_REDESIGN_EXECUTION_PLAN.md
+spider_core/web_legacy_backup/
+spider_core/web_redesign_docs/
+
+# Frontend build and validation artifacts
+spider_core/web/dist/
+spider_core/web/test-results/
+spider_core/web/playwright-report/
+spider_core/web/blob-report/
+
+# One-off Playwright acceptance assets
+spider_core/web/playwright.config.ts
+spider_core/web/tests/

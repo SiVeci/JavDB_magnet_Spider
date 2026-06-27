@@ -490,7 +490,7 @@ onUnmounted(() => {
             <div
               ref="logBodyEl"
               v-show="!logCollapsed"
-              class="overflow-y-auto log-box bg-surface p-3 font-mono text-xs text-[color:var(--c-text-muted)]"
+              class="overflow-y-auto log-box tech-log p-3 text-xs"
               :style="{ height: logBodyHeight, minHeight: `${LOG_MIN_HEIGHT}px` }"
             >
               <div v-if="!tasks.logs.length">等待任务启动...</div>

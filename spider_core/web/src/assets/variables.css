@@ -1,110 +1,125 @@
 /*
- * variables.css — 设计系统令牌（从旧 frontend/css/variables.css 迁移）
+ * variables.css — redesign tokens.
+ * Keep the original variable names as a compatibility layer for copied views.
  */
 :root {
-    --c-primary:       #4f46e5;
-    --c-primary-hover: #4338ca;
-    --c-primary-soft:  #eef2ff;
-    --c-primary-text:  #3730a3;
-    --c-primary-ring:  #c7d2fe;
+    --c-primary:       #cc785c;
+    --c-primary-hover: #a9583e;
+    --c-primary-soft:  #f5e4dc;
+    --c-primary-text:  #8f4934;
+    --c-primary-ring:  rgb(204 120 92 / 22%);
 
-    --c-success:      #059669;
-    --c-success-soft: #ecfdf5;
-    --c-success-text: #047857;
-    --c-warning:      #d97706;
-    --c-warning-soft: #fffbeb;
-    --c-warning-text: #b45309;
-    --c-danger:       #dc2626;
-    --c-danger-soft:  #fef2f2;
-    --c-danger-text:  #b91c1c;
-    --c-info:         #2563eb;
-    --c-info-soft:    #eff6ff;
-    --c-info-text:    #1d4ed8;
-    --c-neutral:      #475569;
-    --c-neutral-soft: #f1f5f9;
-    --c-neutral-text: #334155;
+    --c-success:      #4f9d62;
+    --c-success-soft: #e8f3e5;
+    --c-success-text: #2f6f3d;
+    --c-warning:      #c0842f;
+    --c-warning-soft: #fbefd8;
+    --c-warning-text: #83571d;
+    --c-danger:       #c64545;
+    --c-danger-soft:  #f7e1dd;
+    --c-danger-text:  #9b2f2f;
+    --c-info:         #5b8c8a;
+    --c-info-soft:    #e2efed;
+    --c-info-text:    #346765;
+    --c-neutral:      #6c6a64;
+    --c-neutral-soft: #f5f0e8;
+    --c-neutral-text: #3d3d3a;
 
-    --c-bg:            #f1f5f9;
-    --c-surface:       #ffffff;
-    --c-surface-sunken:#f8fafc;
-    --c-border:        #e2e8f0;
-    --c-border-soft:   #f1f5f9;
-    --c-text:          #1e293b;
-    --c-text-muted:    #64748b;
-    --c-text-subtle:   #94a3b8;
+    --c-bg:             #faf9f5;
+    --c-surface:        #fffdf8;
+    --c-surface-sunken: #f5f0e8;
+    --c-surface-card:   #efe9de;
+    --c-surface-strong: #e8e0d2;
+    --c-border:         #e6dfd8;
+    --c-border-soft:    #ebe6df;
+    --c-text:           #141413;
+    --c-text-strong:    #252523;
+    --c-text-muted:     #6c6a64;
+    --c-text-subtle:    #8e8b82;
+    --c-dark:           #181715;
+    --c-dark-elevated:  #252320;
+    --c-dark-soft:      #1f1e1b;
+    --c-on-dark:        #faf9f5;
+    --c-on-dark-muted:  #a09d96;
 
-    --radius-sm:   4px;
-    --radius:      6px;
-    --radius-lg:   10px;
+    --radius-sm:   6px;
+    --radius:      8px;
+    --radius-lg:   12px;
+    --radius-xl:   16px;
     --radius-full: 9999px;
 
-    --shadow-sm:  0 1px 2px 0 rgb(15 23 42 / .05);
-    --shadow:     0 1px 3px 0 rgb(15 23 42 / .08), 0 1px 2px -1px rgb(15 23 42 / .06);
-    --shadow-md:  0 4px 12px -2px rgb(15 23 42 / .10);
-    --shadow-pop: 0 8px 24px -4px rgb(15 23 42 / .18);
+    --shadow-sm:  0 1px 2px 0 rgb(20 20 19 / .04);
+    --shadow:     0 1px 3px 0 rgb(20 20 19 / .06);
+    --shadow-md:  0 6px 18px -10px rgb(20 20 19 / .22);
+    --shadow-pop: 0 16px 40px -18px rgb(20 20 19 / .32);
 
-    --t-fast: 120ms;
-    --t:      160ms;
+    --t-fast: 140ms;
+    --t:      180ms;
     --ease:   cubic-bezier(.2, .6, .3, 1);
 
+    --font-display:
+        'Cormorant Garamond', 'Noto Serif SC', 'Source Han Serif SC',
+        'Songti SC', 'Times New Roman', serif;
     --font-sans:
-        -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
-        'PingFang SC', 'HarmonyOS Sans SC', 'Source Han Sans SC',
+        Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+        'PingFang SC', 'HarmonyOS Sans SC',
         'Noto Sans CJK SC', 'Microsoft YaHei', 'WenQuanYi Micro Hei',
-        'Helvetica Neue', Arial, sans-serif;
+        sans-serif;
     --font-mono:
-        ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code',
-        Consolas, 'Roboto Mono', monospace;
+        'JetBrains Mono', ui-monospace, 'SFMono-Regular', Consolas, monospace;
 
-    --c-scrollbar-thumb: #cbd5e1;
+    --c-scrollbar-thumb: #cfc5b8;
 
-    --toast-info-bg:    var(--c-text);
+    --toast-info-bg:    var(--c-dark);
     --toast-success-bg: var(--c-success-text);
     --toast-error-bg:   var(--c-danger);
-    --toast-text:       #f8fafc;
+    --toast-text:       var(--c-on-dark);
 }
 
 [data-theme="dark"] {
-    --c-primary:       #818cf8;
-    --c-primary-hover: #a5b4fc;
-    --c-primary-soft:  #1e1b4b;
-    --c-primary-text:  #a5b4fc;
-    --c-primary-ring:  #4338ca;
+    --c-primary:       #d88a6f;
+    --c-primary-hover: #f0a98f;
+    --c-primary-soft:  #3a241d;
+    --c-primary-text:  #f0b49d;
+    --c-primary-ring:  rgb(216 138 111 / 28%);
 
-    --c-success:      #34d399;
-    --c-success-soft: #022c22;
-    --c-success-text: #6ee7b7;
-    --c-warning:      #fbbf24;
-    --c-warning-soft: #451a03;
-    --c-warning-text: #fcd34d;
-    --c-danger:       #f87171;
-    --c-danger-soft:  #450a0a;
-    --c-danger-text:  #fca5a5;
-    --c-info:         #60a5fa;
-    --c-info-soft:    #172554;
-    --c-info-text:    #93c5fd;
-    --c-neutral:      #94a3b8;
-    --c-neutral-soft: #1e293b;
-    --c-neutral-text: #cbd5e1;
+    --c-success:      #69bf7c;
+    --c-success-soft: #19331f;
+    --c-success-text: #9ad9a7;
+    --c-warning:      #dfac57;
+    --c-warning-soft: #3d2d15;
+    --c-warning-text: #efca85;
+    --c-danger:       #dc6d66;
+    --c-danger-soft:  #3d1e1c;
+    --c-danger-text:  #f0a29c;
+    --c-info:         #74aaa6;
+    --c-info-soft:    #17302f;
+    --c-info-text:    #a5d0cc;
+    --c-neutral:      #b8b3aa;
+    --c-neutral-soft: #252320;
+    --c-neutral-text: #d4cec4;
 
-    --c-bg:            #0f172a;
-    --c-surface:       #1e293b;
-    --c-surface-sunken:#0f172a;
-    --c-border:        #334155;
-    --c-border-soft:   #273449;
-    --c-text:          #f1f5f9;
-    --c-text-muted:    #94a3b8;
-    --c-text-subtle:   #64748b;
+    --c-bg:             #181715;
+    --c-surface:        #1f1e1b;
+    --c-surface-sunken: #151412;
+    --c-surface-card:   #252320;
+    --c-surface-strong: #2d2a25;
+    --c-border:         #35322e;
+    --c-border-soft:    #2b2926;
+    --c-text:           #faf9f5;
+    --c-text-strong:    #fffdf8;
+    --c-text-muted:     #b8b3aa;
+    --c-text-subtle:    #8f8a82;
 
     --shadow-sm:  0 1px 2px 0 rgb(0 0 0 / .20);
     --shadow:     0 1px 3px 0 rgb(0 0 0 / .30), 0 1px 2px -1px rgb(0 0 0 / .24);
     --shadow-md:  0 4px 12px -2px rgb(0 0 0 / .40);
     --shadow-pop: 0 8px 24px -4px rgb(0 0 0 / .50);
 
-    --c-scrollbar-thumb: #475569;
+    --c-scrollbar-thumb: #4b4740;
 
-    --toast-info-bg:    #e2e8f0;
-    --toast-success-bg: #34d399;
-    --toast-error-bg:   #f87171;
-    --toast-text:       #0f172a;
+    --toast-info-bg:    #efe9de;
+    --toast-success-bg: #9ad9a7;
+    --toast-error-bg:   #f0a29c;
+    --toast-text:       #181715;
 }

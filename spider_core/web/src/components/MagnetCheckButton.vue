@@ -99,7 +99,7 @@ function toggleMenu() {
           <template v-if="isRunningTarget">
             <span
               v-if="scope === 'movie'"
-              class="inline-block animate-spin rounded-full border-2 border-[color:var(--c-border)] border-t-slate-600"
+              class="inline-block animate-spin rounded-full border-2 border-[color:var(--c-border)] border-t-[color:var(--c-success-text)]"
               :class="size.spinner"
             ></span>
             <span v-else>{{ progress }}</span>
@@ -130,7 +130,7 @@ function toggleMenu() {
       >
         <span
           v-if="isCancelling"
-          class="inline-block animate-spin rounded-full border-2 border-[color:var(--c-border)] border-t-slate-600"
+          class="inline-block animate-spin rounded-full border-2 border-[color:var(--c-border)] border-t-[color:var(--c-danger-text)]"
           :class="size.spinner"
         ></span>
         <svg v-else aria-hidden="true" viewBox="0 0 24 24" class="h-3 w-3" fill="currentColor">

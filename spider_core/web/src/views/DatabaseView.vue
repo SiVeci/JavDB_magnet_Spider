@@ -62,6 +62,9 @@ const magnets = ref<Magnet[]>([])
 // 标签/排除下拉互斥开关：'tag' | 'exclude' | 'check' + key，null 全关
 const openMenu = ref<string | null>(null)
 const top250Error = ref('')
+const databaseCardEl = ref<HTMLElement | null>(null)
+const databaseCardHeight = ref('auto')
+let databaseLayoutFrame: number | null = null
 
 function displayName(val: string) { return db.displayName(val) }
 
@@ -218,6 +221,7 @@ async function loadData() {
   } finally {
     loading.value = false
     await nextTick()
+    scheduleFitDatabaseLayout()
     fitMovieTags(document)
   }
 }
@@ -238,9 +242,32 @@ onBeforeUnmount(() => {
   db.registerCheckCallbacks(null, null)
   window.removeEventListener('resize', onResize)
   window.removeEventListener('click', onGlobalClick)
+  if (databaseLayoutFrame !== null) cancelAnimationFrame(databaseLayoutFrame)
 })
 
-function onResize() { fitMovieTags(document) }
+function fitDatabaseLayout() {
+  const card = databaseCardEl.value
+  if (!card) return
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0
+  const cardTop = card.getBoundingClientRect().top
+  const main = card.closest('main')
+  const mainBottomPadding = main ? Number(window.getComputedStyle(main).paddingBottom.replace('px', '')) || 0 : 0
+  const available = Math.floor(viewportHeight - cardTop - mainBottomPadding)
+  if (available > 0) databaseCardHeight.value = `${available}px`
+}
+
+function scheduleFitDatabaseLayout() {
+  if (databaseLayoutFrame !== null) return
+  databaseLayoutFrame = requestAnimationFrame(() => {
+    databaseLayoutFrame = null
+    fitDatabaseLayout()
+  })
+}
+
+function onResize() {
+  scheduleFitDatabaseLayout()
+  fitMovieTags(document)
+}
 function onGlobalClick() { openMenu.value = null }
 
 // SSE 集合变化联动
@@ -256,6 +283,7 @@ async function refreshAfterCollectionsChanged() {
     db.syncSelectedMagnetToCache(routeMovieId.value, magnets.value)
   }
   await nextTick()
+  scheduleFitDatabaseLayout()
   fitMovieTags(document)
 }
 
@@ -435,7 +463,7 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
 
 <template>
   <section class="space-y-4">
-    <section class="card flex h-[calc(100dvh-190px)] min-h-0 min-w-0 flex-col overflow-hidden">
+    <section ref="databaseCardEl" class="card flex min-h-0 min-w-0 flex-col overflow-hidden" :style="{ height: databaseCardHeight }">
       <!-- 面包屑 -->
       <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-3 text-sm text-[color:var(--c-text-muted)]">
         <div class="flex min-w-0 flex-wrap items-center gap-2">

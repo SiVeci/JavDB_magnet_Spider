@@ -45,6 +45,7 @@ export default {
         },
       },
       fontFamily: {
+        display: ['var(--font-display)'],
         sans: ['var(--font-sans)'],
         mono: ['var(--font-mono)'],
       },
@@ -52,6 +53,7 @@ export default {
         DEFAULT: 'var(--radius)',
         sm: 'var(--radius-sm)',
         lg: 'var(--radius-lg)',
+        xl: 'var(--radius-xl)',
         full: 'var(--radius-full)',
       },
       boxShadow: {

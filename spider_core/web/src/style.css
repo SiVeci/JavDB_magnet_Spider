@@ -16,6 +16,16 @@
         background-color: var(--c-bg);
         color: var(--c-text);
     }
+    body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        pointer-events: none;
+        background:
+            linear-gradient(115deg, rgb(204 120 92 / .08), transparent 34rem),
+            radial-gradient(circle at 88% 10%, rgb(232 224 210 / .72), transparent 24rem);
+    }
     html.app-view-locked,
     body.app-view-locked {
         height: 100dvh;
@@ -53,12 +63,18 @@
     }
     .log-box::-webkit-scrollbar { width: 6px; }
     .log-box::-webkit-scrollbar-thumb { background-color: var(--c-scrollbar-thumb); border-radius: 4px; }
+    .tech-log {
+        background: var(--c-dark);
+        color: var(--c-on-dark);
+        border-color: var(--c-dark-elevated);
+        font-family: var(--font-mono);
+    }
 }
 
 /* ---- 按钮：基础 + 尺寸 + 语义变体 ---- */
 @layer components {
-    .btn { @apply inline-flex items-center justify-center gap-1.5 rounded font-bold
-                  transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed
+    .btn { @apply inline-flex items-center justify-center gap-1.5 rounded font-medium
+                  transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed
                   focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--c-primary-ring)]; }
     .btn-sm { @apply h-7 px-2 text-xs; }
     .btn-md { @apply h-9 px-3 text-sm; }
@@ -67,17 +83,17 @@
     .btn-icon-md { @apply h-9 w-9 shrink-0 p-0; }
     .btn-icon-lg { @apply h-10 w-10 shrink-0 p-0; }
 
-    .btn-primary { @apply bg-primary text-white hover:bg-primary-hover; }
-    .btn-soft    { @apply bg-surface text-[color:var(--c-text-muted)] ring-1 ring-[color:var(--c-border)] hover:bg-surface-sunken; }
+    .btn-primary { @apply bg-primary text-white shadow-sm hover:bg-primary-hover; }
+    .btn-soft    { @apply bg-surface-sunken text-[color:var(--c-text-muted)] ring-1 ring-[color:var(--c-border)] hover:bg-[color:var(--c-surface-card)]; }
     .btn-success { @apply bg-success-soft text-success-text hover:brightness-95; }
     .btn-warning { @apply bg-warning-soft text-warning-text hover:brightness-95; }
     .btn-danger  { @apply bg-danger-soft  text-danger-text  hover:brightness-95; }
     .btn-info    { @apply bg-info-soft     text-info-text    hover:brightness-95; }
     .btn-neutral { @apply bg-neutral-soft text-neutral-text hover:brightness-95; }
 
-    .btn-split-primary { @apply inline-flex items-center justify-center rounded-l border border-r-0 border-[color:var(--c-success)] bg-success-soft font-bold text-success-text transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:border-[color:var(--c-border)] disabled:bg-surface-sunken disabled:text-[color:var(--c-text-subtle)]; }
-    .btn-split-toggle  { @apply inline-flex items-center justify-center rounded-r border border-[color:var(--c-success)] bg-success-soft font-bold text-success-text transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:border-[color:var(--c-border)] disabled:bg-surface-sunken disabled:text-[color:var(--c-text-subtle)]; }
-    .btn-split-stop    { @apply inline-flex items-center justify-center rounded-r border border-[color:var(--c-danger)] bg-danger-soft font-bold text-danger-text transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:border-[color:var(--c-border)] disabled:bg-surface-sunken disabled:text-[color:var(--c-text-subtle)]; }
+    .btn-split-primary { @apply inline-flex items-center justify-center rounded-l border border-r-0 border-[color:var(--c-success)] bg-success-soft font-medium text-success-text transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:border-[color:var(--c-border)] disabled:bg-surface-sunken disabled:text-[color:var(--c-text-subtle)]; }
+    .btn-split-toggle  { @apply inline-flex items-center justify-center rounded-r border border-[color:var(--c-success)] bg-success-soft font-medium text-success-text transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:border-[color:var(--c-border)] disabled:bg-surface-sunken disabled:text-[color:var(--c-text-subtle)]; }
+    .btn-split-stop    { @apply inline-flex items-center justify-center rounded-r border border-[color:var(--c-danger)] bg-danger-soft font-medium text-danger-text transition-colors hover:brightness-95 disabled:cursor-not-allowed disabled:border-[color:var(--c-border)] disabled:bg-surface-sunken disabled:text-[color:var(--c-text-subtle)]; }
     .btn-split-disabled{ @apply cursor-not-allowed border-[color:var(--c-border)] bg-surface-sunken text-[color:var(--c-text-subtle)]; }
 
     /* ---- 主题切换按钮 ---- */
@@ -149,13 +165,13 @@
     }
 
     /* ---- 卡片 / 面板 ---- */
-    .card       { @apply rounded-lg border border-[color:var(--c-border)] bg-surface; }
-    .card-head  { @apply flex items-center justify-between border-b border-[color:var(--c-border-soft)] px-5 py-2; }
-    .card-title { @apply text-sm font-semibold md:text-base; }
+    .card       { @apply rounded-lg border border-[color:var(--c-border)] bg-surface shadow-sm; }
+    .card-head  { @apply flex items-center justify-between border-b border-[color:var(--c-border-soft)] px-5 py-3; }
+    .card-title { @apply font-display text-lg font-medium leading-tight text-[color:var(--c-text-strong)] md:text-xl; }
     .toolbar    { @apply border-b border-[color:var(--c-border-soft)] bg-surface-sunken; }
 
     /* ---- 徽章 ---- */
-    .badge { @apply inline-flex items-center justify-center rounded px-1.5 py-0.5 text-xs font-bold leading-none; }
+    .badge { @apply inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-medium leading-none; }
     .badge-success { @apply bg-success-soft text-success-text; }
     .badge-warning { @apply bg-warning-soft text-warning-text; }
     .badge-danger  { @apply bg-danger-soft  text-danger-text; }
@@ -174,11 +190,18 @@
     .menu-item { @apply flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-surface-sunken; }
 
     /* ---- 导航分段控件 ---- */
-    .nav-seg         { @apply rounded-md px-3 py-2 text-xs font-bold text-[color:var(--c-text-muted)] transition-colors hover:bg-surface-sunken md:text-sm; }
+    .nav-seg         { @apply rounded-md px-3 py-2 text-xs font-medium text-[color:var(--c-text-muted)] transition-colors hover:bg-surface md:text-sm; }
     .nav-seg--active { @apply bg-primary text-white shadow-sm hover:bg-primary-hover; }
 
     /* ---- 空态 ---- */
     .empty-state { @apply flex items-center justify-center p-8 text-center text-sm text-[color:var(--c-text-subtle)]; }
+
+    table {
+        border-color: var(--c-border);
+    }
+    thead {
+        letter-spacing: 0;
+    }
 
     /* ---- Toast ---- */
     #toast-container {
@@ -204,7 +227,7 @@
         line-height: 1.4;
         color: var(--toast-text);
         background-color: var(--toast-info-bg);
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
+        box-shadow: var(--shadow-pop);
         word-break: break-word;
         white-space: pre-wrap;
         opacity: 0;
