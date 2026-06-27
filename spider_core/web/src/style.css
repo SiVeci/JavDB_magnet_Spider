@@ -26,6 +26,9 @@
             linear-gradient(115deg, rgb(204 120 92 / .08), transparent 34rem),
             radial-gradient(circle at 88% 10%, rgb(232 224 210 / .72), transparent 24rem);
     }
+    [data-theme="dark"] body::before {
+        display: none;
+    }
     html.app-view-locked,
     body.app-view-locked {
         height: 100dvh;

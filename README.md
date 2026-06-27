@@ -50,8 +50,8 @@
 * **特征标签解析引擎（Tag Extraction & Filtering）**：
   * **核心对象/组件/路由（`web/src/composables/useMovieTags.ts`）**：在 HTML 解析阶段提取实体的业务标签（类别、特征等）并持久化至关联表。前端层级实现了基于交、并、差集的复杂布尔查询逻辑，可作用于常规集合视图与排行榜视图。支持在过滤结果集上原子级触发数据序列化与导出任务。
 
-* **自适应控制面板与主题系统（Adaptive WebUI & Theme System）**：
-  * **核心对象/组件/路由（`spider_core/web/src` / `Tailwind CSS` / `Vue 3`）**：基于 Vue 3 + Vite 构建的现代化响应式前端控制台。系统通过 Tailwind CSS 结合语义化 CSS 变量，构建了高度解耦的动态主题引擎。支持随系统级偏好（`prefers-color-scheme`）或用户手动配置，无缝在浅色（Light Mode）与深色（Dark Mode）外观范式间切换，提升数据查阅的人机工效学体验。
+* **自适应控制面板与设计系统（Adaptive WebUI & Design System）**：
+  * **核心对象/组件/路由（`spider_core/web/src` / `Tailwind CSS` / `Vue 3`）**：基于 Vue 3 + Vite 构建的现代化响应式前端控制台。
 
 * **流量混淆与防护穿透（WAF Bypass）**：
   * **核心对象/组件/路由（`curl_cffi` / `spider_engine.py`）**：底层 HTTP Client 集成 curl_cffi 库。通过复刻主流浏览器的 TLS Client Hello 指纹与 JA3 特征，规避并稳定穿透基于四层与七层协议分析的 Web 应用防火墙（如 Cloudflare），提供更稳健的网络连通性。
