@@ -47,6 +47,23 @@ DEFAULT_HEADERS = {
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
     'Referer': 'https://javdb.com/',
 }
+LOGIN_MARKERS = (
+    "/login",
+    "sign in",
+    "log in",
+    "login",
+    "password",
+)
+BLOCK_MARKERS = (
+    "just a moment",
+    "access denied",
+    "captcha",
+    "cf-browser-verification",
+    "turnstile",
+    "cf-challenge",
+    "cf-chl-widget",
+    "challenge-form",
+)
 
 # ======= 2. HTML 提取底层网关抽象 =======
 class MockResponse:
@@ -119,7 +136,7 @@ def update_status(state="idle", progress="", current="", log_msg=None, clear_log
             log_msg=log_msg,
             final_filename=final_filename,
             added_count=added_count,
-            error_message=log_msg if state == "error" else None,
+            error_message=log_msg if state in {"error", "paused_need_cookie"} else None,
         )
 
     status_data = {"state": state, "progress": progress, "current": current, "logs": []}
@@ -192,6 +209,65 @@ def pause_or_cancel_task(progress, current, checkpoint, pause_log, cancel_log):
     else:
         update_status("stopped", progress, current, pause_log)
     return True
+
+
+def _response_text(response):
+    return str(getattr(response, "text", "") or "")
+
+
+def _is_login_response(response):
+    url = str(getattr(response, "url", "") or "").lower()
+    text = _response_text(response)
+    lowered = text.lower()
+    if "/login" in url:
+        return True
+    if any(marker in lowered for marker in LOGIN_MARKERS):
+        soup = BeautifulSoup(text, "html.parser")
+        return bool(soup.select_one('form[action*="login"], a[href*="/login"], input[type="password"]'))
+    return False
+
+
+def _is_blocked_response(response):
+    lowered = _response_text(response).lower()
+    return any(marker in lowered for marker in BLOCK_MARKERS)
+
+
+def classify_runtime_fetch_issue(response=None, error=None, stage_label="请求"):
+    if error is not None:
+        return {
+            "cookie_status": "network_error",
+            "message": f"{stage_label}遇到网络或代理错误：{str(error)}",
+        }
+    if response is None:
+        return None
+    status_code = getattr(response, "status_code", 0) or 0
+    if status_code == 401 or _is_login_response(response):
+        return {
+            "cookie_status": "expired",
+            "message": f"{stage_label}显示登录态已失效，请重新获取 Cookie。",
+        }
+    if status_code in {403, 429} or (status_code == 503 and _is_blocked_response(response)):
+        return {
+            "cookie_status": "blocked",
+            "message": f"{stage_label}被访问限制拦截（状态码 {status_code}），请重新登录或稍后重试。",
+        }
+    if status_code >= 500:
+        return {
+            "cookie_status": "network_error",
+            "message": f"{stage_label}遇到服务、网络或代理错误（状态码 {status_code}），请检查网络或代理。",
+        }
+    return None
+
+
+def pause_for_cookie_recovery(progress, current, checkpoint, issue):
+    message = issue["message"]
+    cookie_status = issue["cookie_status"]
+    save_checkpoint(checkpoint)
+    db_store.update_cookie_validation_status(cookie_status, time.time(), message)
+    task_id = get_current_task_id()
+    if task_id:
+        db_store.increment_task_cookie_failure_count(task_id)
+    update_status("paused_need_cookie", progress, current, message)
 
 def parse_size(size_str):
     if not size_str: return 0.0
@@ -317,13 +393,19 @@ def run_spider(
             ):
                 return
             update_status("running", f"第 {page} 页", "拉取目录", f"正在抓取列表页: {current_url}")
+            res = None
             try:
                 # 【修改点】调用抽象的 fetch_html 替代 requests.get
                 res = fetch_html(current_url, headers=headers, proxies=proxies)
 
-                if res.status_code in [403, 401, 503]:
-                    save_checkpoint({"phase": 1, "current_url": current_url, "page": page, "movie_links": movie_links})
-                    update_status("paused_need_cookie", f"第 {page} 页", "拦截挂起", f"列表页被拦截（状态码 {res.status_code}）。任务已挂起，请补充新 Cookie。")
+                issue = classify_runtime_fetch_issue(res, stage_label="列表页请求")
+                if issue:
+                    pause_for_cookie_recovery(
+                        f"第 {page} 页",
+                        "等待登录态恢复",
+                        {"phase": 1, "current_url": current_url, "page": page, "movie_links": movie_links},
+                        issue,
+                    )
                     return
 
                 soup = BeautifulSoup(res.text, 'html.parser')
@@ -376,7 +458,16 @@ def run_spider(
                     page += 1
                     time.sleep(PAGE_DELAY_SECONDS)
             except Exception as e:
-                update_status("error", "异常", "代码报错", f"目录页请求异常: {str(e)}")
+                if res is None:
+                    issue = classify_runtime_fetch_issue(error=e, stage_label="目录页请求")
+                    pause_for_cookie_recovery(
+                        f"第 {page} 页",
+                        "网络或代理错误",
+                        {"phase": 1, "current_url": current_url, "page": page, "movie_links": movie_links},
+                        issue,
+                    )
+                else:
+                    update_status("error", "异常", "代码报错", f"目录页请求异常: {str(e)}")
                 return
 
         phase = 2
@@ -427,13 +518,19 @@ def run_spider(
 
                 update_status("running", progress_str, movie['code'], "正在解析详情页...")
 
+                res = None
                 try:
                     # 【修改点】调用抽象的 fetch_html 替代 requests.get
                     res = fetch_html(movie['url'], headers=headers, proxies=proxies)
 
-                    if res.status_code in [403, 401, 503]:
-                        save_checkpoint({"phase": 2, "movie_links": movie_links, "current_index": i, "incremental_movie_codes": incremental_movie_codes})
-                        update_status("paused_need_cookie", progress_str, movie['code'], f"详情页被拦截（状态码 {res.status_code}）。任务已挂起，进度已保存。")
+                    issue = classify_runtime_fetch_issue(res, stage_label="详情页请求")
+                    if issue:
+                        pause_for_cookie_recovery(
+                            progress_str,
+                            movie['code'],
+                            {"phase": 2, "movie_links": movie_links, "current_index": i, "incremental_movie_codes": incremental_movie_codes},
+                            issue,
+                        )
                         return
 
                     soup = BeautifulSoup(res.text, 'html.parser')
@@ -460,7 +557,17 @@ def run_spider(
                         update_status("running", progress_str, movie['code'], "跳过: 此页面无有效磁力链。")
 
                 except Exception as e:
-                    update_status("error", progress_str, movie['code'], f"提取失败: {str(e)}")
+                    if res is None:
+                        issue = classify_runtime_fetch_issue(error=e, stage_label="详情页请求")
+                        pause_for_cookie_recovery(
+                            progress_str,
+                            movie['code'],
+                            {"phase": 2, "movie_links": movie_links, "current_index": i, "incremental_movie_codes": incremental_movie_codes},
+                            issue,
+                        )
+                    else:
+                        update_status("error", progress_str, movie['code'], f"提取失败: {str(e)}")
+                    return
 
                 time.sleep(RETRY_DELAY_SECONDS)
     if crawl_mode == 'incremental':

@@ -9,10 +9,40 @@
 import db_store
 from db_store import connect, _now, _trackers_to_json, _trackers_from_json
 
-__all__ = ["save_runtime_config", "get_runtime_config"]
+COOKIE_SOURCES = {"manual", "android_webview", "auth_browser", "unknown"}
+COOKIE_STATUSES = {"missing", "unverified", "valid", "invalid", "expired", "network_error", "blocked"}
+
+__all__ = [
+    "save_runtime_config",
+    "get_runtime_config",
+    "update_cookie_validation_status",
+    "COOKIE_SOURCES",
+    "COOKIE_STATUSES",
+]
 
 
-def save_runtime_config(cookie=None, remember_cookie=False, user_agent=None, proxies=None, trackers=None):
+def _normalize_cookie_source(source):
+    source = (source or "unknown").strip()
+    return source if source in COOKIE_SOURCES else "unknown"
+
+
+def _normalize_cookie_status(status):
+    status = (status or "unverified").strip()
+    return status if status in COOKIE_STATUSES else "unverified"
+
+
+def save_runtime_config(
+    cookie=None,
+    remember_cookie=False,
+    user_agent=None,
+    proxies=None,
+    trackers=None,
+    cookie_source=None,
+    cookie_status=None,
+    cookie_captured_at=None,
+    cookie_validated_at=None,
+    cookie_last_error=None,
+):
     now = _now()
     with connect() as conn:
         conn.execute(
@@ -25,11 +55,42 @@ def save_runtime_config(cookie=None, remember_cookie=False, user_agent=None, pro
         elif not db_store._SESSION_COOKIE and current["remember_cookie"]:
             db_store._SESSION_COOKIE = current["cookie"] or ""
         db_cookie = db_store._SESSION_COOKIE if remember_cookie else ""
+        next_source = current["cookie_source"] or "unknown"
+        next_captured_at = current["cookie_captured_at"] or 0
+        next_status = current["cookie_status"] or "missing"
+        next_validated_at = current["cookie_validated_at"] or 0
+        next_last_error = current["cookie_last_error"] or ""
+        if cookie is not None:
+            if db_store._SESSION_COOKIE:
+                next_source = _normalize_cookie_source(cookie_source)
+                next_captured_at = cookie_captured_at if cookie_captured_at is not None else now
+                next_status = _normalize_cookie_status(cookie_status or "unverified")
+                next_validated_at = cookie_validated_at if cookie_validated_at is not None else 0
+                next_last_error = "" if cookie_last_error is None else str(cookie_last_error or "")
+            else:
+                next_source = _normalize_cookie_source(cookie_source)
+                next_captured_at = 0
+                next_status = "missing"
+                next_validated_at = 0
+                next_last_error = ""
+        else:
+            if cookie_source is not None:
+                next_source = _normalize_cookie_source(cookie_source)
+            if cookie_status is not None:
+                next_status = _normalize_cookie_status(cookie_status)
+            if cookie_captured_at is not None:
+                next_captured_at = cookie_captured_at
+            if cookie_validated_at is not None:
+                next_validated_at = cookie_validated_at
+            if cookie_last_error is not None:
+                next_last_error = str(cookie_last_error or "")
         conn.execute(
             """
             UPDATE runtime_config
             SET cookie = ?, remember_cookie = ?, user_agent = ?, proxies = ?,
-                tracker_list_json = ?, updated_at = ?
+                tracker_list_json = ?, cookie_source = ?, cookie_captured_at = ?,
+                cookie_validated_at = ?, cookie_status = ?, cookie_last_error = ?,
+                updated_at = ?
             WHERE id = 1
             """,
             (
@@ -38,6 +99,11 @@ def save_runtime_config(cookie=None, remember_cookie=False, user_agent=None, pro
                 current["user_agent"] if user_agent is None else user_agent or "",
                 current["proxies"] if proxies is None else proxies or "",
                 current["tracker_list_json"] if trackers is None else _trackers_to_json(trackers),
+                next_source,
+                next_captured_at,
+                next_validated_at,
+                next_status,
+                next_last_error,
                 now,
             ),
         )
@@ -59,7 +125,34 @@ def get_runtime_config(include_cookie=True):
         "proxies": row["proxies"] or "",
         "trackers": _trackers_from_json(row["tracker_list_json"]),
         "updated_at": row["updated_at"] or 0,
+        "cookie_source": row["cookie_source"] or "unknown",
+        "cookie_captured_at": row["cookie_captured_at"] or 0,
+        "cookie_validated_at": row["cookie_validated_at"] or 0,
+        "cookie_status": row["cookie_status"] or ("unverified" if cookie else "missing"),
+        "cookie_last_error": row["cookie_last_error"] or "",
     }
     if include_cookie:
         data["cookie"] = cookie or ""
     return data
+
+
+def update_cookie_validation_status(status, validated_at=None, last_error=""):
+    now = _now()
+    with connect() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO runtime_config(id, updated_at) VALUES (1, ?)",
+            (now,),
+        )
+        conn.execute(
+            """
+            UPDATE runtime_config
+            SET cookie_status = ?, cookie_validated_at = ?, cookie_last_error = ?, updated_at = ?
+            WHERE id = 1
+            """,
+            (
+                _normalize_cookie_status(status),
+                validated_at if validated_at is not None else now,
+                str(last_error or ""),
+                now,
+            ),
+        )

@@ -18,6 +18,9 @@ export interface Task {
   final_filename?: string
   state: TaskState
   progress: string
+  current?: string
+  error_message?: string
+  task_cookie_failure_count?: number
   can_copy_incremental_magnets?: boolean
 }
 
@@ -35,6 +38,12 @@ export interface RuntimeConfig {
   user_agent: string
   proxies: string
   trackers: string[]
+  has_cookie?: boolean
+  cookie_source?: string
+  cookie_captured_at?: number
+  cookie_validated_at?: number
+  cookie_status?: string
+  cookie_last_error?: string
 }
 
 export interface Collection {

@@ -118,6 +118,7 @@ from routers import settings as _settings_router  # noqa: E402
 from routers import storage as _storage_router  # noqa: E402
 from routers import actors as _actors_router    # noqa: E402
 from routers import events as _events_router    # noqa: E402
+from routers import auth_browser as _auth_browser_router  # noqa: E402
 
 app.include_router(_tasks_router.router)
 app.include_router(_movies_router.router)
@@ -127,6 +128,7 @@ app.include_router(_settings_router.router)
 app.include_router(_storage_router.router)
 app.include_router(_actors_router.router)
 app.include_router(_events_router.router)
+app.include_router(_auth_browser_router.router)
 
 
 def start_server(host="127.0.0.1"):

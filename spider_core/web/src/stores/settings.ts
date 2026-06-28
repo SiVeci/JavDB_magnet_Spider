@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+﻿import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { apiFetch } from '@/api'
 import type { RuntimeConfig } from '@/types'
@@ -12,36 +12,38 @@ export const useSettingsStore = defineStore('settings', () => {
     user_agent: DEFAULT_UA,
     proxies: '',
     trackers: [],
+    has_cookie: false,
+    cookie_source: 'unknown',
+    cookie_captured_at: 0,
+    cookie_validated_at: 0,
+    cookie_status: 'missing',
+    cookie_last_error: '',
   })
 
   function saveCookieCache() {
-    const cookie = config.value.cookie
-    if (config.value.remember_cookie) {
-      localStorage.setItem('javdb_remember_cookie', '1')
-      localStorage.setItem('javdb_cookie', cookie)
-      sessionStorage.removeItem('javdb_cookie')
-    } else {
-      localStorage.setItem('javdb_remember_cookie', '0')
-      localStorage.removeItem('javdb_cookie')
-      sessionStorage.setItem('javdb_cookie', cookie)
-    }
+    localStorage.setItem('javdb_remember_cookie', config.value.remember_cookie ? '1' : '0')
+    localStorage.removeItem('javdb_cookie')
+    sessionStorage.removeItem('javdb_cookie')
   }
-
   async function load() {
     const remember = localStorage.getItem('javdb_remember_cookie') === '1'
     config.value.remember_cookie = remember
-    config.value.cookie = remember
-      ? (localStorage.getItem('javdb_cookie') || '')
-      : (sessionStorage.getItem('javdb_cookie') || '')
+    config.value.cookie = ''
 
     const res = await apiFetch('/api/runtime_config').then((r: Response) => r.json())
     if (res.code !== 200) return
     const data = res.data
     config.value.remember_cookie = !!data.remember_cookie
-    if (data.remember_cookie && data.cookie) config.value.cookie = data.cookie
+    config.value.cookie = ''
     config.value.user_agent = data.user_agent || localStorage.getItem('javdb_ua') || DEFAULT_UA
     config.value.proxies = data.proxies || localStorage.getItem('javdb_proxy') || ''
     config.value.trackers = data.trackers || []
+    config.value.has_cookie = !!data.has_cookie
+    config.value.cookie_source = data.cookie_source || 'unknown'
+    config.value.cookie_captured_at = data.cookie_captured_at || 0
+    config.value.cookie_validated_at = data.cookie_validated_at || 0
+    config.value.cookie_status = data.cookie_status || (data.has_cookie ? 'unverified' : 'missing')
+    config.value.cookie_last_error = data.cookie_last_error || ''
   }
 
   async function save(showMsg = false): Promise<string> {
@@ -59,7 +61,14 @@ export const useSettingsStore = defineStore('settings', () => {
         trackers: config.value.trackers,
       }),
     }).then((r: Response) => r.json())
-    return showMsg ? (res.msg || '已保存') : ''
+    config.value.cookie = ''
+    return showMsg ? (res.msg || 'Saved') : ''
+  }
+
+  async function checkCookie(): Promise<string> {
+    const res = await apiFetch('/api/auth/check_cookie', { method: 'POST' }).then((r: Response) => r.json())
+    await load()
+    return res.msg || res.data?.message || 'Cookie check finished'
   }
 
   function parseProxy(): { host: string; port: string } {
@@ -77,5 +86,5 @@ export const useSettingsStore = defineStore('settings', () => {
     config.value.proxies = `http://${host.replace(/^https?:\/\//, '')}:${port}`
   }
 
-  return { config, load, save, saveCookieCache, parseProxy, setProxy, DEFAULT_UA }
+  return { config, load, save, checkCookie, saveCookieCache, parseProxy, setProxy, DEFAULT_UA }
 })

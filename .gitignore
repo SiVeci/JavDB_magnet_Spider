@@ -39,9 +39,16 @@ spider_core/frontend_dist/
 
 # ================= 爬虫业务隐私数据忽略 =================
 spider_core/data/
+# docker-compose 的 ./data bind mount（SQLite 库 + 导出 CSV）
+/data/
+# compose 本地环境变量（含 JAVDB_AUTH_TOKEN / 共享令牌），仅 .env.example 入库
+.env
 spider_core/task_config.json
 spider_core/status.json
 spider_core/checkpoint.json
+# Auth Browser Service 的 Playwright 登录态：含真实 javdb 会话 Cookie，严禁入库
+auth_browser/profile/
+auth_browser/**/storage_state.json
 # 数据库文件兜底（防止换路径后漏忽略）
 *.db
 *.sqlite
@@ -81,3 +88,7 @@ spider_core/web/blob-report/
 # One-off Playwright acceptance assets
 spider_core/web/playwright.config.ts
 spider_core/web/tests/
+AUTH_BROWSER_MVP.md
+PHASE_1_AUTH_BROWSER_MVP.md
+PHASE_2_COOKIE_LIFECYCLE_AND_VALIDATION.md
+PHASE_3_PRODUCTION_HARDENING_AND_FALLBACK.md

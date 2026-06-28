@@ -20,6 +20,9 @@
 * **任务调度机制（Task Queue）**：
   * **核心对象/组件/路由（`spider_engine.py` / `/api/v1/events`）**：在后端引擎中引入基于内存的状态机与任务队列。支持批量下发采集指令，系统按序执行后台调度。前端控制面板通过 Server-Sent Events (SSE) 事件总线获取毫秒级实时进度与日志推送，并暴露 API 路由实现对运行中任务的原子级暂停、恢复与终止操作。
 
+* **授权浏览器与登录态生命周期管理（Auth Browser & Cookie Lifecycle）**：
+  * **核心对象/组件/路由（`auth_browser_service.py` / `/api/v1/auth_browser`）**：引入独立的 Auth Browser 服务组件。在 PC 或 Docker 环境下，用户可直接从 WebUI 唤起远程浏览器进行可视化登录，系统自动捕获并接管 Cookie。内置 Cookie 健康度主动校验机制，当爬虫遭遇反爬拦截或 Cookie 失效时，引擎自动将当前任务挂起至 `waiting_cookie` 状态，智能引导用户重新授权后无缝恢复执行，确保长时运行的连续性。
+
 * **排行榜解析引擎（Ranking Parser）**：
   * **核心对象/组件/路由（`ranking_utils.py` / `/api/v1/rankings`）**：通过底层工具模块解析日/周/月常规榜单、热播流及支持多维度查询（年份/分类）的 TOP250 榜单数据。底层打通排行榜视图与爬虫任务队列，支持通过一键操作将榜单全量转化为采集任务。同时在前端页面耦合磁力可用性校验模块与多维标签交并集过滤模块。
 
@@ -74,16 +77,42 @@
    * **阶段 3：WebUI 控制台挂载**：触发 `3. 打开 WebUI`。通过前端浏览器加载本地闭环监听端口 `127.0.0.1:8000`，发起路由请求并将采集指令下发至后端引擎。
 
 ### 方案二：Docker 容器化部署
+推荐使用 Docker Compose 以一键启动核心引擎与独立的 Auth Browser 鉴权浏览器服务：
 ```bash
+# 获取 docker-compose.yml 与 .env.example
+cp .env.example .env
+# 在 .env 中配置 JAVDB_AUTH_TOKEN 等变量
+docker-compose up -d
+```
+*监听网关：`http://NAS_IP:8090`*
+
+若不使用 Docker Compose，也可通过 `docker run` 手动运行并连接两个容器：
+```bash
+# 1. 创建内部通信网络
+docker network create javdb-network
+
+# 2. 启动 Auth Browser 鉴权服务
+docker run -d \
+  --name=javdb-auth-browser \
+  --network=javdb-network \
+  -v auth_browser_profile:/app/profile \
+  --restart=unless-stopped \
+  ghcr.io/siveci/javdb_auth_browser:latest
+
+# 3. 启动爬虫核心引擎（链接到 Auth Browser）
 docker run -d \
   --name=javdb-spider \
+  --network=javdb-network \
   -p 8090:8000 \
   -e JAVDB_AUTH_TOKEN=注入访问鉴权令牌 \
+  -e AUTH_BROWSER_SERVICE_URL=http://javdb-auth-browser:8090 \
   -v /你的路径/appdata/javdb_spider/data:/app/data \
   --restart=unless-stopped \
   ghcr.io/siveci/javdb_spider:latest
 ```
 *监听网关：`http://NAS_IP:8090`*
+
+*(注：如果不需要 Auth Browser，可省略前两步及网络相关参数，单体启动 javdb-spider。)*
 
 **部署参数解析：**
 * **API 鉴权注入**：Docker 镜像默认激活后端接口的强制访问鉴权拦截。需通过 `-e JAVDB_AUTH_TOKEN` 环境变量注入认证令牌（Token），前端控制面板发起初始数据请求时将校验该凭证。
@@ -126,9 +155,9 @@ npm run build    # vue-tsc 类型检查 + vite build
 * **入口 URI 定位**：在目标前端视图引擎筛选业务标签（如“单体”、“高清”），提取浏览器地址栏中的完整 URI 参数表作为引擎基础抓取路由（支持由 WebUI 基于本地资源库渲染出动态过滤检索条件）。
   * **Android 运行环境**：强制要求在第一阶段调用的系统内置 WebView 容器中捕获目标 URI，并在后端直连的 WebUI 实例中完成提交。严禁将链接跨越外部第三方浏览器应用中转，以此规避安全会话标识（Cookie）校验失效引发的连接阻断风险。
 * **请求头注入（Cookie & User-Agent）**：
-  * **Android 运行环境**：系统引擎底层自动挂钩拦截并同步当前 WebView 的活动会话池。配置面板的输入区仅需填充任意预留占位符规避前端判空校验逻辑，禁止赋空值。
-  * **PC / Docker 运行环境**：需要通过外部浏览器开发者工具（DevTools）网络面板（Network）对主请求包进行抓包，提取标头（Headers）并手动下发载入控制引擎。
-* **前端会话控制**：由 Web 控制台注入的 Cookie 凭据默认映射于前端内存临时生命周期。执行会话保持参数勾选后，当前凭据将经过序列化流程后写入浏览器沙盒机制的本地存储（`localStorage`）用作离线缓存持久化。
+  * **Android 运行环境**：系统引擎底层自动挂钩拦截并同步当前 WebView 的活动会话池。
+  * **PC / Docker 运行环境**：在 WebUI 设置页或任务面板点击 **“打开登录页获取 Cookie”**，系统将弹出Auth Browser 授权窗口，登录后自动捕获并同步 Cookie 与 User-Agent（同时仍保留手动粘贴输入框作为兜底）。
+* **前端会话控制**：由 Web 控制台注入或 Auth Browser 获取的 Cookie 凭据默认映射于前端内存临时生命周期。执行会话保持参数勾选后，当前凭据将经过序列化流程后写入本地数据库及浏览器沙盒缓存以实现持久化。
 
 ### 2. 链路探测与资源降级演练
 伴随着数据采集批次的终结，用户态系统可通过内置的协议嗅探器校验磁力关联资源的存活态势：
@@ -168,6 +197,7 @@ npm run build    # vue-tsc 类型检查 + vite build
 ## 核心架构图谱
 
 ```text
+├── auth_browser/               # Auth Browser Service (Headless Browser for Login/Cookie Capture)
 ├── app/                        # Android Client (Java Native / UI / WebKit)
 │   ├── src/
 │   │   ├── main/
@@ -195,6 +225,7 @@ npm run build    # vue-tsc 类型检查 + vite build
 │   ├── export_service.py       # Entity-to-CSV Serialization Service
 │   ├── storage_utils.py        # Storage Path & Security Utilities
 │   ├── routers/                # API Routing Layer
+│   │   ├── auth_browser.py     # Auth Browser Service Interaction Routes
 │   │   ├── magnets.py          # Magnet Health & Priority Routes
 │   │   ├── movies.py           # Movie Entity & Tag Filtering Routes
 │   │   ├── rankings.py         # Ranking & Top250 Routes
@@ -202,6 +233,8 @@ npm run build    # vue-tsc 类型检查 + vite build
 │   │   ├── storage.py          # Storage Management & CSV Export Routes
 │   │   └── tasks.py            # Spider Task Queue Control Routes
 │   ├── services/               # Business Logic Layer
+│   │   ├── auth_browser_service.py # Auth Browser Client Integration
+│   │   ├── cookie_validation_service.py # Cookie Health Check & Validation
 │   │   ├── magnet_service.py   # Magnet Selection & Scoring Algorithms
 │   │   ├── queue_service.py    # Background Queue & Thread Management
 │   │   └── task_service.py     # Task Preparation & Payload Serialization
@@ -232,6 +265,7 @@ npm run build    # vue-tsc 类型检查 + vite build
 │       ├── spider_data.db      # SQLite Database File
 │       ├── checkpoint.json     # Scraping State Snapshot
 │       └── status.json         # Runtime Status Metrics
+├── docker-compose.yml          # Container Orchestration with Auth Browser
 ├── Dockerfile                  # OCI Container Build Script
 ├── build.gradle                # Root Gradle Build Configuration
 ├── gradle/                     # Gradle Wrapper & Version Catalog

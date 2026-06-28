@@ -4,6 +4,7 @@ import { useTasksStore, isTerminal, isPausable, isResumable, isCancelable } from
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
 import { useClipboard } from '@/composables/useClipboard'
+import { useAuthBrowser } from '@/composables/useAuthBrowser'
 import { apiFetch } from '@/api'
 import type { Task } from '@/types'
 
@@ -11,6 +12,28 @@ const tasks = useTasksStore()
 const settings = useSettingsStore()
 const { showToast } = useToast()
 const { copyText } = useClipboard()
+const authBrowser = useAuthBrowser()
+const cookieStatusLabel = computed(() => ({
+  missing: 'Cookie 缺失',
+  unverified: 'Cookie 未验证',
+  valid: 'Cookie 有效',
+  invalid: 'Cookie 无效',
+  expired: 'Cookie 已失效',
+  network_error: '网络或代理错误',
+  blocked: '请求被拦截',
+}[settings.config.cookie_status || 'missing'] || 'Cookie 未验证'))
+function cookieRecommendation(): string {
+  const status = settings.config.cookie_status || 'missing'
+  if (status === 'missing') return '打开登录页获取 Cookie，或粘贴手动 Cookie。'
+  if (status === 'unverified') return '先检测当前 Cookie，通过后恢复任务。'
+  if (status === 'network_error') return '检查网络或代理；不要反复更换 Cookie，确认网络恢复后再检测。'
+  if (status === 'blocked') return '稍后重试或重新登录获取 Cookie。'
+  if (status === 'expired' || status === 'invalid') return '重新登录获取 Cookie，验证通过后恢复任务。'
+  return '确认 Cookie 状态后恢复任务。'
+}
+function waitingCookieReason(task: Task): string {
+  return task.error_message || settings.config.cookie_last_error || task.current || '登录态需要确认'
+}
 
 // Task config state
 const startUrl = ref(localStorage.getItem('javdb_url') || '')
@@ -157,6 +180,35 @@ async function submitManualCookie(taskId: string) {
     await tasks.refresh()
   } catch (err: unknown) {
     showToast(err instanceof Error ? err.message : '操作失败')
+  }
+}
+
+async function openAuthBrowserForCookie() {
+  try {
+    const data = await authBrowser.start()
+    showToast(data.viewer_url ? '远程登录入口已打开，请登录后获取 Cookie' : '授权浏览器已启动，请在弹出的 Auth Browser 窗口登录后获取 Cookie')
+  } catch (err: unknown) {
+    showToast(err instanceof Error ? err.message : '无法打开登录页')
+  }
+}
+
+async function captureAuthBrowserCookie() {
+  try {
+    const res = await authBrowser.capture(settings.config.remember_cookie)
+    await settings.load()
+    showToast(res.msg || 'Cookie 已捕获并保存')
+  } catch (err: unknown) {
+    showToast(err instanceof Error ? err.message : 'Cookie 捕获失败')
+  }
+}
+
+async function checkCurrentCookie() {
+  try {
+    const msg = await settings.checkCookie()
+    showToast(msg)
+    await tasks.refresh()
+  } catch (err: unknown) {
+    showToast(err instanceof Error ? err.message : 'Cookie 检测失败')
   }
 }
 async function clearLogs() {
@@ -469,8 +521,22 @@ onUnmounted(() => {
         <section class="flex min-h-0 self-start flex-col gap-3 overflow-hidden p-5">
           <!-- 当前任务操作按钮 -->
           <div v-if="currentTask" class="flex flex-wrap gap-2">
+            <div v-if="currentTask.state === 'waiting_cookie'" class="basis-full rounded border border-[color:var(--c-border-soft)] bg-surface-sunken px-3 py-2 text-xs text-[color:var(--c-text-muted)]">
+              <div><span>Cookie 状态：</span>{{ cookieStatusLabel }}</div>
+              <div class="truncate" :title="waitingCookieReason(currentTask)"><span>失败原因：</span>{{ waitingCookieReason(currentTask) }}</div>
+              <div><span>推荐处理：</span>{{ cookieRecommendation() }}</div>
+              <div v-if="currentTask.task_cookie_failure_count"><span>累计次数：</span>{{ currentTask.task_cookie_failure_count }}</div>
+            </div>
+            <button v-if="currentTask.state === 'waiting_cookie'" @click="openAuthBrowserForCookie" class="btn btn-sm btn-soft">打开登录页获取 Cookie</button>
+            <button
+              v-if="currentTask.state === 'waiting_cookie' && authBrowser.sessionId.value"
+              @click="captureAuthBrowserCookie"
+              class="btn btn-sm btn-warning"
+            >我已登录，获取 Cookie</button>
+            <button v-if="currentTask.state === 'waiting_cookie'" @click="checkCurrentCookie" class="btn btn-sm btn-info">检测当前 Cookie</button>
             <button v-if="currentTask.state === 'waiting_cookie'" @click="refreshCookie(currentTask.task_id)" class="btn btn-sm btn-warning">读安卓 Cookie</button>
             <button v-if="currentTask.state === 'waiting_cookie'" @click="submitManualCookie(currentTask.task_id)" class="btn btn-sm btn-info">粘贴 Cookie</button>
+            <button v-if="currentTask.state === 'waiting_cookie'" @click="resumeTask(currentTask.task_id)" class="btn btn-sm btn-info">恢复任务</button>
             <button v-if="currentTask.state === 'waiting_choice'" @click="setTaskMode(currentTask.task_id, 'incremental')" class="btn btn-sm btn-info">增量</button>
             <button v-if="currentTask.state === 'waiting_choice'" @click="setTaskMode(currentTask.task_id, 'overwrite')" class="btn btn-sm btn-danger">覆盖</button>
           </div>

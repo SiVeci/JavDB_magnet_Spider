@@ -143,6 +143,7 @@ def init_database():
                 current TEXT DEFAULT '-',
                 checkpoint_json TEXT DEFAULT '',
                 error_message TEXT DEFAULT '',
+                task_cookie_failure_count INTEGER DEFAULT 0,
                 added_count INTEGER DEFAULT 0,
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL,
@@ -200,6 +201,8 @@ def init_database():
     _migrate_tag_columns()
     _migrate_magnet_check_columns()
     _migrate_runtime_tracker_column()
+    _migrate_cookie_lifecycle_columns()
+    _migrate_task_cookie_failure_column()
     _migrate_actor_id_column()
 
 
@@ -232,6 +235,20 @@ def _migrate_magnet_check_columns():
 def _migrate_runtime_tracker_column():
     with connect() as conn:
         _ensure_column(conn, "runtime_config", "tracker_list_json", "TEXT DEFAULT '[]'")
+
+
+def _migrate_cookie_lifecycle_columns():
+    with connect() as conn:
+        _ensure_column(conn, "runtime_config", "cookie_source", "TEXT DEFAULT 'unknown'")
+        _ensure_column(conn, "runtime_config", "cookie_captured_at", "REAL DEFAULT 0")
+        _ensure_column(conn, "runtime_config", "cookie_validated_at", "REAL DEFAULT 0")
+        _ensure_column(conn, "runtime_config", "cookie_status", "TEXT DEFAULT 'missing'")
+        _ensure_column(conn, "runtime_config", "cookie_last_error", "TEXT DEFAULT ''")
+
+
+def _migrate_task_cookie_failure_column():
+    with connect() as conn:
+        _ensure_column(conn, "tasks", "task_cookie_failure_count", "INTEGER DEFAULT 0")
 
 
 def _extract_actor_id(url):
@@ -339,6 +356,7 @@ def _migrate_task_runtime_columns():
                 current TEXT DEFAULT '-',
                 checkpoint_json TEXT DEFAULT '',
                 error_message TEXT DEFAULT '',
+                task_cookie_failure_count INTEGER DEFAULT 0,
                 added_count INTEGER DEFAULT 0,
                 created_at REAL NOT NULL,
                 updated_at REAL NOT NULL,
@@ -348,12 +366,12 @@ def _migrate_task_runtime_columns():
             INSERT OR IGNORE INTO tasks_new(
                 task_id, start_url, requested_filename, final_filename, collection_filename,
                 crawl_mode, state, progress, current, checkpoint_json, error_message,
-                added_count, created_at, updated_at, started_at, finished_at
+                task_cookie_failure_count, added_count, created_at, updated_at, started_at, finished_at
             )
             SELECT
                 task_id, start_url, requested_filename, final_filename, collection_filename,
                 crawl_mode, state, progress, current, checkpoint_json, error_message,
-                added_count, created_at, updated_at, started_at, finished_at
+                0, added_count, created_at, updated_at, started_at, finished_at
             FROM tasks;
             DROP TABLE tasks;
             ALTER TABLE tasks_new RENAME TO tasks;
@@ -758,7 +776,7 @@ from actor_collection_repo import (  # noqa: E402,F401
     replace_category_snapshot,
     set_actor_last_task_tags,
 )
-from settings_repo import get_runtime_config, save_runtime_config  # noqa: E402,F401
+from settings_repo import get_runtime_config, save_runtime_config, update_cookie_validation_status  # noqa: E402,F401
 from task_repo import (  # noqa: E402,F401
     append_task_log,
     claim_next_pending_task,
@@ -772,6 +790,7 @@ from task_repo import (  # noqa: E402,F401
     get_task,
     get_task_logs,
     has_active_task,
+    increment_task_cookie_failure_count,
     list_tasks,
     load_task_checkpoint,
     recover_interrupted_tasks,
@@ -783,4 +802,5 @@ from task_repo import (  # noqa: E402,F401
     update_task_cookie,
     update_task_mode,
     update_task_status,
+    reset_task_cookie_failure_count,
 )

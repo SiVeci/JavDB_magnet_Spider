@@ -11,6 +11,9 @@ gradle/
 *.md
 spider_core/tests/
 spider_core/data/
+# 独立 Auth Browser Service（含真实登录态 profile），主镜像只 COPY spider_core/，
+# 不需要进 build context，避免把会话 Cookie 上传给 docker daemon。
+auth_browser/
 diff_output.txt
 local.properties
 # 前端源码与依赖（运行时只需 CI 生成的 frontend_dist 产物，不需要源码/node_modules）

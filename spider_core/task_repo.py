@@ -36,6 +36,8 @@ __all__ = [
     "request_task_cancel",
     "update_task_cookie",
     "update_task_mode",
+    "increment_task_cookie_failure_count",
+    "reset_task_cookie_failure_count",
 ]
 
 
@@ -189,6 +191,7 @@ def update_task_status(
     final_filename=None,
     added_count=None,
     error_message=None,
+    task_cookie_failure_count=None,
 ):
     updates = {}
     if state:
@@ -207,6 +210,8 @@ def update_task_status(
         updates["collection_filename"] = safe_name
     if added_count is not None:
         updates["added_count"] = int(added_count)
+    if task_cookie_failure_count is not None:
+        updates["task_cookie_failure_count"] = int(task_cookie_failure_count)
     if error_message is not None:
         updates["error_message"] = error_message
     if updates:
@@ -348,7 +353,7 @@ def resume_task_to_pending(task_id):
     task = get_task(task_id)
     if not task or task["state"] not in {"paused", "waiting_cookie", "waiting_choice"}:
         return False
-    update_task_status(task_id, state="pending", log_msg="任务已恢复到队列")
+    update_task_status(task_id, state="pending", task_cookie_failure_count=0, log_msg="任务已恢复到队列")
     return True
 
 
@@ -365,7 +370,7 @@ def request_task_cancel(task_id):
     return False
 
 
-def update_task_cookie(task_id, cookie):
+def update_task_cookie(task_id, cookie, cookie_source="manual"):
     if not get_task(task_id):
         return False
     current = db_store.get_runtime_config(include_cookie=False)
@@ -374,9 +379,29 @@ def update_task_cookie(task_id, cookie):
         remember_cookie=current["remember_cookie"],
         user_agent=current["user_agent"],
         proxies=current["proxies"],
+        cookie_source=cookie_source,
+        cookie_status="unverified" if cookie else "missing",
     )
     append_task_log(task_id, "Cookie 已更新")
     return True
+
+
+def increment_task_cookie_failure_count(task_id):
+    now = _now()
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE tasks
+            SET task_cookie_failure_count = IFNULL(task_cookie_failure_count, 0) + 1,
+                updated_at = ?
+            WHERE task_id = ?
+            """,
+            (now, task_id),
+        )
+
+
+def reset_task_cookie_failure_count(task_id):
+    update_task(task_id, task_cookie_failure_count=0)
 
 
 def update_task_mode(task_id, mode):

@@ -5,6 +5,10 @@ import secrets
 
 APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "2.1.0")
 AUTH_HEADER = "X-JavDB-Token"
+AUTH_BROWSER_SERVICE_URL = os.getenv("AUTH_BROWSER_SERVICE_URL", "").strip().rstrip("/")
+AUTH_BROWSER_SHARED_TOKEN = os.getenv("AUTH_BROWSER_SHARED_TOKEN", "").strip()
+AUTH_BROWSER_TIMEOUT_SECONDS = float(os.getenv("AUTH_BROWSER_TIMEOUT_SECONDS", "15"))
+COOKIE_CHECK_URL = os.getenv("JAVDB_COOKIE_CHECK_URL", "https://javdb.com/users/want_watch_videos").strip()
 PUBLIC_API_PATHS = {"/api/version"}
 # 自行鉴权路径：这些端点不走 header 中间件校验，因为它们在端点内部用其他方式鉴权。
 # /api/events 是 SSE，浏览器 EventSource 无法设置自定义请求头，只能用 ?token= query 校验，

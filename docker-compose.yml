@@ -1,0 +1,59 @@
+# JavDB Spider —— 主程序 + Auth Browser Service 编排
+#
+# 用法：
+#   1. cp .env.example .env，按需修改 JAVDB_AUTH_TOKEN 和 AUTH_BROWSER_SHARED_TOKEN
+#   2. 本地源码构建：docker compose up -d --build
+#      使用已发布镜像：取消下方 image: 注释、注释掉 build:，再 docker compose pull && up -d
+#
+# 主程序 WebUI：http://localhost:8000  （需在请求头带 X-JavDB-Token，前端登录页会处理）
+#
+# 说明：Auth Browser Service 以 Headless 模式运行，可启动 Chromium 并捕获 Cookie，
+# 但不内置远程浏览器画面。需要可视化登录入口时，请在桌面机单独运行 auth_browser，
+# 并通过 AUTH_BROWSER_PUBLIC_BASE_URL 暴露入口（见 auth_browser/README.md）。
+
+services:
+  spider:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        JAVDB_SPIDER_VERSION: ${JAVDB_SPIDER_VERSION:-compose-local}
+    # image: ghcr.io/siveci/javdb_spider:latest
+    container_name: javdb-spider
+    restart: unless-stopped
+    ports:
+      - "${SPIDER_PORT:-8000}:8000"
+    environment:
+      # WebUI/API 访问令牌：必填，留空会导致所有 /api 请求 401。
+      JAVDB_AUTH_TOKEN: ${JAVDB_AUTH_TOKEN:?need JAVDB_AUTH_TOKEN}
+      # 指向同网络下的 auth-browser 服务。
+      AUTH_BROWSER_SERVICE_URL: http://auth-browser:8090
+      AUTH_BROWSER_SHARED_TOKEN: ${AUTH_BROWSER_SHARED_TOKEN:-}
+    volumes:
+      # 持久化 SQLite 库与导出的 CSV。
+      - ./data:/app/data
+    depends_on:
+      - auth-browser
+
+  auth-browser:
+    build:
+      context: ./auth_browser
+      dockerfile: Dockerfile
+    # image: ghcr.io/siveci/javdb_auth_browser:latest
+    container_name: javdb-auth-browser
+    restart: unless-stopped
+    # 默认不对外暴露端口，仅供 spider 经内部网络访问。
+    # 桌面机需要直接访问时，取消下一行注释。
+    # ports:
+    #   - "8090:8090"
+    environment:
+      AUTH_BROWSER_HEADLESS: "1"
+      AUTH_BROWSER_SHARED_TOKEN: ${AUTH_BROWSER_SHARED_TOKEN:-}
+      AUTH_BROWSER_SESSION_TTL_SECONDS: ${AUTH_BROWSER_SESSION_TTL_SECONDS:-900}
+    volumes:
+      # 持久化 Playwright 登录态（storage_state.json），含真实会话 Cookie。
+      # 使用命名卷而非 bind mount，避免落到宿主可被误提交的目录。
+      - auth_browser_profile:/app/profile
+
+volumes:
+  auth_browser_profile:

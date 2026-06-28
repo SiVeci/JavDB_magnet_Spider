@@ -3,8 +3,9 @@
 import threading
 
 import db_store
+from services.cookie_validation_service import validate_runtime_cookie
 from services.event_bus import broadcast
-from services.task_service import task_to_response
+from services.task_service import cookie_validation_message, task_to_response
 from spider_engine import STATUS_FILE, run_task
 from storage_utils import atomic_write_json
 
@@ -53,6 +54,19 @@ def queue_worker():
             task = db_store.claim_next_pending_task()
             if not task:
                 write_status_mirror(db_store.get_current_task())
+                return
+            validation = validate_runtime_cookie(update_runtime=True)
+            if not validation.get("valid"):
+                msg = cookie_validation_message(validation)
+                db_store.increment_task_cookie_failure_count(task["task_id"])
+                db_store.update_task_status(
+                    task["task_id"],
+                    state="waiting_cookie",
+                    current="Cookie validation failed",
+                    log_msg=f"Cookie validation failed: {msg}",
+                    error_message=msg,
+                )
+                write_status_mirror(db_store.get_task(task["task_id"]))
                 return
             write_status_mirror(task)
             try:

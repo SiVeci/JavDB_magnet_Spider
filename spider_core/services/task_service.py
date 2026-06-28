@@ -7,6 +7,7 @@ import db_store
 from bs4 import BeautifulSoup
 from ranking_utils import COLLECTION_TYPE_ACTOR, parse_ranking_url
 from schemas import TaskConfig
+from services.cookie_validation_service import ensure_cookie_valid_for_task
 from spider_engine import fetch_html, get_android_javdb_cookie
 from storage_utils import UnsafeFilenameError, make_csv_filename_from_label, normalize_csv_filename
 from utils import build_proxy_dict, ensure_zh_locale, runtime_headers
@@ -25,18 +26,18 @@ class TaskConfigError(Exception):
 def save_runtime_from_payload(config):
     current = db_store.get_runtime_config(include_cookie=True)
     cookie = getattr(config, "cookie", "")
-    if not cookie:
-        cookie = current.get("cookie", "")
     user_agent = getattr(config, "user_agent", "") or current.get("user_agent", "")
     proxies = getattr(config, "proxies", None)
     if proxies is None:
         proxies = current.get("proxies", "")
     remember_cookie = bool(getattr(config, "remember_cookie", current.get("remember_cookie", False)))
     db_store.save_runtime_config(
-        cookie=cookie,
+        cookie=cookie if cookie else None,
         remember_cookie=remember_cookie,
         user_agent=user_agent,
         proxies=proxies or "",
+        cookie_source="manual" if cookie else None,
+        cookie_status="unverified" if cookie else None,
     )
 
 def get_runtime_for_request():
@@ -49,9 +50,32 @@ def get_runtime_for_request():
                 remember_cookie=runtime["remember_cookie"],
                 user_agent=runtime["user_agent"],
                 proxies=runtime["proxies"],
+                cookie_source="android_webview",
+                cookie_status="unverified",
             )
             runtime = db_store.get_runtime_config(include_cookie=True)
     return runtime
+
+
+def cookie_validation_message(result):
+    status = result.get("status") or "invalid"
+    message = result.get("message") or "Cookie 验证失败"
+    if status == "missing":
+        return "Cookie 缺失，请先粘贴 Cookie 或打开登录页获取 Cookie"
+    if status == "network_error":
+        return f"Cookie 验证遇到网络或代理问题：{message}"
+    if status == "blocked":
+        return f"Cookie 验证被访问限制拦截：{message}"
+    if status == "expired":
+        return f"Cookie 疑似过期：{message}"
+    return message
+
+
+def require_valid_cookie_for_task():
+    result = ensure_cookie_valid_for_task()
+    if result.get("valid"):
+        return result
+    raise TaskConfigError(400, cookie_validation_message(result), cookie_status=result.get("status"))
 
 def infer_task_filename(start_url, requested_filename, soup):
     if requested_filename:
@@ -78,6 +102,8 @@ def prepare_task_config(config: TaskConfig):
     runtime = get_runtime_for_request()
     if not runtime.get("cookie"):
         raise TaskConfigError(400, "Cookie 不能为空，Android 端请先在内置浏览器登录 JavDB")
+    if runtime.get("cookie_status") in {"invalid", "expired", "blocked"}:
+        require_valid_cookie_for_task()
 
     start_url = ensure_zh_locale(config.start_url)
     ranking_meta = parse_ranking_url(start_url)
@@ -96,6 +122,7 @@ def prepare_task_config(config: TaskConfig):
             response.status_code if response.status_code >= 400 else 400,
             f"入队预检查失败，状态码: {response.status_code}",
         )
+    db_store.update_cookie_validation_status("valid", time.time(), "")
 
     soup = BeautifulSoup(response.text, "html.parser")
     try:
@@ -147,6 +174,7 @@ def task_to_response(task, include_logs=False):
         "progress": task.get("progress") or "0/0",
         "current": task.get("current") or "-",
         "added_count": task.get("added_count") or 0,
+        "task_cookie_failure_count": task.get("task_cookie_failure_count") or 0,
         "error_message": task.get("error_message") or "",
         "created_at": task.get("created_at") or 0,
         "updated_at": task.get("updated_at") or 0,

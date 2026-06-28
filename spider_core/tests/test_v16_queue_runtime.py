@@ -12,7 +12,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import db_store  # noqa: E402
 from schemas import TaskConfig  # noqa: E402
+from services import auth_browser_service  # noqa: E402
+from services import cookie_validation_service  # noqa: E402
 from services import queue_service, task_service  # noqa: E402
+import spider_engine  # noqa: E402
 
 
 class MockResponse:
@@ -49,6 +52,96 @@ class RuntimeConfigTest(unittest.TestCase):
             row = conn.execute("SELECT cookie, remember_cookie FROM runtime_config WHERE id = 1").fetchone()
         self.assertEqual(row["cookie"], "stored-cookie")
         self.assertEqual(row["remember_cookie"], 1)
+
+    def test_empty_settings_save_preserves_session_cookie(self):
+        db_store.save_runtime_config(
+            cookie="session-cookie",
+            remember_cookie=False,
+            user_agent="ua",
+            proxies="proxy",
+            cookie_source="manual",
+            cookie_status="valid",
+        )
+
+        db_store.save_runtime_config(cookie=None, remember_cookie=False, user_agent="ua2", proxies="")
+
+        runtime = db_store.get_runtime_config()
+        self.assertEqual(runtime["cookie"], "session-cookie")
+        self.assertEqual(runtime["user_agent"], "ua2")
+        self.assertEqual(runtime["cookie_source"], "manual")
+        self.assertEqual(runtime["cookie_status"], "valid")
+
+    def test_cookie_lifecycle_fields_are_saved_with_runtime_config(self):
+        db_store.save_runtime_config(
+            cookie="manual-cookie",
+            remember_cookie=False,
+            user_agent="ua",
+            proxies="",
+            cookie_source="manual",
+            cookie_status="unverified",
+        )
+
+        runtime = db_store.get_runtime_config()
+        self.assertEqual(runtime["cookie_source"], "manual")
+        self.assertEqual(runtime["cookie_status"], "unverified")
+        self.assertGreater(runtime["cookie_captured_at"], 0)
+        self.assertEqual(runtime["cookie_validated_at"], 0)
+
+    def test_task_cookie_failure_count_defaults_to_zero(self):
+        task_id = db_store.create_task("https://javdb.com/actors/QDvG")
+
+        task = db_store.get_task(task_id)
+
+        self.assertEqual(task["task_cookie_failure_count"], 0)
+
+    def test_missing_cookie_validation_updates_runtime_status(self):
+        result = cookie_validation_service.validate_runtime_cookie(update_runtime=True)
+
+        self.assertFalse(result["valid"])
+        self.assertEqual(result["status"], "missing")
+        runtime = db_store.get_runtime_config(include_cookie=False)
+        self.assertEqual(runtime["cookie_status"], "missing")
+        self.assertGreater(runtime["cookie_validated_at"], 0)
+
+    def test_cloudflare_analytics_script_is_not_blocked(self):
+        html = '<script src="https://static.cloudflareinsights.com/beacon.min.js"></script>'
+
+        blocked = cookie_validation_service._is_blocked_response(MockResponse(html, 200), html)
+
+        self.assertFalse(blocked)
+
+    def test_cloudflare_challenge_markers_are_blocked(self):
+        html = '<html><title>Just a moment...</title><div class="cf-challenge">Checking browser</div></html>'
+
+        blocked = cookie_validation_service._is_blocked_response(MockResponse(html, 200), html)
+
+        self.assertTrue(blocked)
+
+    def test_auth_browser_capture_saves_source_and_validation_status(self):
+        def fake_validate(update_runtime=True):
+            if update_runtime:
+                db_store.update_cookie_validation_status("valid", 123, "")
+            return {"valid": True, "status": "valid", "message": "ok", "validated_at": 123}
+
+        with patch.object(
+            auth_browser_service,
+            "_request",
+            return_value={"session_id": "s1", "status": "captured", "cookie": "ck=1", "user_agent": "ua"},
+        ), patch.object(
+            auth_browser_service,
+            "validate_runtime_cookie",
+            side_effect=fake_validate,
+        ) as validate:
+            data = auth_browser_service.capture_session("s1", remember_cookie=False)
+
+        validate.assert_called_once_with(update_runtime=True)
+        self.assertTrue(data["has_cookie"])
+        self.assertEqual(data["cookie_validation"]["status"], "valid")
+        runtime = db_store.get_runtime_config()
+        self.assertEqual(runtime["cookie"], "ck=1")
+        self.assertEqual(runtime["cookie_source"], "auth_browser")
+        self.assertEqual(runtime["cookie_status"], "valid")
+        self.assertEqual(runtime["cookie_validated_at"], 123)
 
 
 class TaskEnqueueTest(unittest.TestCase):
@@ -109,6 +202,61 @@ class TaskEnqueueTest(unittest.TestCase):
             )
         self.assertEqual(result["code"], 200)
         self.assertEqual(db_store.get_task(result["data"]["task_id"])["crawl_mode"], "incremental")
+
+    def test_runtime_cookie_expiry_pauses_running_task(self):
+        task_id = db_store.create_task("https://javdb.com/actors/QDvG", filename="out.csv")
+
+        with patch.object(spider_engine, "fetch_html", return_value=MockResponse("<a href='/login'>login</a><input type='password'>", 401)):
+            spider_engine.run_spider(
+                "https://javdb.com/actors/QDvG",
+                "cookie",
+                "ua",
+                "out.csv",
+                task_id=task_id,
+            )
+
+        task = db_store.get_task(task_id)
+        runtime = db_store.get_runtime_config(include_cookie=False)
+        self.assertEqual(task["state"], "waiting_cookie")
+        self.assertEqual(task["task_cookie_failure_count"], 1)
+        self.assertEqual(runtime["cookie_status"], "expired")
+        self.assertIn("登录态", task["error_message"])
+
+    def test_runtime_network_error_pauses_without_invalidating_cookie(self):
+        class FakeNetworkError(Exception):
+            pass
+
+        task_id = db_store.create_task("https://javdb.com/actors/QDvG", filename="out.csv")
+
+        with patch.object(spider_engine, "fetch_html", side_effect=FakeNetworkError("proxy unavailable")):
+            spider_engine.run_spider(
+                "https://javdb.com/actors/QDvG",
+                "cookie",
+                "ua",
+                "out.csv",
+                task_id=task_id,
+            )
+
+        task = db_store.get_task(task_id)
+        runtime = db_store.get_runtime_config(include_cookie=False)
+        self.assertEqual(task["state"], "waiting_cookie")
+        self.assertEqual(task["task_cookie_failure_count"], 1)
+        self.assertEqual(runtime["cookie_status"], "network_error")
+        self.assertIn("网络或代理", runtime["cookie_last_error"])
+
+    def test_resume_resets_cookie_failure_count_after_validation(self):
+        task_id = db_store.create_task("https://javdb.com/actors/QDvG", filename="out.csv")
+        db_store.update_task_status(task_id, state="waiting_cookie", task_cookie_failure_count=2)
+
+        with patch("routers.tasks.ensure_queue_worker", return_value=None), patch("routers.tasks.validate_runtime_cookie", return_value={"valid": True, "status": "valid", "message": "ok"}):
+            from routers.tasks import resume_task_by_id
+
+            result = resume_task_by_id(task_id)
+
+        self.assertEqual(result["code"], 200)
+        task = db_store.get_task(task_id)
+        self.assertEqual(task["state"], "pending")
+        self.assertEqual(task["task_cookie_failure_count"], 0)
 
 
 class MagnetSelectionTest(unittest.TestCase):

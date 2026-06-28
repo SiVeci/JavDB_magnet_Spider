@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 import db_store
 from app_config import APP_VERSION, is_auth_required
 from schemas import RuntimeConfig, TagConfigRequest
+from services.cookie_validation_service import validate_runtime_cookie
 from services.queue_service import write_status_mirror
 from services.task_service import get_runtime_for_request, task_to_response
 from spider_engine import fetch_html
@@ -31,13 +32,21 @@ def get_runtime_config():
 @router.post("/api/runtime_config")
 def set_runtime_config(config: RuntimeConfig):
     db_store.save_runtime_config(
-        cookie=config.cookie,
+        cookie=config.cookie if config.cookie else None,
         remember_cookie=config.remember_cookie,
         user_agent=config.user_agent,
         proxies=config.proxies,
         trackers=config.trackers,
+        cookie_source="manual" if config.cookie else None,
+        cookie_status="unverified" if config.cookie else None,
     )
     return {"code": 200, "msg": "运行配置已保存"}
+
+
+@router.post("/api/auth/check_cookie")
+def check_cookie():
+    result = validate_runtime_cookie(update_runtime=True)
+    return {"code": 200, "data": result, "msg": result["message"]}
 
 
 @router.get("/api/status")
