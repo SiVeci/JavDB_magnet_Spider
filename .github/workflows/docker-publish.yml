@@ -9,7 +9,6 @@ on:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/javdb_spider
-  IMAGE_NAME_AUTH_BROWSER: ${{ github.repository_owner }}/javdb_auth_browser
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
@@ -74,21 +73,3 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=spider
           cache-to: type=gha,mode=max,scope=spider
-      - name: Extract metadata (tags, labels) for Auth Browser
-        id: meta_auth_browser
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_AUTH_BROWSER }}
-          tags: |
-            type=raw,value=${{ github.event.inputs.version }}
-            type=raw,value=latest
-      - name: Build and push Auth Browser image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./auth_browser
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta_auth_browser.outputs.tags }}
-          labels: ${{ steps.meta_auth_browser.outputs.labels }}
-          cache-from: type=gha,scope=auth_browser
-          cache-to: type=gha,mode=max,scope=auth_browser
