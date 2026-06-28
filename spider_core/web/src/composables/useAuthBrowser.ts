@@ -29,7 +29,12 @@ export function useAuthBrowser() {
       const data = res.data
       sessionId.value = data.session_id
       status.value = data.status || 'waiting_login'
-      if (data.viewer_url) window.open(data.viewer_url, '_blank', 'noopener,noreferrer')
+      // viewer_url 可能是相对路径（VNC 模式，由主程序反代），用当前页面 origin 拼成完整地址，
+      // 这样 auth-browser 无需知道用户的外部域名/协议（含 https）。
+      if (data.viewer_url) {
+        const target = new URL(data.viewer_url, window.location.origin).toString()
+        window.open(target, '_blank', 'noopener,noreferrer')
+      }
       return data
     } finally {
       loading.value = false

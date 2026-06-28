@@ -29,18 +29,26 @@ cd spider_core
 python -m uvicorn main:app --host 0.0.0.0 --port 8000 --no-access-log
 ```
 
-## Docker / Headless
+## Docker / 远程登录画面（VNC 投屏）
 
-MVP 支持 Headless 启动和 Cookie 捕获，但不内置远程浏览器画面。桌面模式下登录窗口由 Auth Browser Service 自己打开，WebUI 不会再打开 `login_url`。无桌面环境需要额外提供可访问的远程浏览器/虚拟显示入口，并用 `AUTH_BROWSER_PUBLIC_BASE_URL` 指向该入口或服务说明页。
+支持三种运行形态：
+
+1. **桌面模式**（默认，未设 `AUTH_BROWSER_HEADLESS`/`AUTH_BROWSER_VNC`）：登录窗口由本服务在本机弹出，适合源码运行调试。
+2. **Headless 模式**（`AUTH_BROWSER_HEADLESS=1`）：无头启动并捕获 Cookie，但不提供可视画面，无法人工登录。
+3. **VNC 投屏模式**（`AUTH_BROWSER_VNC=1`，compose 默认）：容器内用虚拟显示（Xvfb）跑有头 Chromium，经 x11vnc + noVNC 把画面投成网页。主程序把 `/auth-viewer/*` 反代到本服务 6080 端口，其他设备访问主程序 WebUI 即可在网页里看到并操作 javdb 登录框，登录后获取 Cookie。此模式下 `viewer_url` 返回相对路径 `/auth-viewer/vnc.html?...`，由前端拼接当前页面 origin。
 
 常用环境变量：
 
-- `AUTH_BROWSER_HEADLESS=1`：以 Headless 模式启动 Chromium
-- `AUTH_BROWSER_PUBLIC_BASE_URL=http://host:8090`：返回给主程序和 WebUI 的远程 viewer 入口基址；未配置时 `viewer_url` 为空
+- `AUTH_BROWSER_VNC=1`：启用 VNC 投屏模式（容器内有头 Chromium + noVNC，端口 6080）
+- `AUTH_BROWSER_HEADLESS=1`：以 Headless 模式启动 Chromium（VNC 模式会覆盖此项强制有头）
+- `AUTH_BROWSER_VNC_VIEWER_PATH=...`：VNC 模式下 viewer_url 返回的 noVNC 相对入口，默认无需修改
+- `AUTH_BROWSER_PUBLIC_BASE_URL=http://host:8090`：非 VNC 模式下返回给主程序和 WebUI 的远程 viewer 入口基址；未配置时 `viewer_url` 为空
 - `AUTH_BROWSER_SHARED_TOKEN=...`：主程序和 Auth Browser Service 之间的共享令牌
 - `AUTH_BROWSER_LOGIN_URL=https://javdb.com/login`：登录页，默认无需修改
 - `AUTH_BROWSER_SESSION_TTL_SECONDS=900`：登录会话有效期
 - `AUTH_BROWSER_PROFILE_DIR=./profile`：保存 Playwright storage state 的目录
+
+安全提示：VNC 投屏模式下 `/auth-viewer` 默认无 VNC 密码，仅靠内网隔离；公网暴露前请加 VNC 密码或在反代层加鉴权。
 
 Cookie 只通过 capture API 返回给主程序，服务日志不要输出完整 Cookie。
 

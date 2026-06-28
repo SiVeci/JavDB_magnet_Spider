@@ -7,9 +7,10 @@
 #
 # 主程序 WebUI：http://localhost:8000  （需在请求头带 X-JavDB-Token，前端登录页会处理）
 #
-# 说明：Auth Browser Service 以 Headless 模式运行，可启动 Chromium 并捕获 Cookie，
-# 但不内置远程浏览器画面。需要可视化登录入口时，请在桌面机单独运行 auth_browser，
-# 并通过 AUTH_BROWSER_PUBLIC_BASE_URL 暴露入口（见 auth_browser/README.md）。
+# 说明：Auth Browser Service 以 VNC 投屏模式运行（AUTH_BROWSER_VNC=1）：容器内启动有头
+# Chromium 并把画面经 noVNC 投屏。主程序把 /auth-viewer/* 反代到 auth-browser 的 6080，
+# 因此其他设备访问主程序 WebUI → 点“打开登录页” → 在网页里看到并操作 javdb 登录框 → 登录后
+# 获取 Cookie。无需对外单独暴露 auth-browser 端口。
 
 services:
   spider:
@@ -28,6 +29,8 @@ services:
       JAVDB_AUTH_TOKEN: ${JAVDB_AUTH_TOKEN:?need JAVDB_AUTH_TOKEN}
       # 指向同网络下的 auth-browser 服务。
       AUTH_BROWSER_SERVICE_URL: http://auth-browser:8090
+      # 主程序反代 noVNC 投屏的内网目标。
+      AUTH_BROWSER_VIEWER_INTERNAL_URL: http://auth-browser:6080
       AUTH_BROWSER_SHARED_TOKEN: ${AUTH_BROWSER_SHARED_TOKEN:-}
     volumes:
       # 持久化 SQLite 库与导出的 CSV。
@@ -42,12 +45,11 @@ services:
     # image: ghcr.io/siveci/javdb_auth_browser:latest
     container_name: javdb-auth-browser
     restart: unless-stopped
-    # 默认不对外暴露端口，仅供 spider 经内部网络访问。
-    # 桌面机需要直接访问时，取消下一行注释。
-    # ports:
-    #   - "8090:8090"
+    # 默认不对外暴露端口：API(8090) 与 noVNC(6080) 均仅供 spider 经内部网络访问，
+    # noVNC 由主程序 /auth-viewer/* 反代对外。
     environment:
-      AUTH_BROWSER_HEADLESS: "1"
+      # VNC 投屏模式：容器内有头 Chromium + noVNC，供远程网页登录。
+      AUTH_BROWSER_VNC: "1"
       AUTH_BROWSER_SHARED_TOKEN: ${AUTH_BROWSER_SHARED_TOKEN:-}
       AUTH_BROWSER_SESSION_TTL_SECONDS: ${AUTH_BROWSER_SESSION_TTL_SECONDS:-900}
     volumes:

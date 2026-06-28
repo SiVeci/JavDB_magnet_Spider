@@ -186,7 +186,7 @@ async function submitManualCookie(taskId: string) {
 async function openAuthBrowserForCookie() {
   try {
     const data = await authBrowser.start()
-    showToast(data.viewer_url ? '远程登录入口已打开，请登录后获取 Cookie' : '授权浏览器已启动，请在弹出的 Auth Browser 窗口登录后获取 Cookie')
+    showToast(data.viewer_url ? '已打开远程登录窗口，请在新标签页登录后获取 Cookie' : '授权浏览器已启动，请在弹出的 Auth Browser 窗口登录后获取 Cookie')
   } catch (err: unknown) {
     showToast(err instanceof Error ? err.message : '无法打开登录页')
   }

@@ -15,6 +15,14 @@ JAVDB_LOGIN_URL = os.getenv("AUTH_BROWSER_LOGIN_URL", "https://javdb.com/login")
 PUBLIC_BASE_URL = os.getenv("AUTH_BROWSER_PUBLIC_BASE_URL", "").strip().rstrip("/")
 SHARED_TOKEN = os.getenv("AUTH_BROWSER_SHARED_TOKEN", "").strip()
 HEADLESS = os.getenv("AUTH_BROWSER_HEADLESS", "").strip().lower() in {"1", "true", "yes", "on"}
+# VNC 模式：Chromium 有头渲染到容器内虚拟显示，画面经 noVNC 投屏给远程设备操作。
+# 此时浏览器不在请求方本机弹出，viewer_url 指向主程序反代的 noVNC 入口（相对路径）。
+VNC_MODE = os.getenv("AUTH_BROWSER_VNC", "").strip().lower() in {"1", "true", "yes", "on"}
+# 主程序反代 noVNC 的对外相对路径（前端会拼接 window.location.origin 形成完整地址）。
+VNC_VIEWER_PATH = os.getenv(
+    "AUTH_BROWSER_VNC_VIEWER_PATH",
+    "/auth-viewer/vnc.html?path=auth-viewer/websockify&autoconnect=true&resize=remote",
+).strip()
 CHROMIUM_EXECUTABLE_PATH = os.getenv("AUTH_BROWSER_CHROMIUM_EXECUTABLE_PATH", "").strip() or None
 SESSION_TTL_SECONDS = int(os.getenv("AUTH_BROWSER_SESSION_TTL_SECONDS", "900"))
 PROFILE_DIR = os.getenv(
@@ -33,6 +41,10 @@ async def _require_token(x_auth_browser_token: str | None = Header(default=None)
 
 
 def _viewer_url(session_id: str) -> str:
+    # VNC 模式：返回 noVNC 相对入口，前端用 window.location.origin 拼成完整地址，
+    # 这样 auth-browser 无需知道用户的外部域名/协议。
+    if VNC_MODE:
+        return VNC_VIEWER_PATH
     if PUBLIC_BASE_URL:
         return f"{PUBLIC_BASE_URL}/sessions/{session_id}/viewer"
     return ""
@@ -141,7 +153,9 @@ async def start_session(x_auth_browser_token: str | None = Header(default=None))
     try:
         os.makedirs(PROFILE_DIR, exist_ok=True)
         pw = await _ensure_playwright()
-        browser = await pw.chromium.launch(headless=HEADLESS, executable_path=CHROMIUM_EXECUTABLE_PATH)
+        # VNC 模式强制有头：画面渲染到容器内虚拟显示后经 noVNC 投屏，供远程人工登录。
+        launch_headless = HEADLESS and not VNC_MODE
+        browser = await pw.chromium.launch(headless=launch_headless, executable_path=CHROMIUM_EXECUTABLE_PATH)
         context_kwargs = {}
         if os.path.exists(STORAGE_STATE_PATH):
             context_kwargs["storage_state"] = STORAGE_STATE_PATH
@@ -149,7 +163,7 @@ async def start_session(x_auth_browser_token: str | None = Header(default=None))
         page = await context.new_page()
         await page.goto(JAVDB_LOGIN_URL)
         sessions[session_id].update({
-            "status": "ready_to_capture" if HEADLESS else "waiting_login",
+            "status": "ready_to_capture" if launch_headless else "waiting_login",
             "playwright": pw,
             "browser": browser,
             "context": context,
