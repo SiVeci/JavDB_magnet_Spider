@@ -3,7 +3,7 @@
 import os
 import secrets
 
-APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "2.1.0")
+APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "2.2.0")
 AUTH_HEADER = "X-JavDB-Token"
 AUTH_BROWSER_SERVICE_URL = os.getenv("AUTH_BROWSER_SERVICE_URL", "").strip().rstrip("/")
 AUTH_BROWSER_SHARED_TOKEN = os.getenv("AUTH_BROWSER_SHARED_TOKEN", "").strip()

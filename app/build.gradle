@@ -30,7 +30,7 @@ android {
         minSdk 26
         targetSdk 36
         versionCode 27
-        versionName "2.1.0"
+        versionName "2.2.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         // === 新增：配置 NDK，指定手机 CPU 架构 ===
