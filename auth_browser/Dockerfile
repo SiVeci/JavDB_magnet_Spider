@@ -17,7 +17,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# 基础镜像里的 typing_extensions 由 apt 安装、无 pip RECORD，pydantic/fastapi 升级它时
+# pip 无法卸载而报 uninstall-no-record-file。先用 --ignore-installed 重装一份 pip 可管理的，
+# 之后常规安装即可正常升级。
+RUN pip install --no-cache-dir --ignore-installed typing_extensions \
+    && pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
