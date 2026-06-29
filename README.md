@@ -77,7 +77,7 @@
    * **阶段 3：WebUI 控制台挂载**：触发 `3. 打开 WebUI`。通过前端浏览器加载本地闭环监听端口 `127.0.0.1:8000`，发起路由请求并将采集指令下发至后端引擎。
 
 ### 方案二：Docker 容器化部署
-推荐使用 Docker Compose 以一键启动核心引擎与独立的 Auth Browser 鉴权浏览器服务：
+推荐使用 Docker Compose 以一键启动核心引擎：
 ```bash
 # 获取 docker-compose.yml 与 .env.example
 cp .env.example .env
@@ -98,7 +98,7 @@ docker run -d \
 ```
 *监听网关：`http://NAS_IP:8090`*
 
-*(注：获取 JavDB Cookie 直接在 WebUI → 设置 → “账号登录获取 Cookie” 中填账号/密码/验证码即可，登录请求由本容器自身网络出口发出，无需额外的鉴权浏览器或 VNC 服务。)*
+*注：获取 JavDB Cookie 直接在 WebUI → 设置 → “账号登录获取 Cookie” 中填账号/密码/验证码即可，登录请求由本容器自身网络出口发出，**不同IP远程部署存在CF拦截风险，建议局域网部署或本地运行时使用此功能***
 
 **部署参数解析：**
 * **API 鉴权注入**：Docker 镜像默认激活后端接口的强制访问鉴权拦截。需通过 `-e JAVDB_AUTH_TOKEN` 环境变量注入认证令牌（Token），前端控制面板发起初始数据请求时将校验该凭证。
@@ -142,8 +142,8 @@ npm run build    # vue-tsc 类型检查 + vite build
   * **Android 运行环境**：强制要求在第一阶段调用的系统内置 WebView 容器中捕获目标 URI，并在后端直连的 WebUI 实例中完成提交。严禁将链接跨越外部第三方浏览器应用中转，以此规避安全会话标识（Cookie）校验失效引发的连接阻断风险。
 * **请求头注入（Cookie & User-Agent）**：
   * **Android 运行环境**：系统引擎底层自动挂钩拦截并同步当前 WebView 的活动会话池。
-  * **PC / Docker 运行环境**：在 WebUI 设置页或任务面板点击 **“打开登录页获取 Cookie”**，系统将弹出Auth Browser 授权窗口，登录后自动捕获并同步 Cookie 与 User-Agent（同时仍保留手动粘贴输入框作为兜底）。
-* **前端会话控制**：由 Web 控制台注入或 Auth Browser 获取的 Cookie 凭据默认映射于前端内存临时生命周期。执行会话保持参数勾选后，当前凭据将经过序列化流程后写入本地数据库及浏览器沙盒缓存以实现持久化。
+  * **PC / Docker 运行环境**：在 WebUI 设置页或任务面板点击 **“账号登录获取 Cookie”**，系统将弹出原生登录弹窗，填入账号密码和验证码即可完成直登，并自动捕获并同步 Cookie 与 User-Agent（同时仍保留手动粘贴输入框作为兜底）。
+* **前端会话控制**：由 Web 控制台注入或直登获取的 Cookie 凭据默认映射于前端内存临时生命周期。执行会话保持参数勾选后，当前凭据将经过序列化流程后写入本地数据库及浏览器沙盒缓存以实现持久化。
 
 ### 2. 链路探测与资源降级演练
 伴随着数据采集批次的终结，用户态系统可通过内置的协议嗅探器校验磁力关联资源的存活态势：
@@ -183,7 +183,6 @@ npm run build    # vue-tsc 类型检查 + vite build
 ## 核心架构图谱
 
 ```text
-├── auth_browser/               # Auth Browser Service (Headless Browser for Login/Cookie Capture)
 ├── app/                        # Android Client (Java Native / UI / WebKit)
 │   ├── src/
 │   │   ├── main/
@@ -211,7 +210,7 @@ npm run build    # vue-tsc 类型检查 + vite build
 │   ├── export_service.py       # Entity-to-CSV Serialization Service
 │   ├── storage_utils.py        # Storage Path & Security Utilities
 │   ├── routers/                # API Routing Layer
-│   │   ├── auth_browser.py     # Auth Browser Service Interaction Routes
+│   │   ├── auth_browser.py     # Auth Login API Routes
 │   │   ├── magnets.py          # Magnet Health & Priority Routes
 │   │   ├── movies.py           # Movie Entity & Tag Filtering Routes
 │   │   ├── rankings.py         # Ranking & Top250 Routes
@@ -219,7 +218,7 @@ npm run build    # vue-tsc 类型检查 + vite build
 │   │   ├── storage.py          # Storage Management & CSV Export Routes
 │   │   └── tasks.py            # Spider Task Queue Control Routes
 │   ├── services/               # Business Logic Layer
-│   │   ├── auth_browser_service.py # Auth Browser Client Integration
+│   │   ├── auth_browser_service.py # Direct Login (curl_cffi) Service
 │   │   ├── cookie_validation_service.py # Cookie Health Check & Validation
 │   │   ├── magnet_service.py   # Magnet Selection & Scoring Algorithms
 │   │   ├── queue_service.py    # Background Queue & Thread Management
@@ -251,7 +250,7 @@ npm run build    # vue-tsc 类型检查 + vite build
 │       ├── spider_data.db      # SQLite Database File
 │       ├── checkpoint.json     # Scraping State Snapshot
 │       └── status.json         # Runtime Status Metrics
-├── docker-compose.yml          # Container Orchestration with Auth Browser
+├── docker-compose.yml          # Container Orchestration Config
 ├── Dockerfile                  # OCI Container Build Script
 ├── build.gradle                # Root Gradle Build Configuration
 ├── gradle/                     # Gradle Wrapper & Version Catalog

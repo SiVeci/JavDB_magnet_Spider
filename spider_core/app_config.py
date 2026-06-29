@@ -3,7 +3,7 @@
 import os
 import secrets
 
-APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "2.2.0")
+APP_VERSION = os.getenv("JAVDB_SPIDER_VERSION", "2.3.0")
 AUTH_HEADER = "X-JavDB-Token"
 COOKIE_CHECK_URL = os.getenv("JAVDB_COOKIE_CHECK_URL", "https://javdb.com/users/want_watch_videos").strip()
 PUBLIC_API_PATHS = {"/api/version"}

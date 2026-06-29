@@ -13,14 +13,46 @@ const email = ref('')
 const password = ref('')
 const captcha = ref('')
 const errorMsg = ref('')
+const rememberCreds = ref(localStorage.getItem('javdb_login_remember') === '1')
+
+// 记住的账号密码存在 localStorage（密码仅 base64 编码防肩窥，非加密）。
+const REMEMBER_KEY = 'javdb_login_remember'
+const EMAIL_KEY = 'javdb_login_email'
+const PASSWORD_KEY = 'javdb_login_password'
+
+function loadSavedCreds() {
+  email.value = localStorage.getItem(EMAIL_KEY) || ''
+  const saved = localStorage.getItem(PASSWORD_KEY)
+  try {
+    password.value = saved ? atob(saved) : ''
+  } catch {
+    password.value = ''
+  }
+}
+
+function persistCreds() {
+  if (rememberCreds.value) {
+    localStorage.setItem(REMEMBER_KEY, '1')
+    localStorage.setItem(EMAIL_KEY, email.value)
+    localStorage.setItem(PASSWORD_KEY, btoa(password.value))
+  } else {
+    localStorage.removeItem(REMEMBER_KEY)
+    localStorage.removeItem(EMAIL_KEY)
+    localStorage.removeItem(PASSWORD_KEY)
+  }
+}
 
 // 弹窗打开时初始化登录会话；关闭时清理。
 watch(
   () => props.open,
   async (isOpen) => {
     if (isOpen) {
-      email.value = ''
-      password.value = ''
+      if (rememberCreds.value) {
+        loadSavedCreds()
+      } else {
+        email.value = ''
+        password.value = ''
+      }
       captcha.value = ''
       errorMsg.value = ''
       try {
@@ -54,6 +86,7 @@ async function submit() {
   }
   try {
     const res = await authBrowser.login(email.value, password.value, captcha.value, props.rememberCookie ?? true)
+    persistCreds()
     emit('success', res.msg || '登录成功，Cookie 已保存')
     emit('update:open', false)
   } catch (err: unknown) {
@@ -122,6 +155,10 @@ async function submit() {
           </div>
           <p class="mt-1 text-xs text-[color:var(--c-text-muted)]">点击图片可刷新验证码</p>
         </div>
+        <label class="flex items-center gap-2 text-sm text-[color:var(--c-text)] cursor-pointer select-none">
+          <input v-model="rememberCreds" type="checkbox" class="h-4 w-4 cursor-pointer" />
+          记住账号密码
+        </label>
         <p v-if="errorMsg" class="text-xs" style="color:#dc2626">{{ errorMsg }}</p>
         <div class="flex justify-end gap-2 pt-1">
           <button type="button" @click="closeModal" class="btn btn-sm btn-soft">取消</button>
