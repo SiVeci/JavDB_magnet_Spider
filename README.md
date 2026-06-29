@@ -20,8 +20,8 @@
 * **任务调度机制（Task Queue）**：
   * **核心对象/组件/路由（`spider_engine.py` / `/api/v1/events`）**：在后端引擎中引入基于内存的状态机与任务队列。支持批量下发采集指令，系统按序执行后台调度。前端控制面板通过 Server-Sent Events (SSE) 事件总线获取毫秒级实时进度与日志推送，并暴露 API 路由实现对运行中任务的原子级暂停、恢复与终止操作。
 
-* **授权浏览器与登录态生命周期管理（Auth Browser & Cookie Lifecycle）**：
-  * **核心对象/组件/路由（`auth_browser_service.py` / `/api/v1/auth_browser`）**：引入独立的 Auth Browser 服务组件。在 PC 或 Docker 环境下，用户可直接从 WebUI 唤起远程浏览器进行可视化登录，系统自动捕获并接管 Cookie。**主程序内建 VNC 与 WebSocket 流量反向代理**，无需暴露额外端口即可安全穿透。内置 Cookie 健康度主动校验机制，当爬虫遭遇反爬拦截或 Cookie 失效时，引擎自动将当前任务挂起至 `waiting_cookie` 状态，智能引导用户重新授权后无缝恢复执行，确保长时运行的连续性。
+* **账号直登与登录态生命周期管理（Account Login & Cookie Lifecycle）**：
+  * **核心对象/组件/路由（`auth_browser_service.py` / `/api/auth/browser/*`）**：用户在 WebUI 弹窗中填入 JavDB 账号、密码与图片验证码即可完成登录，后端用 `curl_cffi`（模拟 Chrome 指纹）直接发起登录请求并捕获 Cookie，**无需任何浏览器、VNC 或额外容器**；登录请求由主程序自身网络出口发出，与爬虫请求同出口，`cf_clearance`/IP 绑定天然一致。内置 Cookie 健康度主动校验机制，当爬虫遭遇反爬拦截或 Cookie 失效时，引擎自动将当前任务挂起至 `waiting_cookie` 状态，智能引导用户重新授权后无缝恢复执行，确保长时运行的连续性。
 
 * **排行榜解析引擎（Ranking Parser）**：
   * **核心对象/组件/路由（`ranking_utils.py` / `/api/v1/rankings`）**：通过底层工具模块解析日/周/月常规榜单、热播流及支持多维度查询（年份/分类）的 TOP250 榜单数据。底层打通排行榜视图与爬虫任务队列，支持通过一键操作将榜单全量转化为采集任务。同时在前端页面耦合磁力可用性校验模块与多维标签交并集过滤模块。
@@ -86,35 +86,19 @@ docker-compose up -d
 ```
 *监听网关：`http://NAS_IP:8090`*
 
-若不使用 Docker Compose，也可通过 `docker run` 手动运行并连接两个容器：
+若不使用 Docker Compose，也可通过 `docker run` 手动运行（单容器即可）：
 ```bash
-# 1. 创建内部通信网络
-docker network create javdb-network
-
-# 2. 启动 Auth Browser 鉴权服务 (开启 VNC 模式)
-docker run -d \
-  --name=javdb-auth-browser \
-  --network=javdb-network \
-  -e AUTH_BROWSER_VNC=1 \
-  -v auth_browser_profile:/app/profile \
-  --restart=unless-stopped \
-  ghcr.io/siveci/javdb_auth_browser:latest
-
-# 3. 启动爬虫核心引擎（链接到 Auth Browser 的 API 与 VNC 服务）
 docker run -d \
   --name=javdb-spider \
-  --network=javdb-network \
   -p 8090:8000 \
   -e JAVDB_AUTH_TOKEN=注入访问鉴权令牌 \
-  -e AUTH_BROWSER_SERVICE_URL=http://javdb-auth-browser:8090 \
-  -e AUTH_BROWSER_VIEWER_INTERNAL_URL=http://javdb-auth-browser:6080 \
   -v /你的路径/appdata/javdb_spider/data:/app/data \
   --restart=unless-stopped \
   ghcr.io/siveci/javdb_spider:latest
 ```
 *监听网关：`http://NAS_IP:8090`*
 
-*(注：如果不需要 Auth Browser，可省略前两步及网络相关参数，单体启动 javdb-spider。)*
+*(注：获取 JavDB Cookie 直接在 WebUI → 设置 → “账号登录获取 Cookie” 中填账号/密码/验证码即可，登录请求由本容器自身网络出口发出，无需额外的鉴权浏览器或 VNC 服务。)*
 
 **部署参数解析：**
 * **API 鉴权注入**：Docker 镜像默认激活后端接口的强制访问鉴权拦截。需通过 `-e JAVDB_AUTH_TOKEN` 环境变量注入认证令牌（Token），前端控制面板发起初始数据请求时将校验该凭证。

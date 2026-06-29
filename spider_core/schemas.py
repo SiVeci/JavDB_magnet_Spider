@@ -23,8 +23,15 @@ class RuntimeConfig(BaseModel):
     proxies: str = ""
     trackers: list[str] = []
 
-class AuthBrowserSessionRequest(BaseModel):
+class AuthSessionRequest(BaseModel):
     session_id: str
+
+
+class AuthLoginRequest(BaseModel):
+    session_id: str
+    email: str
+    password: str
+    captcha: str = ""
     remember_cookie: bool = True
 
 class CookieConfig(BaseModel):

@@ -117,31 +117,65 @@ class RuntimeConfigTest(unittest.TestCase):
 
         self.assertTrue(blocked)
 
-    def test_auth_browser_capture_saves_source_and_validation_status(self):
+    def test_auth_browser_login_saves_source_and_validation_status(self):
         def fake_validate(update_runtime=True):
             if update_runtime:
                 db_store.update_cookie_validation_status("valid", 123, "")
             return {"valid": True, "status": "valid", "message": "ok", "validated_at": 123}
 
+        class FakeJar:
+            def items(self):
+                return [("_jdb_session", "abc"), ("locale", "zh")]
+
+        class FakeResp:
+            status_code = 200
+            url = "https://javdb.com/"
+            text = "<html><body>logged in</body></html>"
+
+        class FakeCurlSession:
+            def __init__(self):
+                self.cookies = FakeJar()
+                self.headers = {"User-Agent": "ua"}
+
+            def post(self, url, data=None, allow_redirects=True):
+                return FakeResp()
+
+            def get(self, url):
+                # 登录成功后不应再取验证码，但保底返回空。
+                class _R:
+                    status_code = 200
+                    content = b""
+                    headers = {"content-type": "image/gif"}
+                return _R()
+
+        session_id = "s1"
+        auth_browser_service._sessions[session_id] = {
+            "curl_session": FakeCurlSession(),
+            "token": "tok",
+            "created_at": 1,
+            "expires_at": auth_browser_service._now() + 600,
+            "status": "waiting_login",
+        }
+
         with patch.object(
-            auth_browser_service,
-            "_request",
-            return_value={"session_id": "s1", "status": "captured", "cookie": "ck=1", "user_agent": "ua"},
-        ), patch.object(
             auth_browser_service,
             "validate_runtime_cookie",
             side_effect=fake_validate,
         ) as validate:
-            data = auth_browser_service.capture_session("s1", remember_cookie=False)
+            data = auth_browser_service.submit_login(
+                session_id, "user@example.com", "pw", "abcde", remember_cookie=False
+            )
 
         validate.assert_called_once_with(update_runtime=True)
         self.assertTrue(data["has_cookie"])
         self.assertEqual(data["cookie_validation"]["status"], "valid")
         runtime = db_store.get_runtime_config()
-        self.assertEqual(runtime["cookie"], "ck=1")
+        self.assertIn("_jdb_session=abc", runtime["cookie"])
         self.assertEqual(runtime["cookie_source"], "auth_browser")
         self.assertEqual(runtime["cookie_status"], "valid")
         self.assertEqual(runtime["cookie_validated_at"], 123)
+        # 登录成功后会话应被销毁。
+        self.assertNotIn(session_id, auth_browser_service._sessions)
 
 
 class TaskEnqueueTest(unittest.TestCase):

@@ -4,6 +4,4 @@ pydantic>=2.13.4,<3.0.0
 curl_cffi>=0.15.0,<1.0.0
 beautifulsoup4>=4.14.3,<5.0.0
 bencodepy>=0.9.5,<1.0.0
-# auth-browser noVNC 反代：httpx 转发静态资源，websockets 桥接 VNC 流并为 uvicorn 提供 WS 握手实现。
-httpx>=0.27.0,<1.0.0
-websockets>=13.0,<16.0
+

@@ -46,9 +46,6 @@ spider_core/data/
 spider_core/task_config.json
 spider_core/status.json
 spider_core/checkpoint.json
-# Auth Browser Service 的 Playwright 登录态：含真实 javdb 会话 Cookie，严禁入库
-auth_browser/profile/
-auth_browser/**/storage_state.json
 # 数据库文件兜底（防止换路径后漏忽略）
 *.db
 *.sqlite

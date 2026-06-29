@@ -1,9 +1,9 @@
-"""Routes that proxy Auth Browser Service operations for the WebUI."""
+"""账号密码直登端点（curl_cffi，无需浏览器）。供 WebUI 登录弹窗调用。"""
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from schemas import AuthBrowserSessionRequest
+from schemas import AuthLoginRequest, AuthSessionRequest
 from services import auth_browser_service
 from services.auth_browser_service import AuthBrowserError
 
@@ -16,6 +16,7 @@ def _error_response(exc: AuthBrowserError):
 
 @router.post("/api/auth/browser/start")
 def start_auth_browser():
+    """开始登录会话：返回验证码图与会话 id。"""
     try:
         return {"code": 200, "data": auth_browser_service.start_session()}
     except AuthBrowserError as exc:
@@ -38,17 +39,29 @@ def get_auth_browser_status(session_id: str):
         return _error_response(exc)
 
 
-@router.post("/api/auth/browser/capture")
-def capture_auth_browser(req: AuthBrowserSessionRequest):
+@router.post("/api/auth/browser/captcha")
+def refresh_auth_captcha(req: AuthSessionRequest):
+    """刷新验证码图（用户点图换一张）。"""
     try:
-        data = auth_browser_service.capture_session(req.session_id, req.remember_cookie)
-        return {"code": 200, "msg": "Cookie 已捕获并保存", "data": data}
+        return {"code": 200, "data": auth_browser_service.refresh_captcha(req.session_id)}
+    except AuthBrowserError as exc:
+        return _error_response(exc)
+
+
+@router.post("/api/auth/browser/login")
+def submit_auth_login(req: AuthLoginRequest):
+    """提交账号/密码/验证码，成功后保存 Cookie。"""
+    try:
+        data = auth_browser_service.submit_login(
+            req.session_id, req.email, req.password, req.captcha, req.remember_cookie
+        )
+        return {"code": 200, "msg": "登录成功，Cookie 已保存", "data": data}
     except AuthBrowserError as exc:
         return _error_response(exc)
 
 
 @router.post("/api/auth/browser/close")
-def close_auth_browser(req: AuthBrowserSessionRequest):
+def close_auth_browser(req: AuthSessionRequest):
     try:
         return {"code": 200, "data": auth_browser_service.close_session(req.session_id)}
     except AuthBrowserError as exc:

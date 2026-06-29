@@ -4,7 +4,7 @@ import { useTasksStore, isTerminal, isPausable, isResumable, isCancelable } from
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
 import { useClipboard } from '@/composables/useClipboard'
-import { useAuthBrowser } from '@/composables/useAuthBrowser'
+import AuthLoginModal from '@/components/AuthLoginModal.vue'
 import { apiFetch } from '@/api'
 import type { Task } from '@/types'
 
@@ -12,7 +12,7 @@ const tasks = useTasksStore()
 const settings = useSettingsStore()
 const { showToast } = useToast()
 const { copyText } = useClipboard()
-const authBrowser = useAuthBrowser()
+const cookieLoginOpen = ref(false)
 const cookieStatusLabel = computed(() => ({
   missing: 'Cookie 缺失',
   unverified: 'Cookie 未验证',
@@ -183,23 +183,10 @@ async function submitManualCookie(taskId: string) {
   }
 }
 
-async function openAuthBrowserForCookie() {
-  try {
-    const data = await authBrowser.start()
-    showToast(data.viewer_url ? '已打开远程登录窗口，请在新标签页登录后获取 Cookie' : '授权浏览器已启动，请在弹出的 Auth Browser 窗口登录后获取 Cookie')
-  } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '无法打开登录页')
-  }
-}
-
-async function captureAuthBrowserCookie() {
-  try {
-    const res = await authBrowser.capture(settings.config.remember_cookie)
-    await settings.load()
-    showToast(res.msg || 'Cookie 已捕获并保存')
-  } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : 'Cookie 捕获失败')
-  }
+async function onCookieLoginSuccess(msg: string) {
+  await settings.load()
+  await tasks.refresh()
+  showToast(msg)
 }
 
 async function checkCurrentCookie() {
@@ -527,12 +514,7 @@ onUnmounted(() => {
               <div><span>推荐处理：</span>{{ cookieRecommendation() }}</div>
               <div v-if="currentTask.task_cookie_failure_count"><span>累计次数：</span>{{ currentTask.task_cookie_failure_count }}</div>
             </div>
-            <button v-if="currentTask.state === 'waiting_cookie'" @click="openAuthBrowserForCookie" class="btn btn-sm btn-soft">打开登录页获取 Cookie</button>
-            <button
-              v-if="currentTask.state === 'waiting_cookie' && authBrowser.sessionId.value"
-              @click="captureAuthBrowserCookie"
-              class="btn btn-sm btn-warning"
-            >我已登录，获取 Cookie</button>
+            <button v-if="currentTask.state === 'waiting_cookie'" @click="cookieLoginOpen = true" class="btn btn-sm btn-soft">账号登录获取 Cookie</button>
             <button v-if="currentTask.state === 'waiting_cookie'" @click="checkCurrentCookie" class="btn btn-sm btn-info">检测当前 Cookie</button>
             <button v-if="currentTask.state === 'waiting_cookie'" @click="refreshCookie(currentTask.task_id)" class="btn btn-sm btn-warning">读安卓 Cookie</button>
             <button v-if="currentTask.state === 'waiting_cookie'" @click="submitManualCookie(currentTask.task_id)" class="btn btn-sm btn-info">粘贴 Cookie</button>
@@ -566,5 +548,12 @@ onUnmounted(() => {
         </section>
       </div>
     </section>
+
+    <!-- 账号登录弹窗：任务因 Cookie 失效暂停时，可直接登录刷新 Cookie -->
+    <AuthLoginModal
+      v-model:open="cookieLoginOpen"
+      :remember-cookie="settings.config.remember_cookie"
+      @success="onCookieLoginSuccess"
+    />
   </section>
 </template>

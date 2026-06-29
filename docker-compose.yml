@@ -1,16 +1,14 @@
-# JavDB Spider —— 主程序 + Auth Browser Service 编排
+# JavDB Spider —— 单服务部署
 #
 # 用法：
-#   1. cp .env.example .env，按需修改 JAVDB_AUTH_TOKEN 和 AUTH_BROWSER_SHARED_TOKEN
+#   1. cp .env.example .env，按需修改 JAVDB_AUTH_TOKEN
 #   2. 本地源码构建：docker compose up -d --build
 #      使用已发布镜像：取消下方 image: 注释、注释掉 build:，再 docker compose pull && up -d
 #
 # 主程序 WebUI：http://localhost:8000  （需在请求头带 X-JavDB-Token，前端登录页会处理）
 #
-# 说明：Auth Browser Service 以 VNC 投屏模式运行（AUTH_BROWSER_VNC=1）：容器内启动有头
-# Chromium 并把画面经 noVNC 投屏。主程序把 /auth-viewer/* 反代到 auth-browser 的 6080，
-# 因此其他设备访问主程序 WebUI → 点“打开登录页” → 在网页里看到并操作 javdb 登录框 → 登录后
-# 获取 Cookie。无需对外单独暴露 auth-browser 端口。
+# 获取 JavDB Cookie：WebUI → 设置 → “账号登录获取 Cookie”，在弹窗中填入账号/密码/验证码即可。
+# 登录请求由主程序自身的网络出口发出（curl_cffi 模拟 Chrome 指纹），无需任何浏览器或 VNC。
 
 services:
   spider:
@@ -27,35 +25,6 @@ services:
     environment:
       # WebUI/API 访问令牌：必填，留空会导致所有 /api 请求 401。
       JAVDB_AUTH_TOKEN: ${JAVDB_AUTH_TOKEN:?need JAVDB_AUTH_TOKEN}
-      # 指向同网络下的 auth-browser 服务。
-      AUTH_BROWSER_SERVICE_URL: http://auth-browser:8090
-      # 主程序反代 noVNC 投屏的内网目标。
-      AUTH_BROWSER_VIEWER_INTERNAL_URL: http://auth-browser:6080
-      AUTH_BROWSER_SHARED_TOKEN: ${AUTH_BROWSER_SHARED_TOKEN:-}
     volumes:
       # 持久化 SQLite 库与导出的 CSV。
       - ./data:/app/data
-    depends_on:
-      - auth-browser
-
-  auth-browser:
-    build:
-      context: ./auth_browser
-      dockerfile: Dockerfile
-    # image: ghcr.io/siveci/javdb_auth_browser:latest
-    container_name: javdb-auth-browser
-    restart: unless-stopped
-    # 默认不对外暴露端口：API(8090) 与 noVNC(6080) 均仅供 spider 经内部网络访问，
-    # noVNC 由主程序 /auth-viewer/* 反代对外。
-    environment:
-      # VNC 投屏模式：容器内有头 Chromium + noVNC，供远程网页登录。
-      AUTH_BROWSER_VNC: "1"
-      AUTH_BROWSER_SHARED_TOKEN: ${AUTH_BROWSER_SHARED_TOKEN:-}
-      AUTH_BROWSER_SESSION_TTL_SECONDS: ${AUTH_BROWSER_SESSION_TTL_SECONDS:-900}
-    volumes:
-      # 持久化 Playwright 登录态（storage_state.json），含真实会话 Cookie。
-      # 使用命名卷而非 bind mount，避免落到宿主可被误提交的目录。
-      - auth_browser_profile:/app/profile
-
-volumes:
-  auth_browser_profile:

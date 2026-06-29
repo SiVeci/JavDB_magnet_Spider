@@ -2,11 +2,10 @@
 import { ref, computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
-import { useAuthBrowser } from '@/composables/useAuthBrowser'
+import AuthLoginModal from '@/components/AuthLoginModal.vue'
 
 const settings = useSettingsStore()
 const { showToast } = useToast()
-const authBrowser = useAuthBrowser()
 
 const proxyParsed = computed(() => settings.parseProxy())
 const proxyHost = ref(proxyParsed.value.host)
@@ -18,7 +17,7 @@ const trackerText = computed({
 const cookieSourceLabel = computed(() => ({
   manual: '手动粘贴',
   android_webview: 'Android WebView',
-  auth_browser: 'Auth Browser Service',
+  auth_browser: '账号登录',
   unknown: '未知',
 }[settings.config.cookie_source || 'unknown'] || '未知')
 )
@@ -41,6 +40,9 @@ const showAuthBrowserDetails = computed(() =>
 )
 const hostError = ref(false)
 const portError = ref(false)
+
+// 账号登录弹窗开关
+const loginModalOpen = ref(false)
 
 function validateProxy(): boolean {
   const h = proxyHost.value.trim()
@@ -65,33 +67,13 @@ async function handleSave() {
   }
 }
 
-async function openAuthBrowser() {
-  try {
-    const data = await authBrowser.start()
-    showToast(data.viewer_url ? '已打开远程登录窗口，请在新标签页登录后再点击获取 Cookie' : '授权浏览器已启动，请在弹出的 Auth Browser 窗口登录后再点击获取 Cookie')
-  } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '无法打开登录页')
-  }
+function openAuthBrowser() {
+  loginModalOpen.value = true
 }
 
-async function testAuthBrowserConnection() {
-  try {
-    const res = await authBrowser.checkHealth()
-    if (res.code !== 200) { showToast(res.msg || 'Auth Browser Service 不可用'); return }
-    showToast('Auth Browser Service 可连接')
-  } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : 'Auth Browser Service 不可用')
-  }
-}
-
-async function captureAuthCookie() {
-  try {
-    const res = await authBrowser.capture(settings.config.remember_cookie)
-    await settings.load()
-    showToast(res.msg || 'Cookie 已捕获并保存')
-  } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : 'Cookie 捕获失败')
-  }
+async function onLoginSuccess(msg: string) {
+  await settings.load()
+  showToast(msg)
 }
 
 async function checkCookie() {
@@ -167,41 +149,12 @@ async function checkCookie() {
             </div>
             <div class="flex flex-wrap gap-2">
               <button type="button" @click="checkCookie" class="btn btn-sm btn-info">检测 Cookie</button>
-              <button type="button" @click="openAuthBrowser" class="btn btn-sm btn-soft">重新获取 Cookie</button>
-            </div>
-          </div>
-          <div
-            v-if="showAuthBrowserDetails"
-            class="mt-3 rounded-lg border border-[color:var(--c-border-soft)] bg-surface-sunken p-3"
-          >
-            <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <span class="text-xs font-semibold text-[color:var(--c-text-muted)]">Auth Browser: {{ authBrowser.status.value }} / {{ authBrowser.health.value }}</span>
               <button
-                v-if="authBrowser.sessionId.value"
-                type="button"
-                @click="authBrowser.refreshStatus"
-                class="btn btn-sm btn-soft"
-              >刷新状态</button>
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <button
-                type="button"
-                @click="testAuthBrowserConnection"
-                :disabled="authBrowser.loading.value"
-                class="btn btn-sm btn-soft"
-              >测试连接</button>
-              <button
+                v-if="showAuthBrowserDetails"
                 type="button"
                 @click="openAuthBrowser"
-                :disabled="authBrowser.loading.value"
-                class="btn btn-sm btn-info"
-              >打开登录页获取 Cookie</button>
-              <button
-                type="button"
-                @click="captureAuthCookie"
-                :disabled="authBrowser.loading.value || !authBrowser.sessionId.value"
-                class="btn btn-sm btn-warning"
-              >我已登录，获取 Cookie</button>
+                class="btn btn-sm btn-soft"
+              >账号登录获取 Cookie</button>
             </div>
           </div>
         </div>
@@ -237,5 +190,12 @@ async function checkCookie() {
         </div>
       </div>
     </section>
+
+    <!-- 账号登录弹窗：curl_cffi 直登，填账号/密码/验证码即可获取 Cookie -->
+    <AuthLoginModal
+      v-model:open="loginModalOpen"
+      :remember-cookie="settings.config.remember_cookie"
+      @success="onLoginSuccess"
+    />
   </section>
 </template>
