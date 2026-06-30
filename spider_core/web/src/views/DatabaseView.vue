@@ -222,7 +222,7 @@ async function loadData() {
     loading.value = false
     await nextTick()
     scheduleFitDatabaseLayout()
-    fitMovieTags(document)
+    fitMovieTags(databaseCardEl.value ?? document)
   }
 }
 
@@ -266,7 +266,7 @@ function scheduleFitDatabaseLayout() {
 
 function onResize() {
   scheduleFitDatabaseLayout()
-  fitMovieTags(document)
+  fitMovieTags(databaseCardEl.value ?? document)
 }
 function onGlobalClick() { openMenu.value = null }
 
@@ -284,7 +284,7 @@ async function refreshAfterCollectionsChanged() {
   }
   await nextTick()
   scheduleFitDatabaseLayout()
-  fitMovieTags(document)
+  fitMovieTags(databaseCardEl.value ?? document)
 }
 
 watch(() => tasks.collectionsChanged, async (changed) => {
@@ -324,7 +324,7 @@ async function onMagnetCheckDone(job: MagnetCheckJob) {
     magnets.value = await db.loadMovieMagnets(routeMovieId.value)
   }
   await nextTick()
-  fitMovieTags(document)
+  fitMovieTags(databaseCardEl.value ?? document)
 }
 
 // ===== 操作 =====

@@ -28,6 +28,7 @@ export const useTasksStore = defineStore('tasks', () => {
   const collectionsChanged = ref(false)
 
   let sseInstance: ReturnType<typeof useEventStream> | null = null
+  let stopStatusWatch: (() => void) | null = null
 
   const visibleTasks = computed(() =>
     showFinished.value ? tasks.value : tasks.value.filter((t: Task) => !isTerminal(t.state))
@@ -65,17 +66,16 @@ export const useTasksStore = defineStore('tasks', () => {
       },
       getToken,
     )
-    const stopStatusWatch = watch(sseInstance.status, (status) => {
+    stopStatusWatch = watch(sseInstance.status, (status) => {
       sseConnected.value = status === 'connected'
     }, { immediate: true })
-    ;(sseInstance as unknown as { _stopStatusWatch: () => void })._stopStatusWatch = stopStatusWatch
     sseInstance.connect()
   }
 
   function stopSSE() {
     if (sseInstance) {
-      const stopStatusWatch = (sseInstance as unknown as { _stopStatusWatch?: () => void })._stopStatusWatch
       if (stopStatusWatch) stopStatusWatch()
+      stopStatusWatch = null
       sseInstance.disconnect()
       sseInstance = null
       sseConnected.value = false

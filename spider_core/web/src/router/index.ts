@@ -1,8 +1,8 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import TasksView from '@/views/TasksView.vue'
-import DatabaseView from '@/views/DatabaseView.vue'
-import ActorsView from '@/views/ActorsView.vue'
-import SettingsView from '@/views/SettingsView.vue'
+const TasksView = () => import('@/views/TasksView.vue')
+const DatabaseView = () => import('@/views/DatabaseView.vue')
+const ActorsView = () => import('@/views/ActorsView.vue')
+const SettingsView = () => import('@/views/SettingsView.vue')
 
 const router = createRouter({
   history: createWebHashHistory(),

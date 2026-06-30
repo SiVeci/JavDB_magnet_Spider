@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useTasksStore } from '@/stores/tasks'
@@ -65,6 +65,10 @@ onMounted(async () => {
   const { ok, version } = await auth.checkInitialAuth()
   appVersion.value = version || 'v?.?.?'
   if (ok) await startApp()
+})
+
+onUnmounted(() => {
+  tasksStore.stopSSE()
 })
 </script>
 

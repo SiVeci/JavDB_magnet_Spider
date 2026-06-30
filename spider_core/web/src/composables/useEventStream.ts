@@ -1,4 +1,4 @@
-import { ref, onUnmounted } from 'vue'
+import { ref } from 'vue'
 
 export type SSEStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
 
@@ -66,8 +66,6 @@ export function useEventStream(
     es = null
     status.value = 'disconnected'
   }
-
-  onUnmounted(disconnect)
 
   return { status, connect, disconnect }
 }

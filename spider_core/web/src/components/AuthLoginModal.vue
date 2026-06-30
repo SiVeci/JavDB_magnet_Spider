@@ -159,7 +159,7 @@ async function submit() {
           <input v-model="rememberCreds" type="checkbox" class="h-4 w-4 cursor-pointer" />
           记住账号密码
         </label>
-        <p v-if="errorMsg" class="text-xs" style="color:#dc2626">{{ errorMsg }}</p>
+        <p v-if="errorMsg" class="text-xs text-danger-text">{{ errorMsg }}</p>
         <div class="flex justify-end gap-2 pt-1">
           <button type="button" @click="closeModal" class="btn btn-sm btn-soft">取消</button>
           <button
