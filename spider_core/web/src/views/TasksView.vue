@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
-import { useTasksStore, isTerminal, isPausable, isResumable, isCancelable } from '@/stores/tasks'
+import { useTasksStore, isPausable, isResumable, isCancelable } from '@/stores/tasks'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
 import { useClipboard } from '@/composables/useClipboard'
 import AuthLoginModal from '@/components/AuthLoginModal.vue'
-import { apiFetch } from '@/api'
+import { apiFetchJson } from '@/api'
+import { displayName } from '@/utils/format'
+import { toErrMsg } from '@/utils/error'
 import type { Task } from '@/types'
 
 const tasks = useTasksStore()
@@ -79,7 +81,7 @@ async function fetchTags() {
     tagsCollapsed.value = false
     showTagsPanel.value = tags.length > 0
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '获取标签失败')
+    showToast(toErrMsg(err, '获取标签失败'))
   }
 }
 
@@ -124,7 +126,7 @@ async function startQueue() {
   try {
     await tasks.startQueue()
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '无法启动队列')
+    showToast(toErrMsg(err, '无法启动队列'))
   }
 }
 
@@ -136,17 +138,17 @@ async function cleanupFinished() {
     const msg = await tasks.cleanupFinished()
     showToast(msg)
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '清理失败')
+    showToast(toErrMsg(err, '清理失败'))
   }
 }
 
 async function doTaskAction(taskId: string, action: string, opts: { method?: string; body?: unknown; path?: string } = {}) {
   try {
     const res = await tasks.taskAction(taskId, action, opts)
-    if ((res as { code?: number }).code !== 200) showToast((res as { msg?: string }).msg || '操作失败')
-    else if ((res as { msg?: string }).msg) showToast((res as { msg?: string }).msg!)
+    if (res.code !== 200) showToast(res.msg || '操作失败')
+    else if (res.msg) showToast(res.msg)
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '操作失败')
+    showToast(toErrMsg(err, '操作失败'))
   }
 }
 
@@ -170,16 +172,16 @@ async function submitManualCookie(taskId: string) {
   const cookie = prompt('请粘贴 JavDB Cookie：')
   if (!cookie?.trim()) return
   try {
-    const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/cookie`, {
+    const res = await apiFetchJson<{ code: number; msg?: string }>(`/api/tasks/${encodeURIComponent(taskId)}/cookie`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cookie: cookie.trim() }),
-    }).then((r: Response) => r.json())
+    })
     if (res.code !== 200) { showToast(res.msg || '设置 Cookie 失败'); return }
     showToast(res.msg || 'Cookie 已更新')
     await tasks.refresh()
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '操作失败')
+    showToast(toErrMsg(err, '操作失败'))
   }
 }
 
@@ -195,16 +197,16 @@ async function checkCurrentCookie() {
     showToast(msg)
     await tasks.refresh()
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : 'Cookie 检测失败')
+    showToast(toErrMsg(err, 'Cookie 检测失败'))
   }
 }
 async function clearLogs() {
   try {
-    const res = await apiFetch('/api/clear_logs', { method: 'POST' }).then((r: Response) => r.json())
+    const res = await apiFetchJson<{ code: number; msg?: string }>('/api/clear_logs', { method: 'POST' })
     showToast(res.msg || '已清除')
     await tasks.refresh()
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '清除失败')
+    showToast(toErrMsg(err, '清除失败'))
   }
 }
 async function setTaskMode(taskId: string, mode: string) {
@@ -218,11 +220,9 @@ async function copyIncrementalMagnets(taskId: string) {
     const copied = await copyText(links.join('\n'))
     showToast(copied ? `已复制 ${links.length} 条新增影片磁力` : '自动复制失败，请在弹窗中手动复制新增影片磁力')
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '复制失败')
+    showToast(toErrMsg(err, '复制失败'))
   }
 }
-
-function displayName(val: string) { return String(val || '').replace(/\.csv$/i, '') }
 
 function progressPercent(progress: string): number {
   const parts = String(progress || '0/0').split('/')

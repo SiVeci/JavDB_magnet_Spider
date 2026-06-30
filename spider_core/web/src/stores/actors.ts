@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { apiFetch } from '@/api'
 import type { Actor, ActorCategory, ActorsData, Tag } from '@/types'
+import { toErrMsg } from '@/utils/error'
 
 const DEFAULT_CATEGORIES: ActorCategory[] = [
   { key: 'all', label: '全部' },
@@ -112,7 +113,7 @@ export const useActorsStore = defineStore('actors', () => {
         }
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '获取标签失败'
+      const msg = toErrMsg(err, '获取标签失败')
       tagStates.value[actorId] = { tags: [], selected: new Set(), error: msg }
     }
   }

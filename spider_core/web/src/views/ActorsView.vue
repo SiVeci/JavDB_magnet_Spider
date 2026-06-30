@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useActorsStore } from '@/stores/actors'
 import { useTasksStore } from '@/stores/tasks'
 import { useToast } from '@/composables/useToast'
+import { toErrMsg } from '@/utils/error'
 import type { Actor } from '@/types'
 
 const router = useRouter()
@@ -36,7 +37,7 @@ async function handleRefresh() {
       showToast('刷新完成')
     }
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '刷新失败')
+    showToast(toErrMsg(err, '刷新失败'))
   } finally {
     refreshing.value = false
   }
@@ -53,7 +54,7 @@ async function handleAddTask(actorId: string, crawlMode = '') {
     showToast(res.msg || '任务已加入队列')
     await tasksStore.refresh()
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '添加任务失败')
+    showToast(toErrMsg(err, '添加任务失败'))
   }
 }
 

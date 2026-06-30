@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
 import AuthLoginModal from '@/components/AuthLoginModal.vue'
+import { toErrMsg } from '@/utils/error'
 
 const settings = useSettingsStore()
 const { showToast } = useToast()
@@ -63,7 +64,7 @@ async function handleSave() {
     const msg = await settings.save(true)
     if (msg) showToast(msg)
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '保存失败')
+    showToast(toErrMsg(err, '保存失败'))
   }
 }
 
@@ -81,7 +82,7 @@ async function checkCookie() {
     const msg = await settings.checkCookie()
     showToast(msg)
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : 'Cookie 检测失败')
+    showToast(toErrMsg(err, 'Cookie 检测失败'))
   }
 }
 </script>

@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useDatabaseStore } from '@/stores/database'
 import { useToast } from '@/composables/useToast'
+import { toErrMsg } from '@/utils/error'
 import type { MagnetCheckJob } from '@/types'
 
 /*
@@ -71,7 +72,7 @@ async function cancel() {
   try {
     await db.cancelMagnetCheck(String(job.value.job_id))
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '终止检测失败')
+    showToast(toErrMsg(err, '终止检测失败'))
   }
 }
 

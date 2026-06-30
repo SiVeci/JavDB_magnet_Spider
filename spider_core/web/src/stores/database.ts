@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { apiFetch, apiFetchJson, apiPost } from '@/api'
 import type { Collection, Movie, Magnet, MagnetCheckJob, ApiResponse } from '@/types'
+import { displayName } from '@/utils/format'
 
 export const RANKING_CATEGORIES = [
   { key: 'censored', label: '有码' },
@@ -37,8 +38,6 @@ function emptyMovieData(): CollectionMovieData {
   return { movies: [], available_tags: [], total_count: 0 }
 }
 
-function displayName(val: string) { return String(val || '').replace(/\.csv$/i, '') }
-
 export const useDatabaseStore = defineStore('database', () => {
   const collections = ref<Collection[]>([])
   // 集合影片缓存（含 available_tags/total_count），key = 集合名
@@ -63,7 +62,7 @@ export const useDatabaseStore = defineStore('database', () => {
   /* ===== 集合 ===== */
 
   async function loadCollections() {
-    const res = await apiFetch('/api/history').then((r: Response) => r.json())
+    const res = await apiFetchJson<ApiResponse<Collection[]>>('/api/history')
     collections.value = res.data || []
   }
 
@@ -121,7 +120,7 @@ export const useDatabaseStore = defineStore('database', () => {
   }
 
   async function enqueueCollectionIncremental(name: string): Promise<string> {
-    const res = await apiFetch(`/api/collections/${encodeURIComponent(name)}/incremental_task`, { method: 'POST' }).then((r: Response) => r.json())
+    const res = await apiFetchJson<ApiResponse>(`/api/collections/${encodeURIComponent(name)}/incremental_task`, { method: 'POST' })
     if (res.code !== 200) throw new Error(res.msg || '添加增量任务失败')
     return res.msg || '任务已加入队列'
   }
@@ -204,15 +203,12 @@ export const useDatabaseStore = defineStore('database', () => {
 
   async function loadTop250Options(refresh = false): Promise<{ key: string; label: string }[]> {
     const suffix = refresh ? '?refresh=1' : ''
-    const res = await apiFetchJson<ApiResponse>(`/api/rankings/top250/options${suffix}`)
-    const code = (res as { code: number }).code
-    if (code !== 200) {
-      const errType = (res as { error_type?: string }).error_type || ''
-      throw new Error(top250OptionErrorMessage(errType, (res as { msg?: string }).msg || 'TOP250 分类加载失败'))
+    const res = await apiFetchJson<ApiResponse<{ options: { key: string; label: string }[]; stale: boolean }> & { error_type?: string }>(`/api/rankings/top250/options${suffix}`)
+    if (res.code !== 200) {
+      throw new Error(top250OptionErrorMessage(res.error_type || '', res.msg || 'TOP250 分类加载失败'))
     }
-    const data = (res as { data?: { options?: { key: string; label: string }[]; stale?: boolean } }).data || {}
-    top250Options.value = data.options || []
-    top250Stale.value = !!data.stale
+    top250Options.value = res.data?.options || []
+    top250Stale.value = !!res.data?.stale
     return top250Options.value
   }
 
@@ -289,9 +285,9 @@ export const useDatabaseStore = defineStore('database', () => {
 
   async function pollMagnetCheckJob() {
     if (!activeMagnetCheckJob.value) return
-    const res = await apiFetch(`/api/magnet_check_jobs/${encodeURIComponent(String(activeMagnetCheckJob.value.job_id))}`).then((r: Response) => r.json())
+    const res = await apiFetchJson<ApiResponse<MagnetCheckJob>>(`/api/magnet_check_jobs/${encodeURIComponent(String(activeMagnetCheckJob.value.job_id))}`)
     if (res.code !== 200) return
-    activeMagnetCheckJob.value = res.data
+    activeMagnetCheckJob.value = res.data || null
     if (activeMagnetCheckJob.value?.running) {
       if (onCheckTick) onCheckTick()
     } else {
@@ -303,7 +299,7 @@ export const useDatabaseStore = defineStore('database', () => {
   }
 
   async function restoreMagnetCheckJob() {
-    const res = await apiFetch('/api/magnet_check_jobs/current').then((r: Response) => r.json())
+    const res = await apiFetchJson<ApiResponse<MagnetCheckJob>>('/api/magnet_check_jobs/current')
     if (res.code !== 200 || !res.data) return
     watchMagnetCheckJob(res.data)
   }
@@ -326,9 +322,9 @@ export const useDatabaseStore = defineStore('database', () => {
   }
 
   async function cancelMagnetCheck(jobId: string): Promise<void> {
-    const res = await apiFetch(`/api/magnet_check_jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' }).then((r: Response) => r.json())
+    const res = await apiFetchJson<ApiResponse<MagnetCheckJob>>(`/api/magnet_check_jobs/${encodeURIComponent(jobId)}/cancel`, { method: 'POST' })
     if (res.code !== 200) throw new Error(res.msg || '终止检测失败')
-    activeMagnetCheckJob.value = res.data
+    activeMagnetCheckJob.value = res.data || null
   }
 
   return {

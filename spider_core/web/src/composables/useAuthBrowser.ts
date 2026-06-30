@@ -1,11 +1,6 @@
 import { ref } from 'vue'
-import { apiFetch, apiPost } from '@/api'
-
-interface ApiResponse<T> {
-  code: number
-  msg?: string
-  data: T
-}
+import { apiFetchJson, apiPost } from '@/api'
+import type { ApiResponse } from '@/types'
 
 export interface AuthLoginSession {
   session_id: string
@@ -30,6 +25,7 @@ export function useAuthBrowser() {
     try {
       const res = await apiPost<ApiResponse<AuthLoginSession>>('/api/auth/browser/start')
       const data = res.data
+      if (!data) throw new Error(res.msg || '启动失败')
       sessionId.value = data.session_id
       status.value = data.status || 'waiting_login'
       captchaImage.value = data.captcha_image || ''
@@ -51,7 +47,7 @@ export function useAuthBrowser() {
   async function checkHealth() {
     loading.value = true
     try {
-      const res = await apiFetch('/api/auth/browser/health').then((r: Response) => r.json()) as ApiResponse<{ status?: string }>
+      const res = await apiFetchJson<ApiResponse<{ status?: string }>>('/api/auth/browser/health')
       health.value = res.code === 200 ? '可用' : (res.msg || '不可用')
       return res
     } finally {

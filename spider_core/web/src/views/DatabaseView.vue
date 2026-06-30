@@ -9,6 +9,8 @@ import { useClipboard } from '@/composables/useClipboard'
 import { fitMovieTags } from '@/composables/useMovieTags'
 import MagnetCheckButton from '@/components/MagnetCheckButton.vue'
 import MagnetTable from '@/components/MagnetTable.vue'
+import { displayName } from '@/utils/format'
+import { toErrMsg } from '@/utils/error'
 import type { Collection, Movie, Magnet, MagnetCheckJob } from '@/types'
 
 const route = useRoute()
@@ -65,8 +67,6 @@ const top250Error = ref('')
 const databaseCardEl = ref<HTMLElement | null>(null)
 const databaseCardHeight = ref('auto')
 let databaseLayoutFrame: number | null = null
-
-function displayName(val: string) { return db.displayName(val) }
 
 // ===== 集合列表 =====
 const filteredCollections = computed<Collection[]>(() => {
@@ -206,7 +206,7 @@ async function loadData() {
       magnets.value = await db.loadMovieMagnets(routeMovieId.value!)
     } else if (mode === 'ranking-period' && rankingCategoryMeta(routeCategory.value!)?.dynamicOptions) {
       try { if (!db.top250Options) await db.loadTop250Options() }
-      catch (e: unknown) { top250Error.value = e instanceof Error ? e.message : 'TOP250 分类加载失败' }
+      catch (e: unknown) { top250Error.value = toErrMsg(e, 'TOP250 分类加载失败') }
     } else if (mode === 'ranking-movie-list') {
       if (rankingCategoryMeta(routeCategory.value!)?.dynamicOptions && !db.top250Options) {
         try { await db.loadTop250Options() } catch { /* ignore */ }
@@ -217,7 +217,7 @@ async function loadData() {
       magnets.value = await db.loadMovieMagnets(routeMovieId.value!)
     }
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '加载失败')
+    showToast(toErrMsg(err, '加载失败'))
   } finally {
     loading.value = false
     await nextTick()
@@ -294,7 +294,7 @@ watch(() => tasks.collectionsChanged, async (changed) => {
   try {
     await refreshAfterCollectionsChanged()
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '刷新数据失败')
+    showToast(toErrMsg(err, '刷新数据失败'))
   }
 }, { immediate: true })
 
@@ -335,7 +335,7 @@ async function selectMagnet(magnetId: number) {
     magnets.value = await db.loadMovieMagnets(routeMovieId.value)
     db.syncSelectedMagnetToCache(routeMovieId.value, magnets.value)
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '更新失败')
+    showToast(toErrMsg(err, '更新失败'))
   }
 }
 
@@ -350,7 +350,7 @@ async function autoSelect(collectionName?: string) {
     await db.loadCollections()
     if (collectionName) await db.ensureMovies(collectionName, true)
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '自动选择失败')
+    showToast(toErrMsg(err, '自动选择失败'))
   }
 }
 
@@ -361,7 +361,7 @@ async function deleteCollection(name: string) {
     showToast(msg)
     if (pageMode.value !== 'collection-list') goCollectionList()
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '删除失败')
+    showToast(toErrMsg(err, '删除失败'))
   }
 }
 
@@ -372,7 +372,7 @@ function batchDeleteSelected() {
   db.batchDeleteCollections(names).then((msg) => {
     selectedCollections.value = new Set()
     showToast(msg)
-  }).catch((err: unknown) => showToast(err instanceof Error ? err.message : '批量删除失败'))
+  }).catch((err: unknown) => showToast(toErrMsg(err, '批量删除失败')))
 }
 
 async function copyCollectionMagnets(name: string) {
@@ -382,13 +382,13 @@ async function copyCollectionMagnets(name: string) {
     const ok = await copyText(links.join('\n'))
     showToast(ok ? `已复制 ${links.length} 条磁力链接` : '自动复制失败，请在弹窗中手动复制磁力链接')
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '复制失败')
+    showToast(toErrMsg(err, '复制失败'))
   }
 }
 
 async function downloadCsv(name: string) {
   try { await apiDownloadBlob(db.getCollectionDownloadUrl(name), name) }
-  catch (err: unknown) { showToast(err instanceof Error ? err.message : '下载失败') }
+  catch (err: unknown) { showToast(toErrMsg(err, '下载失败')) }
 }
 
 async function enqueueIncremental(name: string) {
@@ -398,7 +398,7 @@ async function enqueueIncremental(name: string) {
     showToast(msg)
     await tasks.refresh()
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '添加增量任务失败')
+    showToast(toErrMsg(err, '添加增量任务失败'))
   }
 }
 
@@ -410,13 +410,13 @@ async function copyRankingMagnets(catKey: string, periodKey: string) {
     const ok = await copyText(links.join('\n'))
     showToast(ok ? `已复制 ${links.length} 条磁力链接` : '自动复制失败，请在弹窗中手动复制磁力链接')
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '复制失败')
+    showToast(toErrMsg(err, '复制失败'))
   }
 }
 
 async function downloadRankingCsv(catKey: string, periodKey: string) {
   try { await apiDownloadBlob(db.getRankingDownloadUrl(catKey, periodKey), `ranking_${catKey}_${periodKey}.csv`) }
-  catch (err: unknown) { showToast(err instanceof Error ? err.message : '下载失败') }
+  catch (err: unknown) { showToast(toErrMsg(err, '下载失败')) }
 }
 
 async function updateRankingList(catKey: string, periodKey: string) {
@@ -426,7 +426,7 @@ async function updateRankingList(catKey: string, periodKey: string) {
     showToast(res.msg || '榜单更新任务已加入队列')
     await tasks.refresh()
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '添加更新任务失败')
+    showToast(toErrMsg(err, '添加更新任务失败'))
   }
 }
 
@@ -437,7 +437,7 @@ async function clearRankingList(catKey: string, periodKey: string) {
     showToast(msg)
     await db.ensureRankingMovies(catKey, periodKey, true)
   } catch (err: unknown) {
-    showToast(err instanceof Error ? err.message : '清空失败')
+    showToast(toErrMsg(err, '清空失败'))
   }
 }
 
@@ -447,7 +447,7 @@ async function refreshTop250() {
     showToast('TOP250 分类已刷新')
     top250Error.value = ''
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : '刷新分类失败'
+    const msg = toErrMsg(err, '刷新分类失败')
     top250Error.value = msg
     showToast(msg)
   }

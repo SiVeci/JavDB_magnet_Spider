@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { verifyToken } from '@/api'
+import { toErrMsg } from '@/utils/error'
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string>(sessionStorage.getItem('javdb_auth_token') || '')
@@ -38,7 +39,7 @@ export const useAuthStore = defineStore('auth', () => {
       unlock()
       return { ok: true }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '验证失败，请稍后重试'
+      const msg = toErrMsg(err, '验证失败，请稍后重试')
       return { ok: false, error: msg }
     }
   }
@@ -67,7 +68,7 @@ export const useAuthStore = defineStore('auth', () => {
       lockForAuth('访问令牌缺失或无效')
       return { ok: false, version }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '验证失败，请稍后重试'
+      const msg = toErrMsg(err, '验证失败，请稍后重试')
       lockForAuth(msg)
       return { ok: false, version }
     }

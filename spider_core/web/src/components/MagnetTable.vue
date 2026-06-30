@@ -8,7 +8,7 @@ import type { Magnet } from '@/types'
  * MagnetTable — 候选磁力 5 列表格（还原旧版 magnet-table.js）
  * 列：状态 / 文件名 / 分数 / 大小 / 操作
  */
-const props = defineProps<{
+defineProps<{
   movieId: string | number
   magnets: Magnet[]
 }>()

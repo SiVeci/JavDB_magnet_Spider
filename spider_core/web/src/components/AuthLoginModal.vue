@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useAuthBrowser } from '@/composables/useAuthBrowser'
+import { toErrMsg } from '@/utils/error'
 
 const props = defineProps<{ open: boolean; rememberCookie?: boolean }>()
 const emit = defineEmits<{
@@ -58,7 +59,7 @@ watch(
       try {
         await authBrowser.start()
       } catch (err: unknown) {
-        errorMsg.value = err instanceof Error ? err.message : '无法开始登录'
+        errorMsg.value = toErrMsg(err, '无法开始登录')
       }
     } else {
       await authBrowser.close()
@@ -74,7 +75,7 @@ async function refreshCaptcha() {
   try {
     await authBrowser.refreshCaptcha()
   } catch (err: unknown) {
-    errorMsg.value = err instanceof Error ? err.message : '刷新验证码失败'
+    errorMsg.value = toErrMsg(err, '刷新验证码失败')
   }
 }
 
@@ -90,7 +91,7 @@ async function submit() {
     emit('success', res.msg || '登录成功，Cookie 已保存')
     emit('update:open', false)
   } catch (err: unknown) {
-    errorMsg.value = err instanceof Error ? err.message : '登录失败'
+    errorMsg.value = toErrMsg(err, '登录失败')
     captcha.value = ''
     try { await authBrowser.refreshCaptcha() } catch { /* 忽略刷新失败 */ }
   }

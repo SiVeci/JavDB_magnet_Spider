@@ -49,13 +49,13 @@ export const useTasksStore = defineStore('tasks', () => {
 
   async function refresh() {
     const [tasksRes, queueRes, statusRes] = await Promise.all([
-      apiFetch('/api/tasks').then((r: Response) => r.json()) as Promise<ApiResponse<Task[]>>,
-      apiFetch('/api/tasks/queue_status').then((r: Response) => r.json()) as Promise<ApiResponse<QueueStatus>>,
-      apiFetch('/api/status').then((r: Response) => r.json()) as Promise<{ logs?: string[] }>,
+      apiFetchJson<ApiResponse<Task[]>>('/api/tasks'),
+      apiFetchJson<ApiResponse<QueueStatus>>('/api/tasks/queue_status'),
+      apiFetch('/api/status').then((r: Response) => r.json() as { logs?: string[] }),
     ])
-    tasks.value = (tasksRes as ApiResponse<Task[]>).data || []
-    queueStatus.value = (queueRes as ApiResponse<QueueStatus>).data || queueStatus.value
-    logs.value = (statusRes as { logs?: string[] }).logs || []
+    tasks.value = tasksRes.data || []
+    queueStatus.value = queueRes.data || queueStatus.value
+    logs.value = statusRes.logs || []
   }
 
   function startSSE(getToken?: () => string) {
@@ -87,7 +87,7 @@ export const useTasksStore = defineStore('tasks', () => {
   function clearCollectionsChanged() { collectionsChanged.value = false }
 
   async function startQueue() {
-    const res = await apiFetch('/api/tasks/start_queue', { method: 'POST' }).then((r: Response) => r.json())
+    const res = await apiFetchJson<ApiResponse>('/api/tasks/start_queue', { method: 'POST' })
     if (res.code !== 200) throw new Error(res.msg || '无法启动队列')
     await refresh()
   }
@@ -117,7 +117,7 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   async function cleanupFinished() {
-    const res = await apiFetch('/api/tasks/cleanup', { method: 'POST' }).then((r: Response) => r.json())
+    const res = await apiFetchJson<ApiResponse>('/api/tasks/cleanup', { method: 'POST' })
     if (res.code !== 200) throw new Error(res.msg || '清理失败')
     await refresh()
     return res.msg || '已清理已结束任务'
@@ -130,7 +130,7 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   async function getIncrementalMagnets(taskId: string): Promise<string[]> {
-    const res = await apiFetch(`/api/tasks/${encodeURIComponent(taskId)}/incremental_magnets`).then((r: Response) => r.json())
+    const res = await apiFetchJson<ApiResponse<string[]>>(`/api/tasks/${encodeURIComponent(taskId)}/incremental_magnets`)
     if (res.code !== 200) throw new Error(res.msg || '读取失败')
     return res.data || []
   }
