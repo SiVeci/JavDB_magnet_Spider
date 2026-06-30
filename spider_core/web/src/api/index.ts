@@ -1,10 +1,11 @@
 import { useAuthStore } from '@/stores/auth'
+import { STORAGE_KEYS } from '@/constants/storageKeys'
 
 const AUTH_HEADER = 'X-JavDB-Token'
 
 function getToken(): string {
   try {
-    return sessionStorage.getItem('javdb_auth_token') || ''
+    return sessionStorage.getItem(STORAGE_KEYS.authToken) || ''
   } catch {
     return ''
   }
@@ -65,8 +66,8 @@ export async function apiDownloadBlob(url: string, filename: string): Promise<vo
   a.download = filename
   document.body.appendChild(a)
   a.click()
-  URL.revokeObjectURL(a.href)
   a.remove()
+  setTimeout(() => URL.revokeObjectURL(a.href), 0)
 }
 
 export async function verifyToken(token: string): Promise<boolean> {

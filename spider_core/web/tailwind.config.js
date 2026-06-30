@@ -62,6 +62,14 @@ export default {
         md: 'var(--shadow-md)',
         pop: 'var(--shadow-pop)',
       },
+      textColor: {
+        strong: 'var(--c-text-strong)',
+        muted:  'var(--c-text-muted)',
+        subtle: 'var(--c-text-subtle)',
+      },
+      borderColor: {
+        soft: 'var(--c-border-soft)',
+      },
     },
   },
   plugins: [],

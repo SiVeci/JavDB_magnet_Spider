@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { apiFetch } from '@/api'
 import type { RuntimeConfig } from '@/types'
+import { STORAGE_KEYS } from '@/constants/storageKeys'
 
 const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'
 
@@ -21,12 +22,12 @@ export const useSettingsStore = defineStore('settings', () => {
   })
 
   function saveCookieCache() {
-    localStorage.setItem('javdb_remember_cookie', config.value.remember_cookie ? '1' : '0')
-    localStorage.removeItem('javdb_cookie')
-    sessionStorage.removeItem('javdb_cookie')
+    localStorage.setItem(STORAGE_KEYS.rememberCookie, config.value.remember_cookie ? '1' : '0')
+    localStorage.removeItem(STORAGE_KEYS.cookie)
+    sessionStorage.removeItem(STORAGE_KEYS.cookie)
   }
   async function load() {
-    const remember = localStorage.getItem('javdb_remember_cookie') === '1'
+    const remember = localStorage.getItem(STORAGE_KEYS.rememberCookie) === '1'
     config.value.remember_cookie = remember
     config.value.cookie = ''
 
@@ -35,8 +36,8 @@ export const useSettingsStore = defineStore('settings', () => {
     const data = res.data
     config.value.remember_cookie = !!data.remember_cookie
     config.value.cookie = ''
-    config.value.user_agent = data.user_agent || localStorage.getItem('javdb_ua') || DEFAULT_UA
-    config.value.proxies = data.proxies || localStorage.getItem('javdb_proxy') || ''
+    config.value.user_agent = data.user_agent || localStorage.getItem(STORAGE_KEYS.ua) || DEFAULT_UA
+    config.value.proxies = data.proxies || localStorage.getItem(STORAGE_KEYS.proxy) || ''
     config.value.trackers = data.trackers || []
     config.value.has_cookie = !!data.has_cookie
     config.value.cookie_source = data.cookie_source || 'unknown'
@@ -48,8 +49,8 @@ export const useSettingsStore = defineStore('settings', () => {
 
   async function save(showMsg = false): Promise<string> {
     saveCookieCache()
-    localStorage.setItem('javdb_ua', config.value.user_agent)
-    localStorage.setItem('javdb_proxy', config.value.proxies)
+    localStorage.setItem(STORAGE_KEYS.ua, config.value.user_agent)
+    localStorage.setItem(STORAGE_KEYS.proxy, config.value.proxies)
     const res = await apiFetch('/api/runtime_config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

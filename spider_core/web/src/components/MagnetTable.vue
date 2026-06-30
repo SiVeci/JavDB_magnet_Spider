@@ -31,7 +31,7 @@ async function copyLink(link: string) {
       <colgroup>
         <col class="w-14" /><col /><col class="w-10" /><col class="w-16" /><col class="w-16" />
       </colgroup>
-      <thead class="sticky top-0 border-b border-[color:var(--c-border)] bg-surface-sunken text-[color:var(--c-text-muted)]">
+      <thead class="sticky top-0 border-b border-[color:var(--c-border)] bg-surface-sunken text-muted">
         <tr>
           <th class="p-2 text-center whitespace-nowrap font-bold">状态</th>
           <th class="p-2 text-left font-bold">文件名</th>
@@ -52,7 +52,7 @@ async function copyLink(link: string) {
             <div>
               <span :class="magnetStatusMeta(mag).text" :title="magnetStatusMeta(mag).title">{{ magnetStatusMeta(mag).icon }}</span>
             </div>
-            <div class="mt-1 text-[10px] leading-none text-[color:var(--c-text-subtle)]">
+            <div class="mt-1 text-[10px] leading-none text-subtle">
               {{ mag.checked_at ? `${mag.seeders ?? 0}/${mag.leechers ?? 0}` : '-/-' }}
             </div>
           </td>
@@ -66,7 +66,7 @@ async function copyLink(link: string) {
             <div class="truncate">
               <span v-if="mag.is_selected" class="mr-1 text-success-text">✓</span>{{ mag.name }}
             </div>
-            <div class="mt-1 inline-flex max-w-full rounded bg-neutral-soft px-1.5 py-0.5 text-[10px] leading-none text-[color:var(--c-text-muted)]">
+            <div class="mt-1 inline-flex max-w-full rounded bg-neutral-soft px-1.5 py-0.5 text-[10px] leading-none text-muted">
               {{ mag.magnet_date || '-' }}
             </div>
           </td>

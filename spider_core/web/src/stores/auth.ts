@@ -2,21 +2,22 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { verifyToken } from '@/api'
 import { toErrMsg } from '@/utils/error'
+import { STORAGE_KEYS } from '@/constants/storageKeys'
 
 export const useAuthStore = defineStore('auth', () => {
-  const token = ref<string>(sessionStorage.getItem('javdb_auth_token') || '')
+  const token = ref<string>(sessionStorage.getItem(STORAGE_KEYS.authToken) || '')
   const authRequired = ref(false)
   const locked = ref(false)
   const lockMessage = ref('')
 
   function setToken(t: string) {
     token.value = t
-    sessionStorage.setItem('javdb_auth_token', t)
+    sessionStorage.setItem(STORAGE_KEYS.authToken, t)
   }
 
   function clearToken() {
     token.value = ''
-    sessionStorage.removeItem('javdb_auth_token')
+    sessionStorage.removeItem(STORAGE_KEYS.authToken)
   }
 
   function lockForAuth(message = '') {

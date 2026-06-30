@@ -9,6 +9,7 @@ import { apiFetchJson } from '@/api'
 import { displayName } from '@/utils/format'
 import { toErrMsg } from '@/utils/error'
 import type { Task } from '@/types'
+import { STORAGE_KEYS } from '@/constants/storageKeys'
 
 const tasks = useTasksStore()
 const settings = useSettingsStore()
@@ -38,8 +39,8 @@ function waitingCookieReason(task: Task): string {
 }
 
 // Task config state
-const startUrl = ref(localStorage.getItem('javdb_url') || '')
-const filename = ref(localStorage.getItem('javdb_filename') || '')
+const startUrl = ref(localStorage.getItem(STORAGE_KEYS.url) || '')
+const filename = ref(localStorage.getItem(STORAGE_KEYS.filename) || '')
 const availableTags = ref<{ name: string; value: string }[]>([])
 const selectedTags = ref<Set<string>>(new Set())
 const actorBaseUrl = ref('')
@@ -363,7 +364,7 @@ onUnmounted(() => {
                     'px-3 py-1.5 rounded text-xs border transition-colors',
                     selectedTags.has(tag.value)
                       ? 'bg-primary text-white border-primary'
-                      : 'bg-surface text-[color:var(--c-text-muted)] border-[color:var(--c-border)] hover:bg-surface-sunken'
+                      : 'bg-surface text-muted border-[color:var(--c-border)] hover:bg-surface-sunken'
                   ]"
                 >{{ tag.name }}</button>
               </div>
@@ -381,7 +382,7 @@ onUnmounted(() => {
       </div>
       <div class="grid min-h-0 flex-1 content-start grid-cols-1 items-start overflow-hidden lg:grid-cols-[280px_1fr]">
         <!-- 队列面板 -->
-        <aside class="min-h-0 self-start overflow-hidden border-r border-[color:var(--c-border-soft)] bg-surface-sunken">
+        <aside class="min-h-0 self-start overflow-hidden border-r border-soft bg-surface-sunken">
           <div class="toolbar px-4 py-1.5">
             <div class="flex items-center gap-2">
               <button
@@ -452,7 +453,7 @@ onUnmounted(() => {
                   <path d="M6 6l1 15h10l1-15"></path><path d="M10 11v6"></path><path d="M14 11v6"></path>
                 </svg>
               </button>
-              <div class="flex min-w-0 items-center gap-3 text-xs text-[color:var(--c-text-muted)]">
+              <div class="flex min-w-0 items-center gap-3 text-xs text-muted">
                 <span>待处理 {{ tasks.queueStatus.active_count || 0 }} 个</span>
                 <span>已结束 {{ tasks.queueStatus.finished_count || 0 }} 个</span>
               </div>
@@ -475,11 +476,11 @@ onUnmounted(() => {
                   <div class="truncate font-bold text-xs leading-tight" :title="displayName(task.final_filename || task.filename || '自动命名')">
                     {{ displayName(task.final_filename || task.filename || '自动命名') }}
                   </div>
-                  <div class="truncate font-mono text-[10px] leading-tight text-[color:var(--c-text-subtle)]">
+                  <div class="truncate font-mono text-[10px] leading-tight text-subtle">
                     {{ (task.task_id || '').slice(0, 8) }}
                   </div>
                 </div>
-                <div class="font-mono text-[color:var(--c-text-muted)] text-right">{{ task.progress || '0/0' }}</div>
+                <div class="font-mono text-muted text-right">{{ task.progress || '0/0' }}</div>
                 <div class="text-right">
                   <span :class="['badge w-[72px]', stateMeta(task.state).badge]">{{ stateMeta(task.state).label }}</span>
                 </div>
@@ -508,7 +509,7 @@ onUnmounted(() => {
         <section class="flex min-h-0 self-start flex-col gap-3 overflow-hidden p-5">
           <!-- 当前任务操作按钮 -->
           <div v-if="currentTask" class="flex flex-wrap gap-2">
-            <div v-if="currentTask.state === 'waiting_cookie'" class="basis-full rounded border border-[color:var(--c-border-soft)] bg-surface-sunken px-3 py-2 text-xs text-[color:var(--c-text-muted)]">
+            <div v-if="currentTask.state === 'waiting_cookie'" class="basis-full rounded border border-soft bg-surface-sunken px-3 py-2 text-xs text-muted">
               <div><span>Cookie 状态：</span>{{ cookieStatusLabel }}</div>
               <div class="truncate" :title="waitingCookieReason(currentTask)"><span>失败原因：</span>{{ waitingCookieReason(currentTask) }}</div>
               <div><span>推荐处理：</span>{{ cookieRecommendation() }}</div>
@@ -531,8 +532,8 @@ onUnmounted(() => {
             >
               <span>运行日志</span>
               <div class="flex items-center gap-2">
-                <button type="button" @click.stop="clearLogs" class="text-xs text-[color:var(--c-text-muted)] hover:text-danger px-1">清除</button>
-                <span class="text-xs text-[color:var(--c-text-muted)]">{{ logCollapsed ? '▼' : '▲' }}</span>
+                <button type="button" @click.stop="clearLogs" class="text-xs text-muted hover:text-danger px-1">清除</button>
+                <span class="text-xs text-muted">{{ logCollapsed ? '▼' : '▲' }}</span>
               </div>
             </button>
             <div
@@ -542,7 +543,7 @@ onUnmounted(() => {
               :style="{ height: logBodyHeight, minHeight: `${LOG_MIN_HEIGHT}px` }"
             >
               <div v-if="!tasks.logs.length">等待任务启动...</div>
-              <div v-for="(log, i) in tasks.logs" :key="i" class="mb-1 border-b border-[color:var(--c-border-soft)] pb-1">{{ log }}</div>
+              <div v-for="(log, i) in tasks.logs" :key="i" class="mb-1 border-b border-soft pb-1">{{ log }}</div>
             </div>
           </div>
         </section>

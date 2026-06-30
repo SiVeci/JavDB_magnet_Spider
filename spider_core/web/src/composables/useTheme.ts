@@ -1,6 +1,7 @@
 import { ref } from 'vue'
+import { STORAGE_KEYS } from '@/constants/storageKeys'
 
-const THEME_KEY = 'javdb_theme'
+const THEME_KEY = STORAGE_KEYS.theme
 
 export function useTheme() {
   const theme = ref<'light' | 'dark'>(

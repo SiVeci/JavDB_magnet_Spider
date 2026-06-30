@@ -102,8 +102,8 @@ onUnmounted(() => {
 <template>
   <section id="view-actors" class="min-h-0 overflow-hidden">
     <section class="card flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-      <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 py-3 text-sm font-semibold">收藏演员</div>
-      <div class="shrink-0 border-b border-[color:var(--c-border-soft)] px-5 pb-2 pt-2 space-y-2">
+      <div class="shrink-0 border-b border-soft px-5 py-3 text-sm font-semibold">收藏演员</div>
+      <div class="shrink-0 border-b border-soft px-5 pb-2 pt-2 space-y-2">
         <div class="flex min-w-0 items-center gap-2">
           <div class="w-[130px] shrink-0">
             <label class="sr-only">收藏演员分类</label>
@@ -133,7 +133,7 @@ onUnmounted(() => {
             </svg>
             <span class="sr-only">{{ refreshing ? '刷新中' : '刷新当前分类' }}</span>
           </button>
-          <span class="min-w-0 truncate text-xs text-[color:var(--c-text-muted)]">{{ refreshInfo }}</span>
+          <span class="min-w-0 truncate text-xs text-muted">{{ refreshInfo }}</span>
         </div>
         <div v-if="failedBannerMsg" class="rounded border border-[color:var(--c-warning)] bg-warning-soft px-3 py-2 text-xs text-warning-text">
           {{ failedBannerMsg }}
@@ -193,10 +193,10 @@ onUnmounted(() => {
 
             <!-- 标签面板 -->
             <div v-if="actorsStore.expandedActorId === actor.actor_id" class="mt-2 rounded-lg border border-[color:var(--c-primary-soft)] p-3">
-              <div v-if="actorsStore.tagStates[actor.actor_id]?.loading" class="text-xs text-[color:var(--c-text-muted)]">加载标签中...</div>
+              <div v-if="actorsStore.tagStates[actor.actor_id]?.loading" class="text-xs text-muted">加载标签中...</div>
               <div v-else-if="actorsStore.tagStates[actor.actor_id]?.error" class="text-xs text-danger-text">{{ actorsStore.tagStates[actor.actor_id]?.error }}</div>
               <div v-else class="max-h-[130px] overflow-y-auto overscroll-contain flex flex-wrap gap-2">
-                <span v-if="!actorsStore.tagStates[actor.actor_id]?.tags?.length" class="text-xs text-[color:var(--c-text-subtle)]">该演员页无可选标签，可直接加入任务</span>
+                <span v-if="!actorsStore.tagStates[actor.actor_id]?.tags?.length" class="text-xs text-subtle">该演员页无可选标签，可直接加入任务</span>
                 <button
                   v-for="t in actorsStore.tagStates[actor.actor_id]?.tags"
                   :key="t.value"
@@ -206,7 +206,7 @@ onUnmounted(() => {
                     'px-2.5 py-1 rounded text-xs border transition-colors',
                     actorsStore.tagStates[actor.actor_id]?.selected?.has(t.value)
                       ? 'bg-primary text-white border-primary'
-                      : 'bg-surface text-[color:var(--c-text-muted)] border-[color:var(--c-border)] hover:bg-surface-sunken'
+                      : 'bg-surface text-muted border-[color:var(--c-border)] hover:bg-surface-sunken'
                   ]"
                 >{{ t.name }}</button>
               </div>

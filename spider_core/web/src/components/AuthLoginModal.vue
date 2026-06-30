@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, nextTick, onUnmounted } from 'vue'
 import { useAuthBrowser } from '@/composables/useAuthBrowser'
 import { toErrMsg } from '@/utils/error'
+import { STORAGE_KEYS } from '@/constants/storageKeys'
 
 const props = defineProps<{ open: boolean; rememberCookie?: boolean }>()
 const emit = defineEmits<{
@@ -14,12 +15,30 @@ const email = ref('')
 const password = ref('')
 const captcha = ref('')
 const errorMsg = ref('')
-const rememberCreds = ref(localStorage.getItem('javdb_login_remember') === '1')
+const rememberCreds = ref(localStorage.getItem(STORAGE_KEYS.loginRemember) === '1')
+
+const dialogEl = ref<HTMLElement | null>(null)
+let lastFocused: HTMLElement | null = null
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') { closeModal(); return }
+  if (e.key === 'Tab' && dialogEl.value) {
+    const focusable = dialogEl.value.querySelectorAll<HTMLElement>(
+      'a[href],button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])'
+    )
+    if (!focusable.length) return
+    const first = focusable[0], last = focusable[focusable.length - 1]
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus() }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
+  }
+}
+
+onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 // 记住的账号密码存在 localStorage（密码仅 base64 编码防肩窥，非加密）。
-const REMEMBER_KEY = 'javdb_login_remember'
-const EMAIL_KEY = 'javdb_login_email'
-const PASSWORD_KEY = 'javdb_login_password'
+const REMEMBER_KEY = STORAGE_KEYS.loginRemember
+const EMAIL_KEY = STORAGE_KEYS.loginEmail
+const PASSWORD_KEY = STORAGE_KEYS.loginPassword
 
 function loadSavedCreds() {
   email.value = localStorage.getItem(EMAIL_KEY) || ''
@@ -48,6 +67,8 @@ watch(
   () => props.open,
   async (isOpen) => {
     if (isOpen) {
+      lastFocused = document.activeElement as HTMLElement | null
+      document.addEventListener('keydown', onKeydown)
       if (rememberCreds.value) {
         loadSavedCreds()
       } else {
@@ -61,8 +82,12 @@ watch(
       } catch (err: unknown) {
         errorMsg.value = toErrMsg(err, '无法开始登录')
       }
+      await nextTick()
+      dialogEl.value?.querySelector<HTMLElement>('input')?.focus()
     } else {
+      document.removeEventListener('keydown', onKeydown)
       await authBrowser.close()
+      lastFocused?.focus()
     }
   },
 )
@@ -103,10 +128,17 @@ async function submit() {
     v-if="open"
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
     @click.self="closeModal"
+    role="presentation"
   >
-    <div class="w-full max-w-sm rounded-xl border border-[color:var(--c-border)] bg-surface p-5 shadow-pop">
+    <div
+      ref="dialogEl"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="auth-modal-title"
+      class="w-full max-w-sm rounded-xl border border-[color:var(--c-border)] bg-surface p-5 shadow-pop"
+    >
       <div class="mb-4 flex items-center justify-between">
-        <h3 class="text-base font-semibold text-[color:var(--c-text-strong)]">登录 JavDB 获取 Cookie</h3>
+        <h3 id="auth-modal-title" class="text-base font-semibold text-strong">登录 JavDB 获取 Cookie</h3>
         <button type="button" @click="closeModal" class="btn btn-sm btn-soft" aria-label="关闭">✕</button>
       </div>
       <div class="space-y-3">
@@ -139,11 +171,11 @@ async function submit() {
               v-if="authBrowser.captchaImage.value"
               :src="authBrowser.captchaImage.value"
               alt="验证码"
-              class="h-10 cursor-pointer rounded border border-[color:var(--c-border-soft)]"
+              class="h-10 cursor-pointer rounded border border-soft"
               title="点击刷新验证码"
               @click="refreshCaptcha"
             />
-            <span v-else class="text-xs text-[color:var(--c-text-muted)]">加载中…</span>
+            <span v-else class="text-xs text-muted">加载中…</span>
             <input
               v-model="captcha"
               type="text"
@@ -154,12 +186,15 @@ async function submit() {
               @keyup.enter="submit"
             />
           </div>
-          <p class="mt-1 text-xs text-[color:var(--c-text-muted)]">点击图片可刷新验证码</p>
+          <p class="mt-1 text-xs text-muted">点击图片可刷新验证码</p>
         </div>
         <label class="flex items-center gap-2 text-sm text-[color:var(--c-text)] cursor-pointer select-none">
           <input v-model="rememberCreds" type="checkbox" class="h-4 w-4 cursor-pointer" />
           记住账号密码
         </label>
+        <p v-if="rememberCreds" class="text-xs text-warning-text">
+          ⚠ 密码以 base64 明文等价方式存于浏览器 localStorage，他人可读，请仅在私人设备使用。
+        </p>
         <p v-if="errorMsg" class="text-xs text-danger-text">{{ errorMsg }}</p>
         <div class="flex justify-end gap-2 pt-1">
           <button type="button" @click="closeModal" class="btn btn-sm btn-soft">取消</button>

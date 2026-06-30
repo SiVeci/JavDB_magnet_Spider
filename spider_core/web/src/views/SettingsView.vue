@@ -118,7 +118,7 @@ async function checkCookie() {
       <div class="p-5 space-y-4 text-sm">
         <div>
           <div class="flex justify-between items-center mb-1">
-            <label class="text-[color:var(--c-text-muted)]">Cookie</label>
+            <label class="text-muted">Cookie</label>
             <a href="https://javdb.com" target="_blank" class="text-xs text-info-text underline">打开 JavDB</a>
           </div>
           <textarea
@@ -126,7 +126,7 @@ async function checkCookie() {
             rows="1"
             class="input input-mono h-10 min-h-10 resize-y"
           ></textarea>
-          <label class="mt-2 flex items-center gap-2 text-xs text-[color:var(--c-text-muted)]">
+          <label class="mt-2 flex items-center gap-2 text-xs text-muted">
             <input
               v-model="settings.config.remember_cookie"
               type="checkbox"
@@ -136,16 +136,16 @@ async function checkCookie() {
           </label>
           <div
             v-if="showAuthBrowserDetails"
-            class="mt-3 grid gap-2 rounded-lg border border-[color:var(--c-border-soft)] bg-surface-sunken p-3 text-xs"
+            class="mt-3 grid gap-2 rounded-lg border border-soft bg-surface-sunken p-3 text-xs"
           >
             <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              <div><span class="text-[color:var(--c-text-muted)]">Cookie：</span>{{ settings.config.has_cookie ? '已配置' : '未配置' }}</div>
-              <div><span class="text-[color:var(--c-text-muted)]">来源：</span>{{ cookieSourceLabel }}</div>
-              <div><span class="text-[color:var(--c-text-muted)]">状态：</span>{{ cookieStatusLabel }}</div>
-              <div><span class="text-[color:var(--c-text-muted)]">最近获取：</span>{{ formatTime(settings.config.cookie_captured_at) }}</div>
-              <div><span class="text-[color:var(--c-text-muted)]">最近验证：</span>{{ formatTime(settings.config.cookie_validated_at) }}</div>
+              <div><span class="text-muted">Cookie：</span>{{ settings.config.has_cookie ? '已配置' : '未配置' }}</div>
+              <div><span class="text-muted">来源：</span>{{ cookieSourceLabel }}</div>
+              <div><span class="text-muted">状态：</span>{{ cookieStatusLabel }}</div>
+              <div><span class="text-muted">最近获取：</span>{{ formatTime(settings.config.cookie_captured_at) }}</div>
+              <div><span class="text-muted">最近验证：</span>{{ formatTime(settings.config.cookie_validated_at) }}</div>
               <div class="min-w-0 truncate" :title="settings.config.cookie_last_error || ''">
-                <span class="text-[color:var(--c-text-muted)]">最近错误：</span>{{ settings.config.cookie_last_error || '-' }}
+                <span class="text-muted">最近错误：</span>{{ settings.config.cookie_last_error || '-' }}
               </div>
             </div>
             <div class="flex flex-wrap gap-2">

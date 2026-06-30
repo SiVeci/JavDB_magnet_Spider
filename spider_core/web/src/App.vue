@@ -6,6 +6,7 @@ import { useTasksStore } from '@/stores/tasks'
 import { useSettingsStore } from '@/stores/settings'
 import { useDatabaseStore } from '@/stores/database'
 import { useTheme } from '@/composables/useTheme'
+import { STORAGE_KEYS } from '@/constants/storageKeys'
 
 const router = useRouter()
 const route = useRoute()
@@ -56,7 +57,7 @@ async function startApp() {
     dbStore.loadCollections(),
   ])
   // 使用 SSE 推送任务状态，运行中进度由后端主动广播。
-  tasksStore.startSSE(() => sessionStorage.getItem('javdb_auth_token') || '')
+  tasksStore.startSSE(() => sessionStorage.getItem(STORAGE_KEYS.authToken) || '')
 }
 
 const themeLabel = computed(() => theme.value === 'dark' ? '切换到亮色' : '切换到暗色')
@@ -82,8 +83,8 @@ onUnmounted(() => {
       <div class="flex flex-col items-center gap-3 text-center">
         <img src="/favicon.png" alt="Logo" class="h-12 w-12 rounded-lg" />
         <div>
-          <h1 class="font-display text-3xl font-medium leading-tight text-[color:var(--c-text-strong)]">JavDB Magnet Spider</h1>
-          <p class="mt-2 text-sm text-[color:var(--c-text-muted)]">输入访问令牌后继续</p>
+          <h1 class="font-display text-3xl font-medium leading-tight text-strong">JavDB Magnet Spider</h1>
+          <p class="mt-2 text-sm text-muted">输入访问令牌后继续</p>
         </div>
       </div>
       <div class="mt-6 space-y-3">
@@ -115,7 +116,7 @@ onUnmounted(() => {
       <div class="flex flex-col items-center gap-2 md:items-start">
         <div class="flex items-center gap-3">
           <img src="/favicon.png" alt="Logo" class="h-10 w-10 rounded-lg" />
-          <h1 class="font-display text-2xl font-medium leading-none text-[color:var(--c-text-strong)] md:text-3xl">JavDB Magnet Spider</h1>
+          <h1 class="font-display text-2xl font-medium leading-none text-strong md:text-3xl">JavDB Magnet Spider</h1>
         </div>
         <div class="flex items-center justify-center gap-2 md:justify-start">
           <span class="badge badge-neutral">{{ appVersion }}</span>
