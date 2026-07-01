@@ -104,6 +104,36 @@ class FetchHtmlRetryTest(unittest.TestCase):
         mock_sleep.assert_not_called()
 
 
+class RuntimeFetchIssueTest(unittest.TestCase):
+    def test_normal_detail_page_with_login_link_is_not_expired(self):
+        response = types.SimpleNamespace(
+            status_code=200,
+            url="https://javdb.com/v/demo",
+            text="""
+            <html>
+              <body>
+                <nav><a href="/login">Login</a></nav>
+                <section class="movie-panel-info">
+                  <div class="panel-block"><strong>類別:</strong><span class="value"><a>美乳</a></span></div>
+                </section>
+              </body>
+            </html>
+            """,
+        )
+
+        self.assertIsNone(spider_engine.classify_runtime_fetch_issue(response, stage_label="详情页请求"))
+
+    def test_login_form_is_expired(self):
+        response = types.SimpleNamespace(
+            status_code=200,
+            url="https://javdb.com/login",
+            text='<form action="/login"><input type="password" /></form>',
+        )
+
+        issue = spider_engine.classify_runtime_fetch_issue(response, stage_label="详情页请求")
+        self.assertEqual(issue["cookie_status"], "expired")
+
+
 class ParseSizeTest(unittest.TestCase):
     def test_gb_converts_to_mb(self):
         self.assertEqual(spider_engine.parse_size("3.5GB"), 3.5 * 1024)

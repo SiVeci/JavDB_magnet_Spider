@@ -223,7 +223,7 @@ def _is_login_response(response):
         return True
     if any(marker in lowered for marker in LOGIN_MARKERS):
         soup = BeautifulSoup(text, "html.parser")
-        return bool(soup.select_one('form[action*="login"], a[href*="/login"], input[type="password"]'))
+        return bool(soup.select_one('form[action*="login"], input[type="password"]'))
     return False
 
 
