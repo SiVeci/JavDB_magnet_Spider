@@ -9,6 +9,9 @@ import { useClipboard } from '@/composables/useClipboard'
 import { fitMovieTags } from '@/composables/useMovieTags'
 import MagnetCheckButton from '@/components/MagnetCheckButton.vue'
 import MagnetTable from '@/components/MagnetTable.vue'
+import MovieListItem from '@/components/MovieListItem.vue'
+import MovieMagnetHeader from '@/components/MovieMagnetHeader.vue'
+import TagFilterDropdown from '@/components/TagFilterDropdown.vue'
 import { displayName } from '@/utils/format'
 import { toErrMsg } from '@/utils/error'
 import type { Collection, Movie, Magnet, MagnetCheckJob } from '@/types'
@@ -453,12 +456,6 @@ async function refreshTop250() {
   }
 }
 
-// ===== 标签下拉交互 =====
-function toggleMenu(kind: string, key: string) {
-  const id = `${kind}:${key}`
-  openMenu.value = openMenu.value === id ? null : id
-}
-function isMenuOpen(kind: string, key: string) { return openMenu.value === `${kind}:${key}` }
 </script>
 
 <template>
@@ -578,45 +575,13 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
           <!-- 过滤行 + 影片列表 -->
           <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-sunken px-4 pb-4 pt-3 text-sm text-muted">
             <div class="mb-3 flex shrink-0 flex-wrap items-center gap-2">
-              <!-- 标签过滤下拉 -->
-              <div class="relative min-w-0">
-                <button type="button" class="flex h-7 min-w-[104px] items-center justify-between gap-2 rounded border border-[color:var(--c-border)] bg-surface px-2 text-left text-xs font-bold text-[color:var(--c-neutral-text)] transition-colors hover:bg-surface-sunken" @click.stop="toggleMenu('tag', currentFilterKey)">
-                  <span class="min-w-0 truncate">筛选: {{ filteredMovies.length }}/{{ currentMovieData.movies.length }}</span>
-                  <span class="shrink-0">{{ isMenuOpen('tag', currentFilterKey) ? '▲' : '▼' }}</span>
-                </button>
-                <div v-if="isMenuOpen('tag', currentFilterKey)" class="menu w-64 max-h-72 overflow-y-auto" @click.stop>
-                  <label class="menu-item">
-                    <input type="checkbox" class="accent-[color:var(--c-primary)]" :checked="db.getTagFilter(currentFilterKey).length === 0" @change="db.toggleTag(currentFilterKey, 'all')" />
-                    <span class="truncate">全部</span>
-                  </label>
-                  <label v-for="tag in currentMovieData.available_tags" :key="tag" class="menu-item">
-                    <input type="checkbox" class="accent-[color:var(--c-primary)]" :checked="db.getTagFilter(currentFilterKey).includes(tag)" @change="db.toggleTag(currentFilterKey, tag)" />
-                    <span class="truncate" :title="tag">{{ tag }}</span>
-                  </label>
-                </div>
-              </div>
-              <!-- 排除下拉 -->
-              <div class="relative shrink-0">
-                <button
-                  type="button"
-                  class="flex h-7 min-w-[68px] items-center justify-between gap-1 rounded border px-2 text-left text-xs font-bold transition-colors"
-                  :class="db.getExcludeFilter(currentFilterKey).length ? 'border-[color:var(--c-danger)] bg-danger-soft text-danger-text' : 'border-[color:var(--c-border)] bg-surface text-muted hover:bg-surface-sunken'"
-                  @click.stop="toggleMenu('exclude', currentFilterKey)"
-                >
-                  <span class="min-w-0 truncate">{{ db.getExcludeFilter(currentFilterKey).length ? `排除: ${db.getExcludeFilter(currentFilterKey).length}个` : '排除' }}</span>
-                  <span class="shrink-0">{{ isMenuOpen('exclude', currentFilterKey) ? '▲' : '▼' }}</span>
-                </button>
-                <div v-if="isMenuOpen('exclude', currentFilterKey)" class="menu w-64 max-h-72 overflow-y-auto" @click.stop>
-                  <label class="menu-item text-danger-text font-bold">
-                    <input type="checkbox" @change="db.clearExclude(currentFilterKey)" />
-                    <span>清除排除</span>
-                  </label>
-                  <label v-for="tag in currentMovieData.available_tags" :key="tag" class="menu-item hover:bg-danger-soft">
-                    <input type="checkbox" class="accent-[color:var(--c-danger)]" :checked="db.getExcludeFilter(currentFilterKey).includes(tag)" @change="db.toggleExclude(currentFilterKey, tag)" />
-                    <span class="truncate" :class="db.getExcludeFilter(currentFilterKey).includes(tag) ? 'text-danger-text font-bold' : ''" :title="tag">{{ tag }}</span>
-                  </label>
-                </div>
-              </div>
+              <TagFilterDropdown
+                v-model:open-menu="openMenu"
+                :filter-key="currentFilterKey"
+                :available-tags="currentMovieData.available_tags"
+                :filtered-count="filteredMovies.length"
+                :total-count="currentMovieData.movies.length"
+              />
               <!-- 工具栏动作 -->
               <div class="ml-auto flex shrink-0 items-center gap-1">
                 <button type="button" title="复制集合磁力" aria-label="复制集合磁力" class="btn btn-icon-sm btn-info text-xs" @click="copyCollectionMagnets(routeCategory!)">⧉</button>
@@ -633,40 +598,14 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
             <!-- 影片列表 -->
             <div v-if="!filteredMovies.length" class="empty-state">暂无匹配影片记录</div>
             <div v-else class="min-h-0 flex-1 max-w-full divide-y divide-[color:var(--c-border)] overflow-y-auto rounded-lg border border-[color:var(--c-border)] bg-surface">
-              <div v-for="movie in filteredMovies" :key="movie.id" class="p-3">
-                <button type="button" @click="goMovie(movie.id)" class="block w-full min-w-0 text-left">
-                  <div class="truncate font-bold" :title="`${movie.code} ${movie.title || ''}`"><span>{{ movie.code }}</span> <span class="font-normal text-muted">{{ movie.title || '' }}</span></div>
-                  <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted">
-                    <span class="badge badge-info shrink-0 whitespace-nowrap">候选 {{ movie.candidate_count || 0 }}</span>
-                    <span class="min-w-0 truncate" :title="movie.best_magnet_name || '未选中磁力'">{{ movie.best_magnet_name || '未选中磁力' }}</span>
-                  </div>
-                  <div v-if="(movie.tags || []).length" class="movie-tags mt-2 flex max-w-full flex-nowrap gap-0.5 overflow-hidden" :title="(movie.tags || []).join(', ')">
-                    <span v-for="tag in movie.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[10px]">{{ tag }}</span>
-                    <span data-role="more" class="badge badge-info hidden shrink-0 text-[10px]" style="display:none">+0</span>
-                  </div>
-                </button>
-              </div>
+              <MovieListItem v-for="movie in filteredMovies" :key="movie.id" :movie="movie" @open="goMovie" />
             </div>
           </div>
         </template>
 
         <!-- 候选磁力表（演员）-->
         <template v-else-if="pageMode === 'magnet-list'">
-          <div class="shrink-0 border-b border-soft px-5 pb-4 pt-2">
-            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div class="min-w-0">
-                <div class="truncate text-xs text-muted" :title="currentMovie?.title || currentMovie?.code || ''">{{ currentMovie?.title || currentMovie?.code || '' }}</div>
-                <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted">
-                  <MagnetCheckButton v-if="currentMovie" scope="movie" :target="currentMovie.id" />
-                  <div class="min-w-0 truncate" :title="currentMovie?.best_magnet_name || '未选中磁力'">{{ currentMovie?.best_magnet_name || '未选中磁力' }}</div>
-                </div>
-                <div v-if="(currentMovie?.tags || []).length" class="movie-tags mt-2 flex max-w-full flex-nowrap gap-0.5 overflow-hidden" :title="(currentMovie?.tags || []).join(', ')">
-                  <span v-for="tag in currentMovie?.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[10px]">{{ tag }}</span>
-                  <span data-role="more" class="badge badge-info hidden shrink-0 text-[10px]" style="display:none">+0</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <MovieMagnetHeader :movie="currentMovie" />
           <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-sunken p-4">
             <MagnetTable :movie-id="routeMovieId!" :magnets="magnets" @select="selectMagnet" />
           </div>
@@ -745,40 +684,13 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
           </div>
           <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-sunken px-4 pb-4 pt-3 text-sm text-muted">
             <div class="mb-3 flex shrink-0 flex-wrap items-center gap-2">
-              <!-- 标签过滤下拉 -->
-              <div class="relative min-w-0">
-                <button type="button" class="flex h-7 min-w-[104px] items-center justify-between gap-2 rounded border border-[color:var(--c-border)] bg-surface px-2 text-left text-xs font-bold text-[color:var(--c-neutral-text)] transition-colors hover:bg-surface-sunken" @click.stop="toggleMenu('tag', currentFilterKey)">
-                  <span class="min-w-0 truncate">筛选: {{ filteredMovies.length }}/{{ Number(currentMovieData.total_count || currentMovieData.movies.length) }}</span>
-                  <span class="shrink-0">{{ isMenuOpen('tag', currentFilterKey) ? '▲' : '▼' }}</span>
-                </button>
-                <div v-if="isMenuOpen('tag', currentFilterKey)" class="menu w-64 max-h-72 overflow-y-auto" @click.stop>
-                  <label class="menu-item">
-                    <input type="checkbox" class="accent-[color:var(--c-primary)]" :checked="db.getTagFilter(currentFilterKey).length === 0" @change="db.toggleTag(currentFilterKey, 'all')" />
-                    <span class="truncate">全部</span>
-                  </label>
-                  <label v-for="tag in currentMovieData.available_tags" :key="tag" class="menu-item">
-                    <input type="checkbox" class="accent-[color:var(--c-primary)]" :checked="db.getTagFilter(currentFilterKey).includes(tag)" @change="db.toggleTag(currentFilterKey, tag)" />
-                    <span class="truncate" :title="tag">{{ tag }}</span>
-                  </label>
-                </div>
-              </div>
-              <!-- 排除下拉 -->
-              <div class="relative shrink-0">
-                <button type="button" class="flex h-7 min-w-[68px] items-center justify-between gap-1 rounded border px-2 text-left text-xs font-bold transition-colors" :class="db.getExcludeFilter(currentFilterKey).length ? 'border-[color:var(--c-danger)] bg-danger-soft text-danger-text' : 'border-[color:var(--c-border)] bg-surface text-muted hover:bg-surface-sunken'" @click.stop="toggleMenu('exclude', currentFilterKey)">
-                  <span class="min-w-0 truncate">{{ db.getExcludeFilter(currentFilterKey).length ? `排除: ${db.getExcludeFilter(currentFilterKey).length}个` : '排除' }}</span>
-                  <span class="shrink-0">{{ isMenuOpen('exclude', currentFilterKey) ? '▲' : '▼' }}</span>
-                </button>
-                <div v-if="isMenuOpen('exclude', currentFilterKey)" class="menu w-64 max-h-72 overflow-y-auto" @click.stop>
-                  <label class="menu-item text-danger-text font-bold">
-                    <input type="checkbox" @change="db.clearExclude(currentFilterKey)" />
-                    <span>清除排除</span>
-                  </label>
-                  <label v-for="tag in currentMovieData.available_tags" :key="tag" class="menu-item hover:bg-danger-soft">
-                    <input type="checkbox" class="accent-[color:var(--c-danger)]" :checked="db.getExcludeFilter(currentFilterKey).includes(tag)" @change="db.toggleExclude(currentFilterKey, tag)" />
-                    <span class="truncate" :class="db.getExcludeFilter(currentFilterKey).includes(tag) ? 'text-danger-text font-bold' : ''" :title="tag">{{ tag }}</span>
-                  </label>
-                </div>
-              </div>
+              <TagFilterDropdown
+                v-model:open-menu="openMenu"
+                :filter-key="currentFilterKey"
+                :available-tags="currentMovieData.available_tags"
+                :filtered-count="filteredMovies.length"
+                :total-count="Number(currentMovieData.total_count || currentMovieData.movies.length)"
+              />
               <!-- 榜单工具栏动作 -->
               <div class="ml-auto flex shrink-0 items-center gap-1">
                 <button type="button" title="复制榜单磁力" aria-label="复制榜单磁力" class="btn btn-icon-sm btn-info text-xs" @click="copyRankingMagnets(routeCategory!, routePeriod!)">⧉</button>
@@ -796,40 +708,14 @@ function isMenuOpen(kind: string, key: string) { return openMenu.value === `${ki
               <div class="empty-state px-6 py-10">暂无榜单影片</div>
             </div>
             <div v-else class="min-h-0 flex-1 max-w-full divide-y divide-[color:var(--c-border)] overflow-y-auto rounded-lg border border-[color:var(--c-border)] bg-surface">
-              <div v-for="movie in filteredMovies" :key="movie.id" class="p-3">
-                <button type="button" @click="goRankingMagnet(movie.id)" class="block w-full min-w-0 text-left transition-colors hover:text-primary-text">
-                  <div class="truncate font-bold" :title="`${movie.code} ${movie.title || ''}`"><span>{{ movie.code }}</span> <span class="font-normal text-muted">{{ movie.title || '' }}</span></div>
-                  <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted">
-                    <span class="badge badge-info shrink-0 whitespace-nowrap">候选 {{ movie.candidate_count || 0 }}</span>
-                    <span class="min-w-0 truncate" :title="movie.best_magnet_name || '未选中磁力'">{{ movie.best_magnet_name || '未选中磁力' }}</span>
-                  </div>
-                  <div v-if="(movie.tags || []).length" class="movie-tags mt-2 flex max-w-full flex-nowrap gap-0.5 overflow-hidden" :title="(movie.tags || []).join(', ')">
-                    <span v-for="tag in movie.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[10px]">{{ tag }}</span>
-                    <span data-role="more" class="badge badge-info hidden shrink-0 text-[10px]" style="display:none">+0</span>
-                  </div>
-                </button>
-              </div>
+              <MovieListItem v-for="movie in filteredMovies" :key="movie.id" :movie="movie" highlight-on-hover @open="goRankingMagnet" />
             </div>
           </div>
         </template>
 
         <!-- 候选磁力表（排行榜）-->
         <template v-else-if="pageMode === 'ranking-magnet-list'">
-          <div class="shrink-0 border-b border-soft px-5 pb-4 pt-2">
-            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div class="min-w-0">
-                <div class="truncate text-xs text-muted" :title="currentMovie?.title || currentMovie?.code || ''">{{ currentMovie?.title || currentMovie?.code || '' }}</div>
-                <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted">
-                  <MagnetCheckButton v-if="currentMovie" scope="movie" :target="currentMovie.id" />
-                  <div class="min-w-0 truncate" :title="currentMovie?.best_magnet_name || '未选中磁力'">{{ currentMovie?.best_magnet_name || '未选中磁力' }}</div>
-                </div>
-                <div v-if="(currentMovie?.tags || []).length" class="movie-tags mt-2 flex max-w-full flex-nowrap gap-0.5 overflow-hidden" :title="(currentMovie?.tags || []).join(', ')">
-                  <span v-for="tag in currentMovie?.tags" :key="tag" data-role="tag" class="shrink-0 max-w-[104px] truncate px-1.5 py-0.5 rounded bg-neutral-soft text-neutral-text text-[10px]">{{ tag }}</span>
-                  <span data-role="more" class="badge badge-info hidden shrink-0 text-[10px]" style="display:none">+0</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <MovieMagnetHeader :movie="currentMovie" />
           <div class="flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-sunken p-4">
             <MagnetTable :movie-id="routeMovieId!" :magnets="magnets" @select="selectMagnet" />
           </div>
