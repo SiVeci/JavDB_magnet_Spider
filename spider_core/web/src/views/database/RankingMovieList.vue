@@ -26,12 +26,29 @@ const openMenu = ref<string | null>(null)
 
 const currentMovieData = computed(() => db.rankingData(props.categoryKey, props.periodKey))
 const filterKey = computed(() => db.rankingFilterKey(props.categoryKey, props.periodKey))
+const availableTags = computed(() => {
+  if (currentMovieData.value.available_tags.length) return currentMovieData.value.available_tags
+  return tagsFromMovies(currentMovieData.value.movies || [])
+})
 const filteredMovies = computed<Movie[]>(() => {
   const selected = db.getTagFilter(filterKey.value)
   const excluded = db.getExcludeFilter(filterKey.value)
   return (currentMovieData.value.movies || []).filter((movie) => movieMatchesTags(movie, selected, excluded))
 })
 const healthMap = computed(() => healthByMovieHealth(filteredMovies.value))
+
+function tagsFromMovies(movies: Movie[]): string[] {
+  const seen = new Set<string>()
+  const tags: string[] = []
+  for (const movie of movies) {
+    for (const tag of movie.tags || []) {
+      if (seen.has(tag)) continue
+      seen.add(tag)
+      tags.push(tag)
+    }
+  }
+  return tags
+}
 
 function rankingCategoryMeta(key: string) {
   return RANKING_CATEGORIES.find((c) => c.key === key) || null
@@ -133,7 +150,7 @@ async function clearRankingList() {
       <TagFilterDropdown
         v-model:open-menu="openMenu"
         :filter-key="filterKey"
-        :available-tags="currentMovieData.available_tags"
+        :available-tags="availableTags"
         :filtered-count="filteredMovies.length"
         :total-count="Number(currentMovieData.total_count || currentMovieData.movies.length)"
       />
