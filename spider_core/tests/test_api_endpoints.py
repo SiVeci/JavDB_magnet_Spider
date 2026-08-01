@@ -83,6 +83,65 @@ class ApiEndpointTest(unittest.TestCase):
         self.assertEqual(got["trackers"], ["udp://t:80"])
         self.assertNotIn("cookie", got)  # include_cookie=False
 
+    def test_runtime_config_get_returns_default_score_conditions(self):
+        got = self.client.get("/api/runtime_config").json()["data"]
+
+        self.assertEqual(got["magnet_score_100_condition"], "uncensored")
+        self.assertEqual(got["magnet_score_10_condition"], "hd")
+        self.assertEqual(got["magnet_score_1_condition"], "subtitle")
+        self.assertNotIn("cookie", got)
+
+    def test_runtime_config_accepts_valid_score_mapping(self):
+        r = self.client.post("/api/runtime_config", json={
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "subtitle",
+            "magnet_score_1_condition": "hd",
+        })
+        self.assertEqual(r.status_code, 200)
+
+        got = self.client.get("/api/runtime_config").json()["data"]
+        self.assertEqual(got["magnet_score_100_condition"], "largest_size")
+        self.assertEqual(got["magnet_score_10_condition"], "subtitle")
+        self.assertEqual(got["magnet_score_1_condition"], "hd")
+
+    def test_runtime_config_rejects_duplicate_score_conditions(self):
+        r = self.client.post("/api/runtime_config", json={
+            "magnet_score_100_condition": "uncensored",
+            "magnet_score_10_condition": "uncensored",
+            "magnet_score_1_condition": "subtitle",
+        })
+
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["msg"], "磁力评分条件必须从四个支持项中选择三个且不能重复")
+
+    def test_runtime_config_rejects_unknown_score_condition(self):
+        r = self.client.post("/api/runtime_config", json={
+            "magnet_score_100_condition": "date",
+            "magnet_score_10_condition": "hd",
+            "magnet_score_1_condition": "subtitle",
+        })
+
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["msg"], "磁力评分条件必须从四个支持项中选择三个且不能重复")
+
+    def test_legacy_runtime_config_request_preserves_score_mapping(self):
+        self.client.post("/api/runtime_config", json={
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "subtitle",
+            "magnet_score_1_condition": "hd",
+        })
+
+        r = self.client.post("/api/runtime_config", json={
+            "cookie": "", "remember_cookie": False, "user_agent": "legacy-UA", "proxies": "", "trackers": []
+        })
+        self.assertEqual(r.status_code, 200)
+
+        got = self.client.get("/api/runtime_config").json()["data"]
+        self.assertEqual(got["user_agent"], "legacy-UA")
+        self.assertEqual(got["magnet_score_100_condition"], "largest_size")
+        self.assertEqual(got["magnet_score_10_condition"], "subtitle")
+        self.assertEqual(got["magnet_score_1_condition"], "hd")
+
     def test_collection_movies_and_magnets(self):
         movies = self.client.get("/api/collections/api.csv/movies").json()["data"]["movies"]
         self.assertEqual(len(movies), 2)

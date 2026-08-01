@@ -31,15 +31,24 @@ def get_runtime_config():
 
 @router.post("/api/runtime_config")
 def set_runtime_config(config: RuntimeConfig):
-    db_store.save_runtime_config(
-        cookie=config.cookie if config.cookie else None,
-        remember_cookie=config.remember_cookie,
-        user_agent=config.user_agent,
-        proxies=config.proxies,
-        trackers=config.trackers,
-        cookie_source="manual" if config.cookie else None,
-        cookie_status="unverified" if config.cookie else None,
-    )
+    try:
+        db_store.save_runtime_config(
+            cookie=config.cookie if config.cookie else None,
+            remember_cookie=config.remember_cookie,
+            user_agent=config.user_agent,
+            proxies=config.proxies,
+            trackers=config.trackers,
+            cookie_source="manual" if config.cookie else None,
+            cookie_status="unverified" if config.cookie else None,
+            magnet_score_100_condition=config.magnet_score_100_condition,
+            magnet_score_10_condition=config.magnet_score_10_condition,
+            magnet_score_1_condition=config.magnet_score_1_condition,
+        )
+    except ValueError:
+        return JSONResponse(
+            status_code=400,
+            content={"code": 400, "msg": "磁力评分条件必须从四个支持项中选择三个且不能重复"},
+        )
     return {"code": 200, "msg": "运行配置已保存"}
 
 

@@ -22,6 +22,9 @@ class RuntimeConfig(BaseModel):
     user_agent: str = ""
     proxies: str = ""
     trackers: list[str] = []
+    magnet_score_100_condition: str | None = None
+    magnet_score_10_condition: str | None = None
+    magnet_score_1_condition: str | None = None
 
 class AuthSessionRequest(BaseModel):
     session_id: str
