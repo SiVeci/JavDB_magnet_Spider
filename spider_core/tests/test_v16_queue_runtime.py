@@ -39,6 +39,98 @@ class RuntimeConfigTest(unittest.TestCase):
         self.assertNotIn("user_agent", columns)
         self.assertNotIn("proxies", columns)
 
+    def test_new_database_uses_default_score_conditions(self):
+        runtime = db_store.get_runtime_config(include_cookie=False)
+
+        self.assertEqual(runtime["magnet_score_100_condition"], "uncensored")
+        self.assertEqual(runtime["magnet_score_10_condition"], "hd")
+        self.assertEqual(runtime["magnet_score_1_condition"], "subtitle")
+
+    def test_runtime_score_conditions_roundtrip(self):
+        db_store.save_runtime_config(
+            magnet_score_100_condition="largest_size",
+            magnet_score_10_condition="subtitle",
+            magnet_score_1_condition="hd",
+        )
+
+        runtime = db_store.get_runtime_config(include_cookie=False)
+
+        self.assertEqual(runtime["magnet_score_100_condition"], "largest_size")
+        self.assertEqual(runtime["magnet_score_10_condition"], "subtitle")
+        self.assertEqual(runtime["magnet_score_1_condition"], "hd")
+
+    def test_omitted_score_conditions_preserve_existing_values(self):
+        db_store.save_runtime_config(
+            magnet_score_100_condition="largest_size",
+            magnet_score_10_condition="subtitle",
+            magnet_score_1_condition="hd",
+        )
+
+        db_store.save_runtime_config(user_agent="updated-ua")
+        runtime = db_store.get_runtime_config(include_cookie=False)
+
+        self.assertEqual(runtime["user_agent"], "updated-ua")
+        self.assertEqual(runtime["magnet_score_100_condition"], "largest_size")
+        self.assertEqual(runtime["magnet_score_10_condition"], "subtitle")
+        self.assertEqual(runtime["magnet_score_1_condition"], "hd")
+
+    def test_duplicate_score_conditions_are_rejected(self):
+        with self.assertRaises(ValueError):
+            db_store.save_runtime_config(
+                magnet_score_100_condition="uncensored",
+                magnet_score_10_condition="uncensored",
+                magnet_score_1_condition="subtitle",
+            )
+
+        runtime = db_store.get_runtime_config(include_cookie=False)
+        self.assertEqual(runtime["magnet_score_100_condition"], "uncensored")
+        self.assertEqual(runtime["magnet_score_10_condition"], "hd")
+        self.assertEqual(runtime["magnet_score_1_condition"], "subtitle")
+
+    def test_legacy_database_migration_adds_default_columns(self):
+        with db_store.connect() as conn:
+            conn.execute("DROP TABLE runtime_config")
+            conn.execute(
+                """
+                CREATE TABLE runtime_config (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    cookie TEXT DEFAULT '',
+                    remember_cookie INTEGER DEFAULT 0,
+                    user_agent TEXT DEFAULT '',
+                    proxies TEXT DEFAULT '',
+                    tracker_list_json TEXT DEFAULT '[]',
+                    updated_at REAL NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO runtime_config
+                    (id, cookie, remember_cookie, user_agent, proxies, tracker_list_json, updated_at)
+                VALUES (1, 'legacy-cookie', 1, 'legacy-ua', 'legacy-proxy', '["legacy-tracker"]', 1)
+                """
+            )
+
+        db_store.init_database()
+
+        with db_store.connect() as conn:
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(runtime_config)").fetchall()}
+            row = conn.execute("SELECT * FROM runtime_config WHERE id = 1").fetchone()
+
+        self.assertTrue({
+            "magnet_score_100_condition",
+            "magnet_score_10_condition",
+            "magnet_score_1_condition",
+        }.issubset(columns))
+        self.assertEqual(row["cookie"], "legacy-cookie")
+        self.assertEqual(row["user_agent"], "legacy-ua")
+        self.assertEqual(row["proxies"], "legacy-proxy")
+        self.assertEqual(row["tracker_list_json"], '["legacy-tracker"]')
+        runtime = db_store.get_runtime_config(include_cookie=False)
+        self.assertEqual(runtime["magnet_score_100_condition"], "uncensored")
+        self.assertEqual(runtime["magnet_score_10_condition"], "hd")
+        self.assertEqual(runtime["magnet_score_1_condition"], "subtitle")
+
     def test_cookie_persistence_follows_remember_flag(self):
         db_store.save_runtime_config(cookie="session-cookie", remember_cookie=False, user_agent="ua", proxies="proxy")
         self.assertEqual(db_store.get_runtime_config()["cookie"], "session-cookie")
@@ -362,4 +454,3 @@ class MagnetSelectionTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

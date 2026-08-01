@@ -171,6 +171,9 @@ def init_database():
                 user_agent TEXT DEFAULT '',
                 proxies TEXT DEFAULT '',
                 tracker_list_json TEXT DEFAULT '[]',
+                magnet_score_100_condition TEXT DEFAULT 'uncensored',
+                magnet_score_10_condition TEXT DEFAULT 'hd',
+                magnet_score_1_condition TEXT DEFAULT 'subtitle',
                 updated_at REAL NOT NULL
             );
 
@@ -202,6 +205,7 @@ def init_database():
     _migrate_magnet_check_columns()
     _migrate_runtime_tracker_column()
     _migrate_cookie_lifecycle_columns()
+    _migrate_runtime_magnet_score_columns()
     _migrate_task_cookie_failure_column()
     _migrate_actor_id_column()
 
@@ -244,6 +248,13 @@ def _migrate_cookie_lifecycle_columns():
         _ensure_column(conn, "runtime_config", "cookie_validated_at", "REAL DEFAULT 0")
         _ensure_column(conn, "runtime_config", "cookie_status", "TEXT DEFAULT 'missing'")
         _ensure_column(conn, "runtime_config", "cookie_last_error", "TEXT DEFAULT ''")
+
+
+def _migrate_runtime_magnet_score_columns():
+    with connect() as conn:
+        _ensure_column(conn, "runtime_config", "magnet_score_100_condition", "TEXT DEFAULT 'uncensored'")
+        _ensure_column(conn, "runtime_config", "magnet_score_10_condition", "TEXT DEFAULT 'hd'")
+        _ensure_column(conn, "runtime_config", "magnet_score_1_condition", "TEXT DEFAULT 'subtitle'")
 
 
 def _migrate_task_cookie_failure_column():
