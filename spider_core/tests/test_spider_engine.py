@@ -8,6 +8,7 @@ HTML fixture 内联为代表性片段，贴合 JavDB 真实 DOM 结构。
 
 import os
 import sys
+import tempfile
 import types
 import unittest
 from unittest.mock import Mock, patch
@@ -17,6 +18,7 @@ from bs4 import BeautifulSoup
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import spider_engine  # noqa: E402
+import db_store  # noqa: E402
 
 
 def soup(html):
@@ -177,20 +179,27 @@ class EvaluateMagnetTest(unittest.TestCase):
         self.assertEqual(result["date"], "2026-02-03")
         self.assertEqual(result["size_mb"], 2.0 * 1024)
 
-    def test_rank_uncensored_hd_sub(self):
+    def test_parses_uncensored_hd_sub_flags(self):
         # name 含 uc(无码) + 1080p(高清)，tags 含 字幕(有字幕)
         item = self._item("ABP-001-UC-1080p", tags_html='<span class="tag">字幕</span>')
         result = spider_engine.evaluate_magnet(item)
-        self.assertEqual(result["rank"], 100 + 10 + 1)
+        self.assertTrue(result["has_uncensored"])
+        self.assertTrue(result["has_hd"])
+        self.assertTrue(result["has_subtitle"])
+        self.assertNotIn("rank", result)
 
-    def test_rank_hd_via_tag(self):
+    def test_parses_hd_via_tag(self):
         item = self._item("plain-name", tags_html='<span class="tag">高清</span>')
         result = spider_engine.evaluate_magnet(item)
-        self.assertEqual(result["rank"], 10)
+        self.assertFalse(result["has_uncensored"])
+        self.assertTrue(result["has_hd"])
+        self.assertFalse(result["has_subtitle"])
 
-    def test_rank_zero_for_plain(self):
+    def test_parses_plain_candidate_without_flags(self):
         result = spider_engine.evaluate_magnet(self._item("plain-name"))
-        self.assertEqual(result["rank"], 0)
+        self.assertFalse(result["has_uncensored"])
+        self.assertFalse(result["has_hd"])
+        self.assertFalse(result["has_subtitle"])
 
     def test_missing_name_defaults_unknown(self):
         item = soup('<div class="item"><a href="magnet:?xt=urn:btih:x">d</a></div>').select_one(".item")
@@ -198,6 +207,129 @@ class EvaluateMagnetTest(unittest.TestCase):
         self.assertEqual(result["name"], "Unknown")
         self.assertEqual(result["date"], "1970-01-01")
         self.assertEqual(result["size_mb"], 0.0)
+
+    def test_default_group_scoring_preserves_111_10_0(self):
+        parsed = [
+            spider_engine.evaluate_magnet(
+                self._item("ABP-001-UC-1080p", tags_html='<span class="tag">字幕</span>')
+            ),
+            spider_engine.evaluate_magnet(
+                self._item("plain-name", tags_html='<span class="tag">高清</span>')
+            ),
+            spider_engine.evaluate_magnet(self._item("plain-name")),
+        ]
+
+        scored = spider_engine.score_magnet_candidates(parsed)
+
+        self.assertEqual([item["rank"] for item in scored], [111, 10, 0])
+
+    def test_custom_group_mapping_scores_largest_and_subtitle_hd(self):
+        parsed = [
+            spider_engine.evaluate_magnet(self._item("4GB plain", meta="4.0GB")),
+            spider_engine.evaluate_magnet(
+                self._item("2GB subtitle+HD", tags_html='<span class="tag">字幕</span><span class="tag">高清</span>', meta="2.0GB")
+            ),
+        ]
+
+        scored = spider_engine.score_magnet_candidates(parsed, {
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "subtitle",
+            "magnet_score_1_condition": "hd",
+        })
+
+        self.assertEqual([item["rank"] for item in scored], [100, 11])
+
+    def test_equal_largest_group_candidates_both_match(self):
+        parsed = [
+            spider_engine.evaluate_magnet(self._item("first", meta="4.0GB")),
+            spider_engine.evaluate_magnet(self._item("second", meta="4.0GB")),
+        ]
+
+        scored = spider_engine.score_magnet_candidates(parsed, {
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "subtitle",
+            "magnet_score_1_condition": "hd",
+        })
+
+        self.assertEqual([item["rank"] for item in scored], [100, 100])
+
+    def test_unknown_sizes_do_not_get_largest_group_score(self):
+        parsed = [
+            spider_engine.evaluate_magnet(self._item("first", meta="未知大小")),
+            spider_engine.evaluate_magnet(self._item("second", meta="0MB")),
+        ]
+
+        scored = spider_engine.score_magnet_candidates(parsed, {
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "subtitle",
+            "magnet_score_1_condition": "hd",
+        })
+
+        self.assertEqual([item["rank"] for item in scored], [0, 0])
+
+
+class RunSpiderScoringTest(unittest.TestCase):
+    def test_run_spider_scores_all_detail_candidates_as_a_group(self):
+        list_html = """
+            <div class="movie-list">
+              <a class="box" href="/v/demo-001" title="DEMO-001">
+                <div class="video-title"><strong>DEMO-001</strong></div>
+              </a>
+            </div>
+        """
+        detail_html = """
+            <div id="magnets-content">
+              <div class="item">
+                <a href="magnet:?xt=urn:btih:large">下载</a>
+                <span class="name">4GB plain</span>
+                <span class="meta">4.0GB</span>
+                <span class="date"><span class="time">2026-01-01</span></span>
+              </div>
+              <div class="item">
+                <a href="magnet:?xt=urn:btih:small">下载</a>
+                <span class="name">2GB subtitle+HD</span>
+                <div class="tags"><span class="tag">字幕</span><span class="tag">高清</span></div>
+                <span class="meta">2.0GB</span>
+                <span class="date"><span class="time">2026-01-02</span></span>
+              </div>
+            </div>
+        """
+        responses = [
+            Mock(text=list_html, status_code=200, url="https://javdb.com/actors/demo"),
+            Mock(text=detail_html, status_code=200, url="https://javdb.com/v/demo-001"),
+        ]
+
+        old_data_dir = os.path.dirname(db_store.get_db_path())
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                db_store.configure(tmpdir)
+                with patch.object(spider_engine, "DATA_DIR", tmpdir), \
+                        patch.object(spider_engine, "CHECKPOINT_FILE", os.path.join(tmpdir, "checkpoint.json")), \
+                        patch.object(spider_engine, "fetch_html", side_effect=responses), \
+                        patch.object(spider_engine, "update_status"), \
+                        patch.object(spider_engine.time, "sleep"), \
+                        patch.object(db_store, "save_movie_result") as save_result:
+                    spider_engine.run_spider(
+                        "https://javdb.com/actors/demo",
+                        "",
+                        "UA",
+                        "demo.csv",
+                        crawl_mode="overwrite",
+                        score_conditions={
+                            "magnet_score_100_condition": "largest_size",
+                            "magnet_score_10_condition": "subtitle",
+                            "magnet_score_1_condition": "hd",
+                        },
+                    )
+        finally:
+            db_store.configure(old_data_dir)
+
+        save_result.assert_called_once()
+        best = save_result.call_args.args[2]
+        all_candidates = save_result.call_args.args[3]
+        self.assertEqual(best["link"], "magnet:?xt=urn:btih:large")
+        self.assertEqual(best["rank"], 100)
+        self.assertEqual([item["rank"] for item in all_candidates], [100, 11])
 
 
 

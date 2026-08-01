@@ -6,6 +6,7 @@ import os
 import json
 import threading
 import db_store
+from magnet_scoring import score_magnet_candidates
 from ranking_utils import COLLECTION_TYPE_ACTOR, COLLECTION_TYPE_RANKING, ranking_filename
 from storage_utils import (
     UnsafeFilenameError,
@@ -294,15 +295,14 @@ def evaluate_magnet(item_soup):
     has_sub = bool(re.search(r'\b(c|chs)\b', name)) or ('字幕' in tags)
     has_hd = ('高清' in tags) or bool(re.search(r'\b(1080p|4k|2160p)\b', name))
 
-    rank = 0
-    if has_uncensored: rank += 100
-    if has_hd:         rank += 10
-    if has_sub:        rank += 1
-
     return {
         'link': magnet_a.get('href'),
         'name': name_elem.text.strip() if name_elem else 'Unknown',
-        'rank': rank, 'date': date_str, 'size_mb': parse_size(size_str)
+        'date': date_str,
+        'size_mb': parse_size(size_str),
+        'has_uncensored': has_uncensored,
+        'has_hd': has_hd,
+        'has_subtitle': has_sub,
     }
 
 
@@ -336,6 +336,7 @@ def run_spider(
     collection_type=COLLECTION_TYPE_ACTOR,
     ranking_category="",
     ranking_period="",
+    score_conditions=None,
 ):
     TASK_CONTEXT.task_id = task_id
     if not task_id:
@@ -544,6 +545,7 @@ def run_spider(
                             if mag_data: valid_magnets.append(mag_data)
 
                     if valid_magnets:
+                        valid_magnets = score_magnet_candidates(valid_magnets, score_conditions)
                         valid_magnets.sort(key=lambda x: (x['rank'], x['date'], x['size_mb']), reverse=True)
                         best = valid_magnets[0]
 
