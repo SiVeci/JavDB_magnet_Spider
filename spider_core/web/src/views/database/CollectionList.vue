@@ -46,7 +46,9 @@ async function autoSelect() {
   const names = selectedCollections.value.size ? Array.from(selectedCollections.value) : db.collections.map((c) => c.name)
   if (!names.length) { showToast('暂无可自动选择的集合'); return }
   const scopeText = selectedCollections.value.size ? `${selectedCollections.value.size} 个已选集合` : '全部集合'
-  if (!confirm(`按已保存的磁力评分结果自动选择 ${scopeText} 的推荐磁力？`)) return
+  if (!confirm(`按当前已保存的评分规则重新计算全部候选并自动选择推荐磁力？
+该操作会覆盖目标影片此前的人工选择。
+作用范围：${scopeText}`)) return
   try {
     const msg = await db.autoSelectMagnets(names)
     showToast(msg)
@@ -72,7 +74,7 @@ function batchDeleteSelected() {
     <div class="flex items-center justify-between gap-1">
       <div class="shrink-0 whitespace-nowrap text-[11px] text-muted">{{ db.collections.length }} 个集合 · {{ db.totalMovies() }} 部影片</div>
       <div class="flex shrink-0 items-center gap-1">
-        <button type="button" title="按已保存的磁力评分结果自动选择磁力" aria-label="按已保存的磁力评分结果自动选择磁力" class="btn btn-sm btn-warning" @click="autoSelect">★ 自动选择</button>
+        <button type="button" title="按当前规则重新评分并自动选择磁力" aria-label="按当前规则重新评分并自动选择磁力" class="btn btn-sm btn-warning" @click="autoSelect">★ 自动选择</button>
         <MagnetCheckButton scope="all" target="all" compact />
         <button
           v-if="selectedCollections.size > 0"

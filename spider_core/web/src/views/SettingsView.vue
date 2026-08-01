@@ -285,6 +285,7 @@ async function checkCookie() {
             <div>未参与评分：{{ unusedScoreConditionLabel }}</div>
             <div>当前规则：{{ scoreFormula }}</div>
             <div>文件体积最大：仅比较同一影片中有效磁力且大小大于 0 的候选；并列最大同时命中，大小未知或为 0 时不命中。</div>
+            <div>保存设置不会自动修改历史分数；如需更新历史候选，请前往数据库集合页点击“自动选择”。</div>
             <div v-if="hasInvalidScoreConditions" class="text-danger-text">当前条件存在重复或无效值，请修正后再保存。</div>
           </div>
         </div>
