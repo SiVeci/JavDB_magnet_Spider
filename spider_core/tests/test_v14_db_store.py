@@ -90,6 +90,30 @@ class DbStoreTest(unittest.TestCase):
         self.assertFalse(os.path.exists(csv_path))
         self.assertEqual(db_store.get_magnet_links("bad-number.csv"), ["magnet:?xt=urn:btih:bad"])
 
+    def test_import_csv_persists_condition_matches_from_filename(self):
+        self.write_csv(
+            "conditions.csv",
+            [
+                {
+                    "影片番号": "JUR-750",
+                    "原始标题": "Demo",
+                    "影片链接": "https://example.test/v/1",
+                    "最佳资源文件名": "JUR-750-U.torrent",
+                    "磁力链接": "magnet:?xt=urn:btih:conditions",
+                    "优先级得分": "100",
+                    "日期": "2026-01-01",
+                    "文件大小(MB)": "1024",
+                }
+            ],
+        )
+
+        self.assertEqual(db_store.import_existing_csvs(self.tmpdir.name), 1)
+        with db_store.connect() as conn:
+            row = conn.execute(
+                "SELECT has_uncensored, has_hd, has_subtitle FROM magnets"
+            ).fetchone()
+        self.assertEqual(tuple(row), (1, 0, 0))
+
     def test_save_movie_result_stores_candidates_and_selected_magnet(self):
         db_store.ensure_collection("output.csv")
         movie = {"code": "ABC-001", "title": "Title 1", "url": "https://example.test/v/1"}
@@ -119,6 +143,29 @@ class DbStoreTest(unittest.TestCase):
             selected = conn.execute("SELECT COUNT(*) AS count FROM magnets WHERE is_selected = 1").fetchone()["count"]
         self.assertEqual(total, 2)
         self.assertEqual(selected, 1)
+
+    def test_save_movie_result_persists_condition_matches(self):
+        candidate = {
+            "name": "JUR-750-C-4K.torrent",
+            "link": "magnet:?xt=urn:btih:conditions",
+            "rank": 11,
+            "date": "2026-01-01",
+            "size_mb": 1024,
+            "has_uncensored": False,
+            "has_hd": True,
+            "has_subtitle": True,
+        }
+        db_store.save_movie_result(
+            "conditions.csv",
+            {"code": "JUR-750", "title": "Demo", "url": "https://example.test/v/1"},
+            candidate,
+            [candidate],
+        )
+        with db_store.connect() as conn:
+            row = conn.execute(
+                "SELECT has_uncensored, has_hd, has_subtitle FROM magnets"
+            ).fetchone()
+        self.assertEqual(tuple(row), (0, 1, 1))
 
     def test_export_collection_to_csv_bytes_without_physical_csv(self):
         db_store.ensure_collection("output.csv")

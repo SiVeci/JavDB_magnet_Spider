@@ -116,6 +116,9 @@ def init_database():
                 priority_score INTEGER DEFAULT 0,
                 magnet_date TEXT DEFAULT '',
                 size_mb REAL DEFAULT 0,
+                has_uncensored INTEGER,
+                has_hd INTEGER,
+                has_subtitle INTEGER,
                 is_selected INTEGER DEFAULT 0,
                 position INTEGER DEFAULT 0,
                 created_at REAL NOT NULL,
@@ -203,6 +206,7 @@ def init_database():
     _migrate_collection_type_columns()
     _migrate_tag_columns()
     _migrate_magnet_check_columns()
+    _migrate_magnet_condition_columns()
     _migrate_runtime_tracker_column()
     _migrate_cookie_lifecycle_columns()
     _migrate_runtime_magnet_score_columns()
@@ -234,6 +238,13 @@ def _migrate_magnet_check_columns():
         _ensure_column(conn, "magnets", "check_error", "TEXT DEFAULT NULL")
         if added_base_score:
             conn.execute("UPDATE magnets SET base_priority_score = priority_score")
+
+
+def _migrate_magnet_condition_columns():
+    with connect() as conn:
+        _ensure_column(conn, "magnets", "has_uncensored", "INTEGER")
+        _ensure_column(conn, "magnets", "has_hd", "INTEGER")
+        _ensure_column(conn, "magnets", "has_subtitle", "INTEGER")
 
 
 def _migrate_runtime_tracker_column():

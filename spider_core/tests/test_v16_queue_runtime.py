@@ -131,6 +131,43 @@ class RuntimeConfigTest(unittest.TestCase):
         self.assertEqual(runtime["magnet_score_10_condition"], "hd")
         self.assertEqual(runtime["magnet_score_1_condition"], "subtitle")
 
+    def test_legacy_magnets_migration_preserves_unknown_condition_values(self):
+        with db_store.connect() as conn:
+            conn.execute("DROP TABLE magnets")
+            conn.execute(
+                """
+                CREATE TABLE magnets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    movie_id INTEGER NOT NULL,
+                    name TEXT DEFAULT '',
+                    link TEXT NOT NULL,
+                    priority_score INTEGER DEFAULT 0,
+                    magnet_date TEXT DEFAULT '',
+                    size_mb REAL DEFAULT 0,
+                    is_selected INTEGER DEFAULT 0,
+                    position INTEGER DEFAULT 0,
+                    created_at REAL NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO magnets(movie_id, name, link, priority_score, created_at)
+                VALUES (1, 'legacy.torrent', 'magnet:?xt=urn:btih:legacy', 7, 1)
+                """
+            )
+
+        db_store.init_database()
+
+        with db_store.connect() as conn:
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(magnets)").fetchall()}
+            legacy_row = conn.execute("SELECT * FROM magnets WHERE id = 1").fetchone()
+
+        self.assertTrue({"has_uncensored", "has_hd", "has_subtitle"}.issubset(columns))
+        self.assertIsNone(legacy_row["has_uncensored"])
+        self.assertIsNone(legacy_row["has_hd"])
+        self.assertIsNone(legacy_row["has_subtitle"])
+
     def test_cookie_persistence_follows_remember_flag(self):
         db_store.save_runtime_config(cookie="session-cookie", remember_cookie=False, user_agent="ua", proxies="proxy")
         self.assertEqual(db_store.get_runtime_config()["cookie"], "session-cookie")
