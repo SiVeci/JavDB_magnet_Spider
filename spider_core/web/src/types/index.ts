@@ -91,6 +91,10 @@ export interface Magnet {
   priority_score?: number
   magnet_date?: string
   size_mb?: number
+  tags?: string[]
+  has_uncensored?: boolean | null
+  has_hd?: boolean | null
+  has_subtitle?: boolean | null
   is_selected?: boolean
   position?: number
   created_at?: number
