@@ -142,6 +142,82 @@ class ApiEndpointTest(unittest.TestCase):
         self.assertEqual(got["magnet_score_10_condition"], "subtitle")
         self.assertEqual(got["magnet_score_1_condition"], "hd")
 
+    def test_saving_score_rules_does_not_rescore_until_auto_select(self):
+        uncensored = {
+            "name": "JUR-750-U.torrent",
+            "link": "magnet:?xt=urn:btih:api-uncensored",
+            "rank": 100,
+            "date": "2026-06-07",
+            "size_mb": 3.7 * 1024,
+        }
+        largest_subtitle = {
+            "name": "JUR-750-C.torrent",
+            "link": "magnet:?xt=urn:btih:api-subtitle",
+            "rank": 1,
+            "date": "2026-06-22",
+            "size_mb": 5.1 * 1024,
+        }
+        db_store.save_movie_result(
+            "history.csv",
+            {"code": "JUR-750", "title": "Demo", "url": "https://example.test/v/1"},
+            uncensored,
+            [uncensored, largest_subtitle],
+        )
+        movie_id = db_store.get_collection_movies("history.csv")["movies"][0]["id"]
+
+        self.client.post("/api/runtime_config", json={
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "subtitle",
+            "magnet_score_1_condition": "uncensored",
+        })
+        before = self.client.get(f"/api/movies/{movie_id}/magnets").json()["data"]
+        self.assertEqual([row["priority_score"] for row in before], [100, 1])
+
+        response = self.client.post(
+            "/api/magnets/auto_select",
+            json={"filenames": ["history.csv"]},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"], {"updated": 1, "rescored": 2})
+
+        after = self.client.get(f"/api/movies/{movie_id}/magnets").json()["data"]
+        self.assertEqual([row["priority_score"] for row in after], [1, 110])
+
+    def test_auto_select_rescores_only_requested_collections(self):
+        score_conditions = {
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "subtitle",
+            "magnet_score_1_condition": "uncensored",
+        }
+        for filename, code in (("selected.csv", "SELECTED-001"), ("untouched.csv", "UNTOUCHED-001")):
+            first = {"name": f"{code}-U.torrent", "link": f"magnet:?xt=urn:btih:{code}-u", "rank": 100, "date": "2026-01-01", "size_mb": 1024}
+            second = {"name": f"{code}-C.torrent", "link": f"magnet:?xt=urn:btih:{code}-c", "rank": 1, "date": "2026-01-02", "size_mb": 2048}
+            db_store.save_movie_result(
+                filename,
+                {"code": code, "title": code, "url": f"https://example.test/v/{code}"},
+                first,
+                [first, second],
+            )
+
+        untouched_id = db_store.get_collection_movies("untouched.csv")["movies"][0]["id"]
+        untouched_before = [
+            (row["priority_score"], row["is_selected"])
+            for row in db_store.get_movie_magnets(untouched_id)
+        ]
+        response = self.client.post(
+            "/api/magnets/auto_select",
+            json={"filenames": ["selected.csv"]},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["data"], {"updated": 1, "rescored": 2})
+        self.assertEqual(
+            untouched_before,
+            [
+                (row["priority_score"], row["is_selected"])
+                for row in db_store.get_movie_magnets(untouched_id)
+            ],
+        )
+
     def test_collection_movies_and_magnets(self):
         movies = self.client.get("/api/collections/api.csv/movies").json()["data"]["movies"]
         self.assertEqual(len(movies), 2)

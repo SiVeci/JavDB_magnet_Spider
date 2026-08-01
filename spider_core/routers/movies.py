@@ -59,12 +59,20 @@ def auto_select_magnets(req: AutoSelectRequest):
         if not safe_name:
             return JSONResponse(status_code=400, content={"code": 400, "msg": "集合不存在或非法"})
         filenames.append(safe_name)
-    updated = db_store.auto_select_collection_magnets(filenames)
-    if updated:
+    score_conditions = db_store.get_runtime_config(include_cookie=False)
+    result = db_store.auto_select_collection_magnets(filenames, score_conditions)
+    if result["updated"]:
         try:
             from services.queue_service import broadcast_update
 
             broadcast_update(db_store.get_current_task(), collections_changed=True)
         except Exception:
             pass
-    return {"code": 200, "msg": f"已按评分自动选择 {updated} 部影片的磁力", "data": {"updated": updated}}
+    return {
+        "code": 200,
+        "msg": (
+            f"已按当前评分规则重评 {result['rescored']} 条磁力，"
+            f"并自动选择 {result['updated']} 部影片"
+        ),
+        "data": result,
+    }
