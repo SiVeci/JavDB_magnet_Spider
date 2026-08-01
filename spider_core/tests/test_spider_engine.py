@@ -463,5 +463,98 @@ class RunSpiderLocaleTest(unittest.TestCase):
         self.assertEqual(parse_qs(urlparse(seen[0]).query)["locale"], ["zh"])
 
 
+class RunSpiderTagPipelineTest(unittest.TestCase):
+    def test_run_spider_persists_movie_and_magnet_tags_without_mocking_storage(self):
+        list_html = """
+            <div class="movie-list">
+              <a class="box" href="/v/tag-demo?locale=en" title="TAG-001">
+                <div class="video-title"><strong>TAG-001</strong></div>
+              </a>
+            </div>
+        """
+        detail_html = """
+            <nav class="movie-panel-info">
+              <div class="panel-block">
+                <strong>类别:</strong>
+                <span class="value">
+                  <a href="/tags?c=1">熟女</a>
+                  <a href="/tags?c=2">单体作品</a>
+                  <a href="/tags?c=1">熟女</a>
+                  <a href="/tags?c=3">中出</a>
+                </span>
+              </div>
+            </nav>
+            <div id="magnets-content">
+              <div class="item">
+                <a href="magnet:?xt=urn:btih:tag-hd">下载</a>
+                <span class="name">TAG-001-HD</span>
+                <div class="tags"><span class="tag">高清</span><span class="tag">字幕</span></div>
+                <span class="meta">2.0GB</span>
+                <span class="date"><span class="time">2026-08-02</span></span>
+              </div>
+              <div class="item">
+                <a href="magnet:?xt=urn:btih:tag-uncensored">下载</a>
+                <span class="name">TAG-001-UC</span>
+                <div class="tags"><span class="tag">Uncensored</span></div>
+                <span class="meta">1.0GB</span>
+                <span class="date"><span class="time">2026-08-01</span></span>
+              </div>
+            </div>
+        """
+        seen = []
+
+        def fake_fetch(url, headers=None, proxies=None):
+            seen.append((url, headers))
+            html = detail_html if "/v/tag-demo" in url else list_html
+            return Mock(text=html, status_code=200, url=url)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_data_dir = os.path.dirname(db_store.get_db_path())
+            try:
+                db_store.configure(tmpdir)
+                with patch.object(spider_engine, "DATA_DIR", tmpdir), \
+                        patch.object(spider_engine, "CHECKPOINT_FILE", os.path.join(tmpdir, "checkpoint.json")), \
+                        patch.object(spider_engine, "fetch_html", side_effect=fake_fetch), \
+                        patch.object(spider_engine, "update_status"), \
+                        patch.object(spider_engine.time, "sleep"):
+                    spider_engine.run_spider(
+                        "https://javdb.com/actors/tag-demo?locale=en",
+                        "session=abc; locale=en",
+                        "UA",
+                        "tag-pipeline.csv",
+                        crawl_mode="overwrite",
+                        score_conditions={
+                            "magnet_score_100_condition": "largest_size",
+                            "magnet_score_10_condition": "hd",
+                            "magnet_score_1_condition": "subtitle",
+                        },
+                    )
+
+                collection = db_store.get_collection_movies("tag-pipeline.csv")
+                self.assertEqual(
+                    collection["available_tags"],
+                    ["熟女", "单体作品", "中出"],
+                )
+                self.assertEqual(
+                    collection["movies"][0]["tags"],
+                    ["熟女", "单体作品", "中出"],
+                )
+                magnets = db_store.get_movie_magnets(collection["movies"][0]["id"])
+                self.assertEqual(magnets[0]["tags"], ["高清", "字幕"])
+                self.assertTrue(magnets[0]["has_hd"])
+                self.assertTrue(magnets[0]["has_subtitle"])
+                self.assertEqual(magnets[1]["tags"], ["Uncensored"])
+                self.assertTrue(magnets[1]["has_uncensored"])
+
+                detail_urls = [url for url, _headers in seen if "/v/tag-demo" in url]
+                self.assertEqual(len(detail_urls), 1)
+                self.assertEqual(parse_qs(urlparse(detail_urls[0]).query)["locale"], ["zh"])
+                self.assertIn("locale=en", seen[0][1]["Cookie"])
+            finally:
+                db_store.configure(old_data_dir)
+
+        self.assertFalse(os.path.exists(tmpdir))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
