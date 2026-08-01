@@ -461,14 +461,14 @@ onUnmounted(() => {
           </div>
 
           <!-- 任务列表 -->
-          <div class="divide-y divide-[color:var(--c-border)] overflow-y-auto log-box">
+          <div class="max-h-[180px] divide-y divide-[color:var(--c-border)] overflow-y-auto overscroll-contain log-box">
             <div v-if="!tasks.visibleTasks.length" class="empty-state p-4">暂无任务</div>
             <template v-else>
               <div
                 v-for="task in tasks.visibleTasks"
                 :key="task.task_id"
                 :class="[
-                  'relative grid grid-cols-[minmax(0,1fr)_42px_72px_52px] items-center gap-1 overflow-hidden px-3 py-1 text-xs',
+                  'relative grid h-9 grid-cols-[minmax(0,1fr)_42px_72px_52px] items-center gap-1 overflow-hidden px-3 py-1 text-xs',
                   task.task_id === tasks.queueStatus.current_task_id ? 'bg-info-soft' : 'bg-surface'
                 ]"
               >
