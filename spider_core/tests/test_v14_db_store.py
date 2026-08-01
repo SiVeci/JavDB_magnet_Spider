@@ -113,6 +113,8 @@ class DbStoreTest(unittest.TestCase):
                 "SELECT has_uncensored, has_hd, has_subtitle FROM magnets"
             ).fetchone()
         self.assertEqual(tuple(row), (1, 0, 0))
+        movie_id = db_store.get_collection_movies("conditions.csv")["movies"][0]["id"]
+        self.assertEqual(db_store.get_movie_magnets(movie_id)[0]["tags"], [])
 
     def test_save_movie_result_stores_candidates_and_selected_magnet(self):
         db_store.ensure_collection("output.csv")
@@ -143,6 +145,59 @@ class DbStoreTest(unittest.TestCase):
             selected = conn.execute("SELECT COUNT(*) AS count FROM magnets WHERE is_selected = 1").fetchone()["count"]
         self.assertEqual(total, 2)
         self.assertEqual(selected, 1)
+
+    def test_save_movie_result_persists_source_tags_and_boolean_conditions(self):
+        db_store.ensure_collection("tagged.csv")
+        candidates = [
+            {
+                "name": "DEMO-001-HD",
+                "link": "magnet:?xt=urn:btih:tagged",
+                "rank": 10,
+                "date": "2026-08-02",
+                "size_mb": 1024,
+                "tags": ["HD", "Subtitles"],
+                "has_uncensored": False,
+                "has_hd": True,
+                "has_subtitle": True,
+            },
+            {
+                "name": "DEMO-001-plain",
+                "link": "magnet:?xt=urn:btih:plain",
+                "rank": 0,
+                "date": "2026-08-01",
+                "size_mb": 512,
+                "tags": [],
+                "has_uncensored": False,
+                "has_hd": False,
+                "has_subtitle": False,
+            },
+        ]
+        movie = {
+            "code": "DEMO-001",
+            "title": "Demo",
+            "url": "https://example.test/v/demo",
+        }
+
+        db_store.save_movie_result("tagged.csv", movie, candidates[0], candidates)
+
+        with db_store.connect() as conn:
+            row = conn.execute(
+                "SELECT tags_json, has_uncensored, has_hd, has_subtitle FROM magnets ORDER BY position"
+            ).fetchone()
+        self.assertEqual(row["tags_json"], '["HD", "Subtitles"]')
+        self.assertEqual(
+            (row["has_uncensored"], row["has_hd"], row["has_subtitle"]),
+            (0, 1, 1),
+        )
+
+        movie_id = db_store.get_collection_movies("tagged.csv")["movies"][0]["id"]
+        magnets = db_store.get_movie_magnets(movie_id)
+        self.assertEqual(magnets[0]["tags"], ["HD", "Subtitles"])
+        for field in ("has_uncensored", "has_hd", "has_subtitle"):
+            self.assertIsInstance(magnets[0][field], bool)
+        self.assertIs(magnets[0]["has_uncensored"], False)
+        self.assertIs(magnets[0]["has_hd"], True)
+        self.assertIs(magnets[0]["has_subtitle"], True)
 
     def test_save_movie_result_persists_condition_matches(self):
         candidate = {

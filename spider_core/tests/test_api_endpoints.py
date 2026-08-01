@@ -29,7 +29,17 @@ from services import task_service  # noqa: E402
 def _seed_collection():
     """建一个含 2 部影片的集合，标签各异，便于过滤测试。"""
     db_store.ensure_collection("api.csv")
-    m1_best = {"name": "a.torrent", "link": "magnet:?xt=urn:btih:aaa", "rank": 100, "date": "2026-01-01", "size_mb": 1024}
+    m1_best = {
+        "name": "a.torrent",
+        "link": "magnet:?xt=urn:btih:aaa",
+        "rank": 100,
+        "date": "2026-01-01",
+        "size_mb": 1024,
+        "tags": ["HD", "Subtitles"],
+        "has_uncensored": False,
+        "has_hd": True,
+        "has_subtitle": True,
+    }
     db_store.save_movie_result(
         "api.csv",
         {"code": "API-001", "title": "标题一", "url": "https://example.test/v/1", "tags": ["巨乳", "中出"]},
@@ -219,11 +229,18 @@ class ApiEndpointTest(unittest.TestCase):
         )
 
     def test_collection_movies_and_magnets(self):
-        movies = self.client.get("/api/collections/api.csv/movies").json()["data"]["movies"]
+        collection = self.client.get("/api/collections/api.csv/movies").json()["data"]
+        movies = collection["movies"]
         self.assertEqual(len(movies), 2)
+        self.assertEqual(movies[0]["tags"], ["巨乳", "中出"])
+        self.assertEqual(collection["available_tags"], ["巨乳", "中出", "騎乘"])
         mid = movies[0]["id"]
         mags = self.client.get(f"/api/movies/{mid}/magnets").json()["data"]
         self.assertTrue(any(m["link"].startswith("magnet:") for m in mags))
+        self.assertEqual(mags[0]["tags"], ["HD", "Subtitles"])
+        self.assertIs(mags[0]["has_uncensored"], False)
+        self.assertIs(mags[0]["has_hd"], True)
+        self.assertIs(mags[0]["has_subtitle"], True)
 
     # ---------- 错误码路径 ----------
     def test_collection_movies_404(self):

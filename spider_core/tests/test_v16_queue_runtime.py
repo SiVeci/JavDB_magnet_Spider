@@ -159,12 +159,14 @@ class RuntimeConfigTest(unittest.TestCase):
             )
 
         db_store.init_database()
+        db_store.init_database()
 
         with db_store.connect() as conn:
             columns = {row["name"] for row in conn.execute("PRAGMA table_info(magnets)").fetchall()}
             legacy_row = conn.execute("SELECT * FROM magnets WHERE id = 1").fetchone()
 
-        self.assertTrue({"has_uncensored", "has_hd", "has_subtitle"}.issubset(columns))
+        self.assertTrue({"tags_json", "has_uncensored", "has_hd", "has_subtitle"}.issubset(columns))
+        self.assertEqual(legacy_row["tags_json"], "[]")
         self.assertIsNone(legacy_row["has_uncensored"])
         self.assertIsNone(legacy_row["has_hd"])
         self.assertIsNone(legacy_row["has_subtitle"])

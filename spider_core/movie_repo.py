@@ -197,13 +197,14 @@ def save_movie_result(filename, movie, best_magnet, candidates):
         conn.execute("DELETE FROM magnets WHERE movie_id = ?", (movie_id,))
         for index, magnet in enumerate(candidates):
             condition_flags = _stored_condition_flags(magnet)
+            magnet_tags = _normalize_string_list(magnet.get("tags", []))
             conn.execute(
                 """
                 INSERT INTO magnets(
                     movie_id, name, link, base_priority_score, priority_score, magnet_date, size_mb,
-                    has_uncensored, has_hd, has_subtitle, is_selected, position, created_at
+                    tags_json, has_uncensored, has_hd, has_subtitle, is_selected, position, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     movie_id,
@@ -213,6 +214,7 @@ def save_movie_result(filename, movie, best_magnet, candidates):
                     _to_int(magnet.get("rank", 0)),
                     magnet.get("date", ""),
                     _to_float(magnet.get("size_mb", 0)),
+                    _tags_to_json(magnet_tags),
                     int(condition_flags["has_uncensored"]),
                     int(condition_flags["has_hd"]),
                     int(condition_flags["has_subtitle"]),
@@ -342,7 +344,8 @@ def get_movie_magnets(movie_id):
         rows = conn.execute(
             """
             SELECT id, movie_id, name, link, base_priority_score, priority_score,
-                   magnet_date, size_mb, is_selected, position, created_at,
+                   magnet_date, size_mb, tags_json, has_uncensored, has_hd, has_subtitle,
+                   is_selected, position, created_at,
                    check_status, seeders, leechers, checked_at, check_error
             FROM magnets
             WHERE movie_id = ?
@@ -350,7 +353,15 @@ def get_movie_magnets(movie_id):
             """,
             (movie_id,),
         ).fetchall()
-    return [dict(row) for row in rows]
+    magnets = []
+    for row in rows:
+        item = dict(row)
+        item["tags"] = _tags_from_json(item.pop("tags_json", ""))
+        for field in ("has_uncensored", "has_hd", "has_subtitle"):
+            value = item.get(field)
+            item[field] = None if value is None else bool(value)
+        magnets.append(item)
+    return magnets
 
 
 def select_movie_magnet(movie_id, magnet_id):
@@ -620,9 +631,9 @@ def import_csv_file(path, filename):
                     """
                     INSERT INTO magnets(
                         movie_id, name, link, base_priority_score, priority_score, magnet_date, size_mb,
-                        has_uncensored, has_hd, has_subtitle, is_selected, position, created_at
+                        tags_json, has_uncensored, has_hd, has_subtitle, is_selected, position, created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, 1, 0, ?)
                     """,
                     (
                         movie_id,

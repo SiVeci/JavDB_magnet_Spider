@@ -116,6 +116,7 @@ def init_database():
                 priority_score INTEGER DEFAULT 0,
                 magnet_date TEXT DEFAULT '',
                 size_mb REAL DEFAULT 0,
+                tags_json TEXT DEFAULT '[]',
                 has_uncensored INTEGER,
                 has_hd INTEGER,
                 has_subtitle INTEGER,
@@ -226,6 +227,7 @@ def _migrate_tag_columns():
     with connect() as conn:
         _ensure_column(conn, "collections", "tags_json", "TEXT DEFAULT '[]'")
         _ensure_column(conn, "movies", "tags_json", "TEXT DEFAULT '[]'")
+        _ensure_column(conn, "magnets", "tags_json", "TEXT DEFAULT '[]'")
 
 
 def _migrate_magnet_check_columns():
