@@ -545,6 +545,61 @@ class MagnetSelectionTest(unittest.TestCase):
         self.assertEqual(selected["priority_score"], 100)
         self.assertEqual(next(row for row in rows if row["id"] == second_id)["priority_score"], 50)
 
+    def test_rescore_reapplies_dead_and_error_penalty(self):
+        score_conditions = {
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "subtitle",
+            "magnet_score_1_condition": "uncensored",
+        }
+        dead = {"name": "dead.torrent", "link": "magnet:?xt=urn:btih:dead", "rank": 1, "date": "2026-01-01", "size_mb": 2048}
+        failed = {"name": "failed.torrent", "link": "magnet:?xt=urn:btih:failed", "rank": 1, "date": "2026-01-02", "size_mb": 1024}
+        db_store.save_movie_result(
+            "rescore-health.csv",
+            {"code": "HEALTH-001", "title": "Health", "url": "https://example.test/v/health"},
+            dead,
+            [dead, failed],
+        )
+        movie_id = db_store.get_collection_movies("rescore-health.csv")["movies"][0]["id"]
+        magnets = db_store.get_movie_magnets(movie_id)
+        dead_id = next(row["id"] for row in magnets if row["link"] == dead["link"])
+        failed_id = next(row["id"] for row in magnets if row["link"] == failed["link"])
+        db_store.update_magnet_check_result(dead_id, "dead")
+        db_store.update_magnet_check_result(failed_id, None, check_error="timeout")
+
+        db_store.auto_select_collection_magnets(["rescore-health.csv"], score_conditions)
+        rows = {row["link"]: row for row in db_store.get_movie_magnets(movie_id)}
+        self.assertEqual(rows[dead["link"]]["base_priority_score"], 100)
+        self.assertEqual(rows[dead["link"]]["priority_score"], -100)
+        self.assertEqual(rows[failed["link"]]["base_priority_score"], 0)
+        self.assertEqual(rows[failed["link"]]["priority_score"], -200)
+
+    def test_rescore_keeps_active_or_weak_selection_preference(self):
+        score_conditions = {
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "subtitle",
+            "magnet_score_1_condition": "uncensored",
+        }
+        for status in ("active", "weak"):
+            filename = f"rescore-{status}.csv"
+            dead = {"name": f"dead-{status}.torrent", "link": f"magnet:?xt=urn:btih:dead-{status}", "rank": 1, "date": "2026-01-01", "size_mb": 2048}
+            available = {"name": f"available-{status}-C.torrent", "link": f"magnet:?xt=urn:btih:available-{status}", "rank": 1, "date": "2026-01-02", "size_mb": 1024}
+            db_store.save_movie_result(
+                filename,
+                {"code": f"HEALTH-{status.upper()}", "title": status, "url": f"https://example.test/v/{status}"},
+                dead,
+                [dead, available],
+            )
+            movie_id = db_store.get_collection_movies(filename)["movies"][0]["id"]
+            magnets = db_store.get_movie_magnets(movie_id)
+            dead_id = next(row["id"] for row in magnets if row["link"] == dead["link"])
+            available_id = next(row["id"] for row in magnets if row["link"] == available["link"])
+            db_store.update_magnet_check_result(dead_id, "dead")
+            db_store.update_magnet_check_result(available_id, status)
+
+            db_store.auto_select_collection_magnets([filename], score_conditions)
+            selected = next(row for row in db_store.get_movie_magnets(movie_id) if row["is_selected"])
+            self.assertEqual(selected["link"], available["link"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -8,7 +8,7 @@ import csv
 import os
 import time
 
-from magnet_scoring import infer_magnet_conditions
+from magnet_scoring import infer_magnet_conditions, score_magnet_candidates, validate_score_conditions
 from db_store import (
     connect,
     _now,
@@ -393,17 +393,75 @@ def get_collection_movie_ids(filename):
     return [row["id"] for row in rows]
 
 
-def auto_select_collection_magnets(filenames):
+def _rescore_movie_magnets(conn, movie_id, score_conditions):
+    rows = conn.execute(
+        "SELECT * FROM magnets WHERE movie_id = ? ORDER BY position, id",
+        (movie_id,),
+    ).fetchall()
+    if not rows:
+        return 0
+
+    candidates = []
+    for row in rows:
+        inferred = infer_magnet_conditions(row["name"])
+        candidates.append(
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "size_mb": row["size_mb"],
+                "has_uncensored": (
+                    inferred["has_uncensored"]
+                    if row["has_uncensored"] is None
+                    else bool(row["has_uncensored"])
+                ),
+                "has_hd": (
+                    inferred["has_hd"]
+                    if row["has_hd"] is None
+                    else bool(row["has_hd"])
+                ),
+                "has_subtitle": (
+                    inferred["has_subtitle"]
+                    if row["has_subtitle"] is None
+                    else bool(row["has_subtitle"])
+                ),
+            }
+        )
+
+    scored = score_magnet_candidates(candidates, score_conditions)
+    rows_by_id = {row["id"]: row for row in rows}
+    for item in scored:
+        row = rows_by_id[item["id"]]
+        base_score = int(item["rank"])
+        priority_score = _score_from_check(
+            base_score,
+            row["check_status"],
+            row["check_error"],
+        )
+        conn.execute(
+            """
+            UPDATE magnets
+            SET base_priority_score = ?, priority_score = ?
+            WHERE id = ?
+            """,
+            (base_score, priority_score, item["id"]),
+        )
+    return len(scored)
+
+
+def auto_select_collection_magnets(filenames, score_conditions):
+    score_conditions = validate_score_conditions(score_conditions)
     safe_names = [normalize_csv_filename(filename) for filename in filenames]
     now = _now()
     updated = 0
+    rescored = 0
     with connect() as conn:
         for filename in safe_names:
             rows = _collection_movie_query(conn, filename, "m.id")
             for row in rows:
+                rescored += _rescore_movie_magnets(conn, row["id"], score_conditions)
                 if _reselect_movie_magnet(conn, row["id"], now):
                     updated += 1
-    return updated
+    return {"updated": updated, "rescored": rescored}
 
 
 def update_magnet_check_result(magnet_id, check_status, seeders=0, leechers=0, check_error=None):

@@ -701,10 +701,16 @@ def _reselect_movie_magnet(conn, movie_id, now=None):
         return False
     viable = [row for row in rows if row["check_status"] in {"active", "weak"}]
     candidates = viable if viable else rows
-    selected = sorted(
+    selected = max(
         candidates,
-        key=lambda row: (-_to_int(row["priority_score"]), _to_int(row["position"]), _to_int(row["id"])),
-    )[0]
+        key=lambda row: (
+            _to_int(row["priority_score"]),
+            row["magnet_date"] or "",
+            _to_float(row["size_mb"]),
+            -_to_int(row["position"]),
+            -_to_int(row["id"]),
+        ),
+    )
     conn.execute("UPDATE magnets SET is_selected = 0 WHERE movie_id = ?", (movie_id,))
     conn.execute("UPDATE magnets SET is_selected = 1 WHERE id = ?", (selected["id"],))
     conn.execute(
