@@ -5,7 +5,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from magnet_scoring import score_magnet_candidates
+from magnet_scoring import infer_magnet_conditions, score_magnet_candidates
 
 
 def candidate(name, size_mb=1024.0, uncensored=False, hd=False, subtitle=False):
@@ -19,6 +19,33 @@ def candidate(name, size_mb=1024.0, uncensored=False, hd=False, subtitle=False):
 
 
 class MagnetScoringTest(unittest.TestCase):
+    def test_infer_conditions_from_legacy_filename_tokens(self):
+        self.assertEqual(
+            infer_magnet_conditions("JUR-750-U.torrent"),
+            {
+                "has_uncensored": True,
+                "has_hd": False,
+                "has_subtitle": False,
+            },
+        )
+        self.assertTrue(
+            infer_magnet_conditions("JUR-750-C-4K.torrent")["has_subtitle"]
+        )
+        self.assertTrue(
+            infer_magnet_conditions("JUR-750-C-4K.torrent")["has_hd"]
+        )
+
+    def test_infer_conditions_uses_tags_when_available(self):
+        result = infer_magnet_conditions("plain-name", ["字幕", "高清"])
+        self.assertTrue(result["has_subtitle"])
+        self.assertTrue(result["has_hd"])
+        self.assertFalse(result["has_uncensored"])
+
+    def test_infer_conditions_does_not_match_letters_inside_words(self):
+        result = infer_magnet_conditions("documentary-cut.torrent")
+        self.assertFalse(result["has_uncensored"])
+        self.assertFalse(result["has_subtitle"])
+
     def test_default_mapping_preserves_100_10_1_scores(self):
         results = score_magnet_candidates([
             candidate("uncensored", uncensored=True),

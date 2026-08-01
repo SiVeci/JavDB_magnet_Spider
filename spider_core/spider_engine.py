@@ -6,7 +6,12 @@ import os
 import json
 import threading
 import db_store
-from magnet_scoring import SCORE_LEVELS, score_magnet_candidates, validate_score_conditions
+from magnet_scoring import (
+    SCORE_LEVELS,
+    infer_magnet_conditions,
+    score_magnet_candidates,
+    validate_score_conditions,
+)
 from ranking_utils import COLLECTION_TYPE_ACTOR, COLLECTION_TYPE_RANKING, ranking_filename
 from storage_utils import (
     UnsafeFilenameError,
@@ -289,24 +294,20 @@ def evaluate_magnet(item_soup):
     if not magnet_a: return None
 
     name_elem = item_soup.select_one('.name')
-    name = name_elem.text.strip().lower() if name_elem else ''
+    original_name = name_elem.text.strip() if name_elem else 'Unknown'
     tags = [t.text.strip() for t in item_soup.select('.tags .tag')]
     date_elem = item_soup.select_one('.date .time')
     date_str = date_elem.text.strip() if date_elem else '1970-01-01'
     size_str = item_soup.select_one('.meta').text.strip() if item_soup.select_one('.meta') else ''
 
-    has_uncensored = bool(re.search(r'\b(uc|uncensored|u)\b', name))
-    has_sub = bool(re.search(r'\b(c|chs)\b', name)) or ('字幕' in tags)
-    has_hd = ('高清' in tags) or bool(re.search(r'\b(1080p|4k|2160p)\b', name))
+    conditions = infer_magnet_conditions(original_name, tags)
 
     return {
         'link': magnet_a.get('href'),
-        'name': name_elem.text.strip() if name_elem else 'Unknown',
+        'name': original_name,
         'date': date_str,
         'size_mb': parse_size(size_str),
-        'has_uncensored': has_uncensored,
-        'has_hd': has_hd,
-        'has_subtitle': has_sub,
+        **conditions,
     }
 
 

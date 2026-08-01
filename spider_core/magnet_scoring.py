@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+import re
 
 
 SCORE_LEVELS = (
@@ -14,6 +15,25 @@ DEFAULT_SCORE_CONDITIONS = {
     "magnet_score_10_condition": "hd",
     "magnet_score_1_condition": "subtitle",
 }
+
+
+def infer_magnet_conditions(name, tags=None):
+    """Infer the three filename or HTML tag conditions used by magnet scoring."""
+    normalized_name = str(name or "").lower()
+    normalized_tags = {str(tag).strip() for tag in (tags or [])}
+    return {
+        "has_uncensored": bool(
+            re.search(r"\b(uc|uncensored|u)\b", normalized_name)
+        ),
+        "has_hd": (
+            "高清" in normalized_tags
+            or bool(re.search(r"\b(1080p|4k|2160p)\b", normalized_name))
+        ),
+        "has_subtitle": (
+            "字幕" in normalized_tags
+            or bool(re.search(r"\b(c|chs)\b", normalized_name))
+        ),
+    }
 
 
 def validate_score_conditions(config):
