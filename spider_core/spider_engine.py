@@ -6,7 +6,7 @@ import os
 import json
 import threading
 import db_store
-from magnet_scoring import score_magnet_candidates
+from magnet_scoring import SCORE_LEVELS, score_magnet_candidates, validate_score_conditions
 from ranking_utils import COLLECTION_TYPE_ACTOR, COLLECTION_TYPE_RANKING, ranking_filename
 from storage_utils import (
     UnsafeFilenameError,
@@ -171,9 +171,13 @@ def update_status(state="idle", progress="", current="", log_msg=None, clear_log
 
 def save_checkpoint(data):
     task_id = get_current_task_id()
+    checkpoint = dict(data)
+    score_conditions = getattr(TASK_CONTEXT, "magnet_score_conditions", None)
+    if score_conditions is not None:
+        checkpoint["magnet_score_conditions"] = dict(score_conditions)
     if task_id:
-        db_store.save_task_checkpoint(task_id, data)
-    atomic_write_json(CHECKPOINT_FILE, data)
+        db_store.save_task_checkpoint(task_id, checkpoint)
+    atomic_write_json(CHECKPOINT_FILE, checkpoint)
 
 def load_checkpoint():
     task_id = get_current_task_id()
@@ -339,6 +343,8 @@ def run_spider(
     score_conditions=None,
 ):
     TASK_CONTEXT.task_id = task_id
+    score_conditions = validate_score_conditions(score_conditions)
+    TASK_CONTEXT.magnet_score_conditions = score_conditions
     if not task_id:
         STOP_EVENT.clear()
     try:
@@ -585,6 +591,15 @@ def run_task(task_id):
     try:
         checkpoint = db_store.load_task_checkpoint(task_id)
         runtime = db_store.get_runtime_config(include_cookie=True)
+        if checkpoint and "magnet_score_conditions" in checkpoint:
+            score_conditions = checkpoint["magnet_score_conditions"]
+        else:
+            score_conditions = {
+                key: runtime.get(key)
+                for key, _score in SCORE_LEVELS
+            }
+        score_conditions = validate_score_conditions(score_conditions)
+        TASK_CONTEXT.magnet_score_conditions = score_conditions
         run_spider(
             task["start_url"],
             runtime.get("cookie", ""),
@@ -597,6 +612,9 @@ def run_task(task_id):
             collection_type=task.get("collection_type") or COLLECTION_TYPE_ACTOR,
             ranking_category=task.get("ranking_category") or "",
             ranking_period=task.get("ranking_period") or "",
+            score_conditions=score_conditions,
         )
     finally:
         TASK_CONTEXT.task_id = None
+        if hasattr(TASK_CONTEXT, "magnet_score_conditions"):
+            delattr(TASK_CONTEXT, "magnet_score_conditions")

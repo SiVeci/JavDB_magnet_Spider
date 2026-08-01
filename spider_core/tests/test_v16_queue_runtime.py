@@ -270,6 +270,63 @@ class RuntimeConfigTest(unittest.TestCase):
         self.assertNotIn(session_id, auth_browser_service._sessions)
 
 
+class TaskScoreSnapshotTest(unittest.TestCase):
+    SCORE_CONDITIONS = {
+        "magnet_score_100_condition": "largest_size",
+        "magnet_score_10_condition": "subtitle",
+        "magnet_score_1_condition": "hd",
+    }
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        db_store.configure(self.tmpdir.name)
+
+    def tearDown(self):
+        for attr in ("task_id", "magnet_score_conditions"):
+            if hasattr(spider_engine.TASK_CONTEXT, attr):
+                delattr(spider_engine.TASK_CONTEXT, attr)
+        self.tmpdir.cleanup()
+
+    def test_new_task_uses_runtime_score_conditions(self):
+        db_store.save_runtime_config(**self.SCORE_CONDITIONS)
+        task_id = db_store.create_task("https://javdb.com/actors/demo")
+
+        with patch.object(spider_engine, "run_spider") as run_spider:
+            spider_engine.run_task(task_id)
+
+        self.assertEqual(run_spider.call_args.kwargs["score_conditions"], self.SCORE_CONDITIONS)
+
+    def test_checkpoint_stores_score_condition_snapshot(self):
+        task_id = db_store.create_task("https://javdb.com/actors/demo")
+        spider_engine.TASK_CONTEXT.task_id = task_id
+        spider_engine.TASK_CONTEXT.magnet_score_conditions = dict(self.SCORE_CONDITIONS)
+
+        with patch.object(spider_engine, "atomic_write_json"):
+            spider_engine.save_checkpoint({"phase": 2, "current_index": 1})
+
+        checkpoint = db_store.load_task_checkpoint(task_id)
+        self.assertEqual(checkpoint["magnet_score_conditions"], self.SCORE_CONDITIONS)
+        self.assertEqual(checkpoint["phase"], 2)
+
+    def test_resumed_task_uses_checkpoint_conditions_after_global_change(self):
+        task_id = db_store.create_task("https://javdb.com/actors/demo")
+        db_store.save_task_checkpoint(task_id, {
+            "phase": 2,
+            "current_index": 1,
+            "magnet_score_conditions": dict(self.SCORE_CONDITIONS),
+        })
+        db_store.save_runtime_config(
+            magnet_score_100_condition="uncensored",
+            magnet_score_10_condition="hd",
+            magnet_score_1_condition="subtitle",
+        )
+
+        with patch.object(spider_engine, "run_spider") as run_spider:
+            spider_engine.run_task(task_id)
+
+        self.assertEqual(run_spider.call_args.kwargs["score_conditions"], self.SCORE_CONDITIONS)
+
+
 class TaskEnqueueTest(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
