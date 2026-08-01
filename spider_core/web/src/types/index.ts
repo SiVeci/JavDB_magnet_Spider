@@ -44,6 +44,9 @@ export interface RuntimeConfig {
   cookie_validated_at?: number
   cookie_status?: string
   cookie_last_error?: string
+  magnet_score_100_condition?: string
+  magnet_score_10_condition?: string
+  magnet_score_1_condition?: string
 }
 
 export interface Collection {
