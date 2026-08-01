@@ -3,7 +3,8 @@ import io
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
+from unittest.mock import Mock, patch
 
 import sys
 
@@ -305,6 +306,32 @@ class RuntimeConfigTest(unittest.TestCase):
         self.assertEqual(runtime["cookie_validated_at"], 123)
         # 登录成功后会话应被销毁。
         self.assertNotIn(session_id, auth_browser_service._sessions)
+
+    def test_auth_browser_start_session_gets_login_url_with_zh_locale(self):
+        class FakeSession:
+            def __init__(self):
+                self.urls = []
+
+            def get(self, url):
+                self.urls.append(url)
+                return Mock(
+                    status_code=200,
+                    text=(
+                        '<form action="/user_sessions">'
+                        '<input name="authenticity_token" value="token">'
+                        '</form>'
+                    ),
+                )
+
+        auth_browser_service._sessions.clear()
+        fake_session = FakeSession()
+        with patch.object(auth_browser_service, "_new_curl_session", return_value=fake_session), \
+                patch.object(auth_browser_service, "_fetch_captcha", return_value=""):
+            result = auth_browser_service.start_session()
+
+        self.assertEqual(parse_qs(urlparse(fake_session.urls[0]).query)["locale"], ["zh"])
+        self.assertEqual(result["login_url"], fake_session.urls[0])
+        auth_browser_service._sessions.pop(result["session_id"], None)
 
 
 class TaskScoreSnapshotTest(unittest.TestCase):

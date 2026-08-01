@@ -11,6 +11,7 @@ import sys
 import tempfile
 import types
 import unittest
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import Mock, patch
 
 from bs4 import BeautifulSoup
@@ -331,6 +332,121 @@ class RunSpiderScoringTest(unittest.TestCase):
         self.assertEqual(best["rank"], 100)
         self.assertEqual([item["rank"] for item in all_candidates], [100, 11])
 
+
+class RunSpiderLocaleTest(unittest.TestCase):
+    def test_run_spider_normalizes_initial_pagination_and_detail_urls(self):
+        list_html = """
+            <div class="movie-list">
+              <a class="box" href="/v/demo-001?source=list&locale=en" title="DEMO-001">
+                <div class="video-title"><strong>DEMO-001</strong></div>
+              </a>
+            </div>
+            <nav class="pagination"><a class="pagination-next" href="/actors/demo?page=2&locale=en">Next</a></nav>
+        """
+        final_list_html = """
+            <div class="movie-list"></div>
+        """
+        detail_html = """
+            <div id="magnets-content">
+              <div class="item">
+                <a href="magnet:?xt=urn:btih:locale">下载</a>
+                <span class="name">1GB plain</span>
+                <span class="meta">1.0GB</span>
+                <span class="date"><span class="time">2026-01-01</span></span>
+              </div>
+            </div>
+        """
+        seen = []
+
+        def fake_fetch(url, headers=None, proxies=None):
+            seen.append((url, headers))
+            if "/v/demo-001" in url:
+                return Mock(text=detail_html, status_code=200, url=url)
+            if "page=2" in url:
+                return Mock(text=final_list_html, status_code=200, url=url)
+            return Mock(text=list_html, status_code=200, url=url)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_data_dir = os.path.dirname(db_store.get_db_path())
+            try:
+                db_store.configure(tmpdir)
+                with patch.object(spider_engine, "DATA_DIR", tmpdir), \
+                        patch.object(spider_engine, "CHECKPOINT_FILE", os.path.join(tmpdir, "checkpoint.json")), \
+                        patch.object(spider_engine, "fetch_html", side_effect=fake_fetch), \
+                        patch.object(spider_engine, "update_status"), \
+                        patch.object(spider_engine.time, "sleep"), \
+                        patch.object(db_store, "save_movie_result"):
+                    spider_engine.run_spider(
+                        "https://javdb.com/actors/demo?page=1&locale=en&sort_type=0",
+                        "session=abc; locale=en",
+                        "UA",
+                        "locale.csv",
+                        crawl_mode="overwrite",
+                    )
+            finally:
+                db_store.configure(old_data_dir)
+
+        self.assertEqual(len(seen), 3)
+        for url, headers in seen:
+            self.assertEqual(parse_qs(urlparse(url).query)["locale"], ["zh"])
+            self.assertIn("locale=en", headers["Cookie"])
+        detail_query = parse_qs(urlparse(seen[-1][0]).query)
+        self.assertEqual(detail_query["source"], ["list"])
+
+    def test_run_spider_normalizes_old_checkpoint_detail_url(self):
+        detail_html = """
+            <div id="magnets-content">
+              <div class="item">
+                <a href="magnet:?xt=urn:btih:resume">下载</a>
+                <span class="name">1GB plain</span>
+                <span class="meta">1.0GB</span>
+                <span class="date"><span class="time">2026-01-01</span></span>
+              </div>
+            </div>
+        """
+        seen = []
+
+        def fake_fetch(url, headers=None, proxies=None):
+            seen.append(url)
+            return Mock(text=detail_html, status_code=200, url=url)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            old_data_dir = os.path.dirname(db_store.get_db_path())
+            try:
+                db_store.configure(tmpdir)
+                with patch.object(spider_engine, "DATA_DIR", tmpdir), \
+                        patch.object(spider_engine, "CHECKPOINT_FILE", os.path.join(tmpdir, "checkpoint.json")), \
+                        patch.object(
+                            spider_engine,
+                            "load_checkpoint",
+                            return_value={
+                                "phase": 2,
+                                "movie_links": [
+                                    {
+                                        "code": "DEMO-001",
+                                        "url": "https://javdb.com/v/demo-001?locale=en",
+                                        "title": "DEMO-001",
+                                    }
+                                ],
+                                "current_index": 0,
+                            },
+                        ), \
+                        patch.object(spider_engine, "fetch_html", side_effect=fake_fetch), \
+                        patch.object(spider_engine, "update_status"), \
+                        patch.object(spider_engine.time, "sleep"), \
+                        patch.object(db_store, "save_movie_result"):
+                    spider_engine.run_spider(
+                        "https://javdb.com/actors/demo?locale=en",
+                        "locale=en",
+                        "UA",
+                        "resume.csv",
+                        is_resume=True,
+                        crawl_mode="overwrite",
+                    )
+            finally:
+                db_store.configure(old_data_dir)
+
+        self.assertEqual(parse_qs(urlparse(seen[0]).query)["locale"], ["zh"])
 
 
 if __name__ == "__main__":

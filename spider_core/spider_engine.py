@@ -6,6 +6,7 @@ import os
 import json
 import threading
 import db_store
+from javdb_url import ensure_zh_locale
 from magnet_scoring import (
     SCORE_LEVELS,
     infer_magnet_conditions,
@@ -362,6 +363,7 @@ def run_spider(
     proxies = {'http': proxies_config, 'https': proxies_config} if proxies_config else None
 
     phase = 1
+    start_url = ensure_zh_locale(start_url)
     current_url = start_url
     page = 1
     movie_links = []
@@ -377,7 +379,8 @@ def run_spider(
             if not isinstance(incremental_movie_codes, list):
                 incremental_movie_codes = []
             if phase == 1:
-                current_url = chk.get('current_url')
+                checkpoint_url = chk.get('current_url')
+                current_url = ensure_zh_locale(checkpoint_url) if checkpoint_url else None
                 page = chk.get('page', 1)
             elif phase == 2:
                 start_index = chk.get('current_index', 0)
@@ -418,7 +421,9 @@ def run_spider(
 
                 soup = BeautifulSoup(res.text, 'html.parser')
                 for item in soup.select('div.movie-list a.box'):
-                    full_url = urllib.parse.urljoin('https://javdb.com', item.get('href'))
+                    full_url = ensure_zh_locale(
+                        urllib.parse.urljoin('https://javdb.com', item.get('href'))
+                    )
                     raw_title = item.get('title', '')
 
                     uid_strong = item.select_one('div.video-title strong')
@@ -432,7 +437,13 @@ def run_spider(
                         movie_links.append({'code': code, 'url': full_url, 'title': raw_title})
 
                 next_btn = soup.select_one('nav.pagination a.pagination-next')
-                next_url = urllib.parse.urljoin('https://javdb.com', next_btn.get('href')) if (next_btn and next_btn.get('href')) else None
+                next_url = (
+                    ensure_zh_locale(
+                        urllib.parse.urljoin('https://javdb.com', next_btn.get('href'))
+                    )
+                    if (next_btn and next_btn.get('href'))
+                    else None
+                )
 
                 # ======== 新增：动态命名与模式选择 ========
                 if not output_filename:
@@ -529,6 +540,7 @@ def run_spider(
                 res = None
                 try:
                     # 【修改点】调用抽象的 fetch_html 替代 requests.get
+                    movie['url'] = ensure_zh_locale(movie['url'])
                     res = fetch_html(movie['url'], headers=headers, proxies=proxies)
 
                     issue = classify_runtime_fetch_issue(res, stage_label="详情页请求")

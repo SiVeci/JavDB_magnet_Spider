@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import unittest
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -17,6 +18,7 @@ from storage_utils import (  # noqa: E402
     normalize_csv_filename,
     read_json_file,
 )
+from javdb_url import ensure_zh_locale  # noqa: E402
 
 
 class FilenameValidationTest(unittest.TestCase):
@@ -112,6 +114,20 @@ class AuthTokenTest(unittest.TestCase):
         self.assertIn("page=3", url)
         self.assertIn("sort_type=0", url)
         self.assertIn("t=s%2Cd", url)
+
+    def test_ensure_zh_locale_replaces_locale_and_preserves_query(self):
+        url = ensure_zh_locale(
+            "https://javdb.com/v/demo?page=3&locale=en&sort_type=0"
+        )
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+        self.assertEqual(query["locale"], ["zh"])
+        self.assertEqual(query["page"], ["3"])
+        self.assertEqual(query["sort_type"], ["0"])
+
+    def test_ensure_zh_locale_is_idempotent(self):
+        once = ensure_zh_locale("https://javdb.com/v/demo?locale=zh")
+        self.assertEqual(ensure_zh_locale(once), once)
 
 
 if __name__ == "__main__":

@@ -1,9 +1,10 @@
 """Pure utility helpers shared by routers and services."""
 
-from urllib.parse import parse_qs, quote, urlencode, urlparse, urlunparse
+from urllib.parse import quote
 
 from fastapi.responses import Response
 
+from javdb_url import ensure_zh_locale
 from spider_engine import DATA_DIR
 from storage_utils import UnsafeFilenameError, get_safe_csv_path
 
@@ -20,13 +21,6 @@ def parse_tag_filter(tags: str = None):
         return []
     values = [tag.strip() for tag in tags.split(",")]
     return [tag for tag in values if tag and tag.lower() != "all"]
-
-def ensure_zh_locale(url: str) -> str:
-    parsed = urlparse(url)
-    params = parse_qs(parsed.query, keep_blank_values=True)
-    params["locale"] = ["zh"]
-    query = urlencode(params, doseq=True)
-    return urlunparse(parsed._replace(query=query))
 
 def build_proxy_dict(proxy):
     return {"http": proxy, "https": proxy} if proxy else None
