@@ -196,6 +196,20 @@ class EvaluateMagnetTest(unittest.TestCase):
         self.assertTrue(result["has_hd"])
         self.assertFalse(result["has_subtitle"])
 
+    def test_returns_ordered_unique_original_tags(self):
+        item = self._item(
+            "plain-name",
+            tags_html=(
+                '<span class="tag"> HD </span>'
+                '<span class="tag">HD</span>'
+                '<span class="tag">Subtitles</span>'
+            ),
+        )
+        result = spider_engine.evaluate_magnet(item)
+        self.assertEqual(result["tags"], ["HD", "Subtitles"])
+        self.assertTrue(result["has_hd"])
+        self.assertTrue(result["has_subtitle"])
+
     def test_parses_plain_candidate_without_flags(self):
         result = spider_engine.evaluate_magnet(self._item("plain-name"))
         self.assertFalse(result["has_uncensored"])

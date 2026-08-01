@@ -296,7 +296,13 @@ def evaluate_magnet(item_soup):
 
     name_elem = item_soup.select_one('.name')
     original_name = name_elem.text.strip() if name_elem else 'Unknown'
-    tags = [t.text.strip() for t in item_soup.select('.tags .tag')]
+    tags = []
+    seen_tags = set()
+    for tag_elem in item_soup.select('.tags .tag'):
+        tag = tag_elem.get_text(strip=True)
+        if tag and tag not in seen_tags:
+            tags.append(tag)
+            seen_tags.add(tag)
     date_elem = item_soup.select_one('.date .time')
     date_str = date_elem.text.strip() if date_elem else '1970-01-01'
     size_str = item_soup.select_one('.meta').text.strip() if item_soup.select_one('.meta') else ''
@@ -308,27 +314,35 @@ def evaluate_magnet(item_soup):
         'name': original_name,
         'date': date_str,
         'size_mb': parse_size(size_str),
+        'tags': tags,
         **conditions,
     }
 
 
 def parse_movie_tags(soup):
+    matched_block = None
     for block in soup.select('.movie-panel-info .panel-block'):
         label = block.select_one('strong')
         if not label:
             continue
         label_text = label.get_text(strip=True).rstrip(':：')
-        if label_text not in {'类别', '類別'}:
-            continue
-        tags = []
-        seen = set()
-        for link in block.select('.value a'):
-            tag = link.get_text(strip=True)
-            if tag and tag not in seen:
-                tags.append(tag)
-                seen.add(tag)
-        return tags
-    return []
+        if label_text in {'类别', '類別', 'Tags'}:
+            matched_block = block
+            break
+
+    links = (
+        matched_block.select('.value a')
+        if matched_block is not None
+        else soup.select('.movie-panel-info .panel-block .value a[href^="/tags"]')
+    )
+    tags = []
+    seen = set()
+    for link in links:
+        tag = link.get_text(strip=True)
+        if tag and tag not in seen:
+            tags.append(tag)
+            seen.add(tag)
+    return tags
 
 def run_spider(
     start_url,

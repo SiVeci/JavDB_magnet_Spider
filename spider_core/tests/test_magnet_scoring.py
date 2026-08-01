@@ -41,6 +41,21 @@ class MagnetScoringTest(unittest.TestCase):
         self.assertTrue(result["has_hd"])
         self.assertFalse(result["has_uncensored"])
 
+    def test_infer_conditions_accepts_english_and_traditional_tags(self):
+        cases = [
+            (["高清"], "has_hd"),
+            (["HD"], "has_hd"),
+            (["字幕"], "has_subtitle"),
+            (["Subtitle"], "has_subtitle"),
+            (["Subtitles"], "has_subtitle"),
+            (["无码"], "has_uncensored"),
+            (["無碼"], "has_uncensored"),
+            (["Uncensored"], "has_uncensored"),
+        ]
+        for tags, field in cases:
+            with self.subTest(tags=tags):
+                self.assertTrue(infer_magnet_conditions("plain-name", tags)[field])
+
     def test_infer_conditions_does_not_match_letters_inside_words(self):
         result = infer_magnet_conditions("documentary-cut.torrent")
         self.assertFalse(result["has_uncensored"])

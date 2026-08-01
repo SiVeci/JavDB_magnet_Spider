@@ -20,18 +20,19 @@ DEFAULT_SCORE_CONDITIONS = {
 def infer_magnet_conditions(name, tags=None):
     """Infer the three filename or HTML tag conditions used by magnet scoring."""
     normalized_name = str(name or "").lower()
-    normalized_tags = {str(tag).strip() for tag in (tags or [])}
+    normalized_tags = {str(tag).strip().casefold() for tag in (tags or [])}
     return {
         "has_uncensored": bool(
             re.search(r"\b(uc|uncensored|u)\b", normalized_name)
+            or normalized_tags.intersection({"无码", "無碼", "uncensored"})
         ),
-        "has_hd": (
-            "高清" in normalized_tags
-            or bool(re.search(r"\b(1080p|4k|2160p)\b", normalized_name))
+        "has_hd": bool(
+            normalized_tags.intersection({"高清", "hd"})
+            or re.search(r"\b(1080p|4k|2160p)\b", normalized_name)
         ),
-        "has_subtitle": (
-            "字幕" in normalized_tags
-            or bool(re.search(r"\b(c|chs)\b", normalized_name))
+        "has_subtitle": bool(
+            normalized_tags.intersection({"字幕", "subtitle", "subtitles"})
+            or re.search(r"\b(c|chs)\b", normalized_name)
         ),
     }
 

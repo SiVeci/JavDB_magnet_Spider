@@ -33,6 +33,37 @@ class MovieTagParseTest(unittest.TestCase):
         html = '<div class="movie-panel-info"><div class="panel-block"><strong>类别：</strong><span class="value"><a>标签A</a><a>标签A</a><a>标签B</a></span></div></div>'
         self.assertEqual(parse_movie_tags(BeautifulSoup(html, "html.parser")), ["标签A", "标签B"])
 
+    def test_parse_movie_tags_accepts_english_label(self):
+        html = """
+        <nav class="movie-panel-info">
+          <div class="panel-block">
+            <strong>Tags:</strong>
+            <span class="value">
+              <a href="/tags?c=1">Mature Woman</a>
+              <a href="/tags?c=2">Creampie</a>
+            </span>
+          </div>
+        </nav>
+        """
+        self.assertEqual(
+            parse_movie_tags(BeautifulSoup(html, "html.parser")),
+            ["Mature Woman", "Creampie"],
+        )
+
+    def test_parse_movie_tags_falls_back_to_tag_links(self):
+        html = """
+        <div class="movie-panel-info"><div class="panel-block">
+          <strong>未知文案:</strong><span class="value">
+            <a href="/tags?c=1">标签A</a><a href="/tags?c=1">标签A</a>
+            <a href="/actors/x">不是类别</a><a href="/tags?c=2">标签B</a>
+          </span>
+        </div></div>
+        """
+        self.assertEqual(
+            parse_movie_tags(BeautifulSoup(html, "html.parser")),
+            ["标签A", "标签B"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
