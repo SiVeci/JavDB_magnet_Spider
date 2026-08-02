@@ -1,12 +1,26 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useSettingsStore } from '@/stores/settings'
+import { DEFAULT_SCORE_CONDITIONS, useSettingsStore } from '@/stores/settings'
 import { useToast } from '@/composables/useToast'
 import AuthLoginModal from '@/components/AuthLoginModal.vue'
 import { toErrMsg } from '@/utils/error'
 
 const settings = useSettingsStore()
 const { showToast } = useToast()
+
+const scoreConditionOptions = [
+  { value: 'uncensored', label: '无码资源' },
+  { value: 'hd', label: '高清资源' },
+  { value: 'subtitle', label: '字幕资源' },
+  { value: 'largest_size', label: '文件体积最大' },
+] as const
+type ScoreCondition = typeof scoreConditionOptions[number]['value']
+const scoreLevels = [
+  { key: 'magnet_score_100_condition', label: '一级优先级', score: 100 },
+  { key: 'magnet_score_10_condition', label: '二级优先级', score: 10 },
+  { key: 'magnet_score_1_condition', label: '三级优先级', score: 1 },
+] as const
+type ScoreConditionKey = typeof scoreLevels[number]['key']
 
 const proxyParsed = computed(() => settings.parseProxy())
 const proxyHost = ref(proxyParsed.value.host)
@@ -45,6 +59,49 @@ const portError = ref(false)
 // 账号登录弹窗开关
 const loginModalOpen = ref(false)
 
+function getScoreCondition(key: ScoreConditionKey): string {
+  return settings.config[key] || ''
+}
+
+function conditionLabel(value: string): string {
+  return scoreConditionOptions.find(option => option.value === value)?.label || '未设置'
+}
+
+const selectedScoreConditions = computed(() =>
+  new Set(scoreLevels.map(level => getScoreCondition(level.key)))
+)
+const unusedScoreConditionLabel = computed(() => {
+  const unused = scoreConditionOptions.find(option => !selectedScoreConditions.value.has(option.value))
+  return unused?.label || '无'
+})
+const scoreFormula = computed(() =>
+  scoreLevels.map(level => `${conditionLabel(getScoreCondition(level.key))} × ${level.score}`).join(' + ')
+)
+const hasInvalidScoreConditions = computed(() => {
+  const values = scoreLevels.map(level => getScoreCondition(level.key))
+  const validValues = values.every(value => scoreConditionOptions.some(option => option.value === value))
+  return !validValues || new Set(values).size !== scoreLevels.length
+})
+
+function isConditionDisabled(levelKey: ScoreConditionKey, condition: ScoreCondition): boolean {
+  if (condition === getScoreCondition(levelKey)) return false
+  return scoreLevels.some(level => level.key !== levelKey && getScoreCondition(level.key) === condition)
+}
+
+function restoreDefaultScoreConditions() {
+  settings.config.magnet_score_100_condition = DEFAULT_SCORE_CONDITIONS.magnet_score_100_condition
+  settings.config.magnet_score_10_condition = DEFAULT_SCORE_CONDITIONS.magnet_score_10_condition
+  settings.config.magnet_score_1_condition = DEFAULT_SCORE_CONDITIONS.magnet_score_1_condition
+}
+
+function validateScoreConditions(): boolean {
+  if (hasInvalidScoreConditions.value) {
+    showToast('磁力评分条件必须从四个支持项中选择三个且不能重复')
+    return false
+  }
+  return true
+}
+
 function validateProxy(): boolean {
   const h = proxyHost.value.trim()
   const p = proxyPort.value.trim()
@@ -59,6 +116,7 @@ function validateProxy(): boolean {
 }
 
 async function handleSave() {
+  if (!validateScoreConditions()) return
   if (!validateProxy()) return
   try {
     const msg = await settings.save(true)
@@ -188,6 +246,48 @@ async function checkCookie() {
             class="input input-mono h-10 min-h-10 resize-y"
             placeholder="一行一个 tracker URL"
           ></textarea>
+        </div>
+        <div class="border-t border-soft pt-5">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 class="font-bold">磁力评分优先级</h3>
+              <p class="mt-1 text-xs text-muted">固定分值为 100 / 10 / 1，选择每一级对应的条件。</p>
+            </div>
+            <button type="button" class="btn btn-sm btn-soft shrink-0" @click="restoreDefaultScoreConditions">恢复默认</button>
+          </div>
+          <div class="mt-4 space-y-3">
+            <div
+              v-for="level in scoreLevels"
+              :key="level.key"
+              class="flex flex-col gap-2 md:flex-row md:items-center"
+            >
+              <div class="flex shrink-0 items-center justify-between gap-3 md:w-40">
+                <span class="font-semibold">{{ level.label }}</span>
+                <span class="text-muted">{{ level.score }} 分</span>
+              </div>
+              <select
+                v-model="settings.config[level.key]"
+                :aria-label="level.label"
+                class="input min-w-0 flex-1"
+              >
+                <option
+                  v-for="option in scoreConditionOptions"
+                  :key="option.value"
+                  :value="option.value"
+                  :disabled="isConditionDisabled(level.key, option.value)"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+          </div>
+          <div class="mt-4 space-y-1 rounded-lg border border-soft bg-surface-sunken p-3 text-xs text-muted">
+            <div>未参与评分：{{ unusedScoreConditionLabel }}</div>
+            <div>当前规则：{{ scoreFormula }}</div>
+            <div>文件体积最大：仅比较同一影片中有效磁力且大小大于 0 的候选；并列最大同时命中，大小未知或为 0 时不命中。</div>
+            <div>保存设置不会自动修改历史分数；如需更新历史候选，请前往数据库集合页点击“自动选择”。</div>
+            <div v-if="hasInvalidScoreConditions" class="text-danger-text">当前条件存在重复或无效值，请修正后再保存。</div>
+          </div>
         </div>
       </div>
     </section>

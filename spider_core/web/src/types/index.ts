@@ -44,6 +44,9 @@ export interface RuntimeConfig {
   cookie_validated_at?: number
   cookie_status?: string
   cookie_last_error?: string
+  magnet_score_100_condition?: string
+  magnet_score_10_condition?: string
+  magnet_score_1_condition?: string
 }
 
 export interface Collection {
@@ -88,6 +91,10 @@ export interface Magnet {
   priority_score?: number
   magnet_date?: string
   size_mb?: number
+  tags?: string[]
+  has_uncensored?: boolean | null
+  has_hd?: boolean | null
+  has_subtitle?: boolean | null
   is_selected?: boolean
   position?: number
   created_at?: number

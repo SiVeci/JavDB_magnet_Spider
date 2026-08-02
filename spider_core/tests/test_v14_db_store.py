@@ -90,6 +90,32 @@ class DbStoreTest(unittest.TestCase):
         self.assertFalse(os.path.exists(csv_path))
         self.assertEqual(db_store.get_magnet_links("bad-number.csv"), ["magnet:?xt=urn:btih:bad"])
 
+    def test_import_csv_persists_condition_matches_from_filename(self):
+        self.write_csv(
+            "conditions.csv",
+            [
+                {
+                    "影片番号": "JUR-750",
+                    "原始标题": "Demo",
+                    "影片链接": "https://example.test/v/1",
+                    "最佳资源文件名": "JUR-750-U.torrent",
+                    "磁力链接": "magnet:?xt=urn:btih:conditions",
+                    "优先级得分": "100",
+                    "日期": "2026-01-01",
+                    "文件大小(MB)": "1024",
+                }
+            ],
+        )
+
+        self.assertEqual(db_store.import_existing_csvs(self.tmpdir.name), 1)
+        with db_store.connect() as conn:
+            row = conn.execute(
+                "SELECT has_uncensored, has_hd, has_subtitle FROM magnets"
+            ).fetchone()
+        self.assertEqual(tuple(row), (1, 0, 0))
+        movie_id = db_store.get_collection_movies("conditions.csv")["movies"][0]["id"]
+        self.assertEqual(db_store.get_movie_magnets(movie_id)[0]["tags"], [])
+
     def test_save_movie_result_stores_candidates_and_selected_magnet(self):
         db_store.ensure_collection("output.csv")
         movie = {"code": "ABC-001", "title": "Title 1", "url": "https://example.test/v/1"}
@@ -119,6 +145,82 @@ class DbStoreTest(unittest.TestCase):
             selected = conn.execute("SELECT COUNT(*) AS count FROM magnets WHERE is_selected = 1").fetchone()["count"]
         self.assertEqual(total, 2)
         self.assertEqual(selected, 1)
+
+    def test_save_movie_result_persists_source_tags_and_boolean_conditions(self):
+        db_store.ensure_collection("tagged.csv")
+        candidates = [
+            {
+                "name": "DEMO-001-HD",
+                "link": "magnet:?xt=urn:btih:tagged",
+                "rank": 10,
+                "date": "2026-08-02",
+                "size_mb": 1024,
+                "tags": ["HD", "Subtitles"],
+                "has_uncensored": False,
+                "has_hd": True,
+                "has_subtitle": True,
+            },
+            {
+                "name": "DEMO-001-plain",
+                "link": "magnet:?xt=urn:btih:plain",
+                "rank": 0,
+                "date": "2026-08-01",
+                "size_mb": 512,
+                "tags": [],
+                "has_uncensored": False,
+                "has_hd": False,
+                "has_subtitle": False,
+            },
+        ]
+        movie = {
+            "code": "DEMO-001",
+            "title": "Demo",
+            "url": "https://example.test/v/demo",
+        }
+
+        db_store.save_movie_result("tagged.csv", movie, candidates[0], candidates)
+
+        with db_store.connect() as conn:
+            row = conn.execute(
+                "SELECT tags_json, has_uncensored, has_hd, has_subtitle FROM magnets ORDER BY position"
+            ).fetchone()
+        self.assertEqual(row["tags_json"], '["HD", "Subtitles"]')
+        self.assertEqual(
+            (row["has_uncensored"], row["has_hd"], row["has_subtitle"]),
+            (0, 1, 1),
+        )
+
+        movie_id = db_store.get_collection_movies("tagged.csv")["movies"][0]["id"]
+        magnets = db_store.get_movie_magnets(movie_id)
+        self.assertEqual(magnets[0]["tags"], ["HD", "Subtitles"])
+        for field in ("has_uncensored", "has_hd", "has_subtitle"):
+            self.assertIsInstance(magnets[0][field], bool)
+        self.assertIs(magnets[0]["has_uncensored"], False)
+        self.assertIs(magnets[0]["has_hd"], True)
+        self.assertIs(magnets[0]["has_subtitle"], True)
+
+    def test_save_movie_result_persists_condition_matches(self):
+        candidate = {
+            "name": "JUR-750-C-4K.torrent",
+            "link": "magnet:?xt=urn:btih:conditions",
+            "rank": 11,
+            "date": "2026-01-01",
+            "size_mb": 1024,
+            "has_uncensored": False,
+            "has_hd": True,
+            "has_subtitle": True,
+        }
+        db_store.save_movie_result(
+            "conditions.csv",
+            {"code": "JUR-750", "title": "Demo", "url": "https://example.test/v/1"},
+            candidate,
+            [candidate],
+        )
+        with db_store.connect() as conn:
+            row = conn.execute(
+                "SELECT has_uncensored, has_hd, has_subtitle FROM magnets"
+            ).fetchone()
+        self.assertEqual(tuple(row), (0, 1, 1))
 
     def test_export_collection_to_csv_bytes_without_physical_csv(self):
         db_store.ensure_collection("output.csv")
@@ -230,20 +332,112 @@ class DbStoreTest(unittest.TestCase):
             {code: expected for code, expected, _statuses in cases},
         )
 
-    def test_auto_select_collection_magnets_uses_highest_score(self):
-        low = {"name": "low.torrent", "link": "magnet:?xt=urn:btih:low", "rank": 10, "date": "2026-01-01", "size_mb": 100}
-        high = {"name": "high.torrent", "link": "magnet:?xt=urn:btih:high", "rank": 200, "date": "2026-01-02", "size_mb": 200}
+    def test_auto_select_rescores_historical_candidates_before_selection(self):
+        score_conditions = {
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "subtitle",
+            "magnet_score_1_condition": "uncensored",
+        }
+        uncensored = {
+            "name": "JUR-750-U.torrent",
+            "link": "magnet:?xt=urn:btih:uncensored",
+            "rank": 100,
+            "date": "2026-06-07",
+            "size_mb": 3.7 * 1024,
+        }
+        largest_subtitle = {
+            "name": "JUR-750-C.torrent",
+            "link": "magnet:?xt=urn:btih:subtitle",
+            "rank": 1,
+            "date": "2026-06-22",
+            "size_mb": 5.1 * 1024,
+        }
         db_store.save_movie_result(
-            "auto.csv",
-            {"code": "AUTO-001", "title": "Auto", "url": "https://example.test/v/auto", "tags": []},
-            low,
-            [low, high],
+            "history.csv",
+            {"code": "JUR-750", "title": "Demo", "url": "https://example.test/v/1"},
+            uncensored,
+            [uncensored, largest_subtitle],
+        )
+        with db_store.connect() as conn:
+            conn.execute(
+                "UPDATE magnets SET has_uncensored = NULL, has_hd = NULL, has_subtitle = NULL"
+            )
+
+        result = db_store.auto_select_collection_magnets(["history.csv"], score_conditions)
+        self.assertEqual(result, {"updated": 1, "rescored": 2})
+
+        movie = db_store.get_collection_movies("history.csv")["movies"][0]
+        magnets = db_store.get_movie_magnets(movie["id"])
+        by_link = {row["link"]: row for row in magnets}
+        self.assertEqual(by_link[uncensored["link"]]["base_priority_score"], 1)
+        self.assertEqual(by_link[uncensored["link"]]["priority_score"], 1)
+        self.assertEqual(by_link[largest_subtitle["link"]]["base_priority_score"], 110)
+        self.assertEqual(by_link[largest_subtitle["link"]]["priority_score"], 110)
+        self.assertEqual(by_link[largest_subtitle["link"]]["is_selected"], 1)
+        self.assertEqual(movie["best_magnet_link"], largest_subtitle["link"])
+
+    def test_rescore_marks_equal_largest_candidates_but_uses_date_tiebreaker(self):
+        score_conditions = {
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "uncensored",
+            "magnet_score_1_condition": "hd",
+        }
+        first = {"name": "first.torrent", "link": "magnet:?xt=urn:btih:first", "rank": 1, "date": "2026-06-01", "size_mb": 4096}
+        second = {"name": "second.torrent", "link": "magnet:?xt=urn:btih:second", "rank": 1, "date": "2026-06-02", "size_mb": 4096}
+        db_store.save_movie_result(
+            "tie.csv",
+            {"code": "TIE-001", "title": "Tie", "url": "https://example.test/v/tie"},
+            first,
+            [first, second],
         )
 
-        self.assertEqual(db_store.auto_select_collection_magnets(["auto.csv"]), 1)
-        magnets = db_store.get_movie_magnets(db_store.get_collection_movies("auto.csv")["movies"][0]["id"])
-        selected = next(row for row in magnets if row["is_selected"])
-        self.assertEqual(selected["link"], high["link"])
+        result = db_store.auto_select_collection_magnets(["tie.csv"], score_conditions)
+        self.assertEqual(result, {"updated": 1, "rescored": 2})
+        movie_id = db_store.get_collection_movies("tie.csv")["movies"][0]["id"]
+        magnets = db_store.get_movie_magnets(movie_id)
+        self.assertEqual([row["base_priority_score"] for row in magnets], [100, 100])
+        self.assertEqual(next(row for row in magnets if row["is_selected"])["link"], second["link"])
+
+    def test_rescore_does_not_award_largest_score_to_zero_or_unknown_size(self):
+        score_conditions = {
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "subtitle",
+            "magnet_score_1_condition": "uncensored",
+        }
+        zero = {"name": "zero.torrent", "link": "magnet:?xt=urn:btih:zero", "rank": 1, "date": "2026-01-01", "size_mb": 0}
+        unknown = {"name": "unknown.torrent", "link": "magnet:?xt=urn:btih:unknown", "rank": 1, "date": "2026-01-02", "size_mb": None}
+        db_store.save_movie_result(
+            "unknown.csv",
+            {"code": "UNKNOWN-001", "title": "Unknown", "url": "https://example.test/v/unknown"},
+            zero,
+            [zero, unknown],
+        )
+
+        db_store.auto_select_collection_magnets(["unknown.csv"], score_conditions)
+        movie_id = db_store.get_collection_movies("unknown.csv")["movies"][0]["id"]
+        magnets = db_store.get_movie_magnets(movie_id)
+        self.assertEqual([row["base_priority_score"] for row in magnets], [0, 0])
+
+    def test_auto_select_overrides_previous_manual_selection(self):
+        score_conditions = {
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "subtitle",
+            "magnet_score_1_condition": "uncensored",
+        }
+        manual = {"name": "manual.torrent", "link": "magnet:?xt=urn:btih:manual", "rank": 1, "date": "2026-01-01", "size_mb": 100}
+        recommended = {"name": "recommended.torrent", "link": "magnet:?xt=urn:btih:recommended", "rank": 1, "date": "2026-01-02", "size_mb": 2048}
+        db_store.save_movie_result(
+            "manual.csv",
+            {"code": "MANUAL-001", "title": "Manual", "url": "https://example.test/v/manual"},
+            manual,
+            [manual, recommended],
+        )
+        movie_id = db_store.get_collection_movies("manual.csv")["movies"][0]["id"]
+        self.assertEqual(next(row for row in db_store.get_movie_magnets(movie_id) if row["is_selected"])["link"], manual["link"])
+
+        db_store.auto_select_collection_magnets(["manual.csv"], score_conditions)
+        selected = next(row for row in db_store.get_movie_magnets(movie_id) if row["is_selected"])
+        self.assertEqual(selected["link"], recommended["link"])
 
     def test_delete_task_removes_task_record(self):
         task_id = db_store.create_task("https://example.test", "cookie", "ua", "task.csv", None)

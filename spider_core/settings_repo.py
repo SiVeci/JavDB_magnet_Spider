@@ -6,8 +6,11 @@
   因此这里统一通过 db_store._SESSION_COOKIE 读写，避免拆分后出现状态副本。
 """
 
+import logging
+
 import db_store
 from db_store import connect, _now, _trackers_to_json, _trackers_from_json
+from magnet_scoring import DEFAULT_SCORE_CONDITIONS, validate_score_conditions
 
 COOKIE_SOURCES = {"manual", "android_webview", "auth_browser", "unknown"}
 COOKIE_STATUSES = {"missing", "unverified", "valid", "invalid", "expired", "network_error", "blocked"}
@@ -42,6 +45,9 @@ def save_runtime_config(
     cookie_captured_at=None,
     cookie_validated_at=None,
     cookie_last_error=None,
+    magnet_score_100_condition=None,
+    magnet_score_10_condition=None,
+    magnet_score_1_condition=None,
 ):
     now = _now()
     with connect() as conn:
@@ -50,6 +56,23 @@ def save_runtime_config(
             (now,),
         )
         current = conn.execute("SELECT * FROM runtime_config WHERE id = 1").fetchone()
+        score_keys = tuple(DEFAULT_SCORE_CONDITIONS)
+        stored_score_conditions = {key: current[key] for key in score_keys}
+        provided_score_conditions = {
+            key: value
+            for key, value in {
+                "magnet_score_100_condition": magnet_score_100_condition,
+                "magnet_score_10_condition": magnet_score_10_condition,
+                "magnet_score_1_condition": magnet_score_1_condition,
+            }.items()
+            if value is not None
+        }
+        if provided_score_conditions:
+            next_score_conditions = dict(stored_score_conditions)
+            next_score_conditions.update(provided_score_conditions)
+            normalized_score_conditions = validate_score_conditions(next_score_conditions)
+        else:
+            normalized_score_conditions = stored_score_conditions
         if cookie is not None:
             db_store._SESSION_COOKIE = cookie or ""
         elif not db_store._SESSION_COOKIE and current["remember_cookie"]:
@@ -90,6 +113,8 @@ def save_runtime_config(
             SET cookie = ?, remember_cookie = ?, user_agent = ?, proxies = ?,
                 tracker_list_json = ?, cookie_source = ?, cookie_captured_at = ?,
                 cookie_validated_at = ?, cookie_status = ?, cookie_last_error = ?,
+                magnet_score_100_condition = ?, magnet_score_10_condition = ?,
+                magnet_score_1_condition = ?,
                 updated_at = ?
             WHERE id = 1
             """,
@@ -104,6 +129,9 @@ def save_runtime_config(
                 next_validated_at,
                 next_status,
                 next_last_error,
+                normalized_score_conditions["magnet_score_100_condition"],
+                normalized_score_conditions["magnet_score_10_condition"],
+                normalized_score_conditions["magnet_score_1_condition"],
                 now,
             ),
         )
@@ -118,6 +146,14 @@ def get_runtime_config(include_cookie=True):
         row = conn.execute("SELECT * FROM runtime_config WHERE id = 1").fetchone()
     remember_cookie = bool(row["remember_cookie"])
     cookie = row["cookie"] if remember_cookie else db_store._SESSION_COOKIE
+    stored_score_conditions = {
+        key: row[key] for key in DEFAULT_SCORE_CONDITIONS
+    }
+    try:
+        normalized_score_conditions = validate_score_conditions(stored_score_conditions)
+    except ValueError:
+        logging.warning("runtime_config 中的磁力评分条件无效，读取时回退默认映射")
+        normalized_score_conditions = dict(DEFAULT_SCORE_CONDITIONS)
     data = {
         "remember_cookie": remember_cookie,
         "has_cookie": bool(cookie),
@@ -130,6 +166,7 @@ def get_runtime_config(include_cookie=True):
         "cookie_validated_at": row["cookie_validated_at"] or 0,
         "cookie_status": row["cookie_status"] or ("unverified" if cookie else "missing"),
         "cookie_last_error": row["cookie_last_error"] or "",
+        **normalized_score_conditions,
     }
     if include_cookie:
         data["cookie"] = cookie or ""

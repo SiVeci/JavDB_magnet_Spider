@@ -6,6 +6,13 @@ import os
 import json
 import threading
 import db_store
+from javdb_url import ensure_zh_locale
+from magnet_scoring import (
+    SCORE_LEVELS,
+    infer_magnet_conditions,
+    score_magnet_candidates,
+    validate_score_conditions,
+)
 from ranking_utils import COLLECTION_TYPE_ACTOR, COLLECTION_TYPE_RANKING, ranking_filename
 from storage_utils import (
     UnsafeFilenameError,
@@ -170,9 +177,13 @@ def update_status(state="idle", progress="", current="", log_msg=None, clear_log
 
 def save_checkpoint(data):
     task_id = get_current_task_id()
+    checkpoint = dict(data)
+    score_conditions = getattr(TASK_CONTEXT, "magnet_score_conditions", None)
+    if score_conditions is not None:
+        checkpoint["magnet_score_conditions"] = dict(score_conditions)
     if task_id:
-        db_store.save_task_checkpoint(task_id, data)
-    atomic_write_json(CHECKPOINT_FILE, data)
+        db_store.save_task_checkpoint(task_id, checkpoint)
+    atomic_write_json(CHECKPOINT_FILE, checkpoint)
 
 def load_checkpoint():
     task_id = get_current_task_id()
@@ -284,45 +295,54 @@ def evaluate_magnet(item_soup):
     if not magnet_a: return None
 
     name_elem = item_soup.select_one('.name')
-    name = name_elem.text.strip().lower() if name_elem else ''
-    tags = [t.text.strip() for t in item_soup.select('.tags .tag')]
+    original_name = name_elem.text.strip() if name_elem else 'Unknown'
+    tags = []
+    seen_tags = set()
+    for tag_elem in item_soup.select('.tags .tag'):
+        tag = tag_elem.get_text(strip=True)
+        if tag and tag not in seen_tags:
+            tags.append(tag)
+            seen_tags.add(tag)
     date_elem = item_soup.select_one('.date .time')
     date_str = date_elem.text.strip() if date_elem else '1970-01-01'
     size_str = item_soup.select_one('.meta').text.strip() if item_soup.select_one('.meta') else ''
 
-    has_uncensored = bool(re.search(r'\b(uc|uncensored|u)\b', name))
-    has_sub = bool(re.search(r'\b(c|chs)\b', name)) or ('字幕' in tags)
-    has_hd = ('高清' in tags) or bool(re.search(r'\b(1080p|4k|2160p)\b', name))
-
-    rank = 0
-    if has_uncensored: rank += 100
-    if has_hd:         rank += 10
-    if has_sub:        rank += 1
+    conditions = infer_magnet_conditions(original_name, tags)
 
     return {
         'link': magnet_a.get('href'),
-        'name': name_elem.text.strip() if name_elem else 'Unknown',
-        'rank': rank, 'date': date_str, 'size_mb': parse_size(size_str)
+        'name': original_name,
+        'date': date_str,
+        'size_mb': parse_size(size_str),
+        'tags': tags,
+        **conditions,
     }
 
 
 def parse_movie_tags(soup):
+    matched_block = None
     for block in soup.select('.movie-panel-info .panel-block'):
         label = block.select_one('strong')
         if not label:
             continue
         label_text = label.get_text(strip=True).rstrip(':：')
-        if label_text not in {'类别', '類別'}:
-            continue
-        tags = []
-        seen = set()
-        for link in block.select('.value a'):
-            tag = link.get_text(strip=True)
-            if tag and tag not in seen:
-                tags.append(tag)
-                seen.add(tag)
-        return tags
-    return []
+        if label_text in {'类别', '類別', 'Tags'}:
+            matched_block = block
+            break
+
+    links = (
+        matched_block.select('.value a')
+        if matched_block is not None
+        else soup.select('.movie-panel-info .panel-block .value a[href^="/tags"]')
+    )
+    tags = []
+    seen = set()
+    for link in links:
+        tag = link.get_text(strip=True)
+        if tag and tag not in seen:
+            tags.append(tag)
+            seen.add(tag)
+    return tags
 
 def run_spider(
     start_url,
@@ -336,8 +356,11 @@ def run_spider(
     collection_type=COLLECTION_TYPE_ACTOR,
     ranking_category="",
     ranking_period="",
+    score_conditions=None,
 ):
     TASK_CONTEXT.task_id = task_id
+    score_conditions = validate_score_conditions(score_conditions)
+    TASK_CONTEXT.magnet_score_conditions = score_conditions
     if not task_id:
         STOP_EVENT.clear()
     try:
@@ -354,6 +377,7 @@ def run_spider(
     proxies = {'http': proxies_config, 'https': proxies_config} if proxies_config else None
 
     phase = 1
+    start_url = ensure_zh_locale(start_url)
     current_url = start_url
     page = 1
     movie_links = []
@@ -369,7 +393,8 @@ def run_spider(
             if not isinstance(incremental_movie_codes, list):
                 incremental_movie_codes = []
             if phase == 1:
-                current_url = chk.get('current_url')
+                checkpoint_url = chk.get('current_url')
+                current_url = ensure_zh_locale(checkpoint_url) if checkpoint_url else None
                 page = chk.get('page', 1)
             elif phase == 2:
                 start_index = chk.get('current_index', 0)
@@ -410,7 +435,9 @@ def run_spider(
 
                 soup = BeautifulSoup(res.text, 'html.parser')
                 for item in soup.select('div.movie-list a.box'):
-                    full_url = urllib.parse.urljoin('https://javdb.com', item.get('href'))
+                    full_url = ensure_zh_locale(
+                        urllib.parse.urljoin('https://javdb.com', item.get('href'))
+                    )
                     raw_title = item.get('title', '')
 
                     uid_strong = item.select_one('div.video-title strong')
@@ -424,7 +451,13 @@ def run_spider(
                         movie_links.append({'code': code, 'url': full_url, 'title': raw_title})
 
                 next_btn = soup.select_one('nav.pagination a.pagination-next')
-                next_url = urllib.parse.urljoin('https://javdb.com', next_btn.get('href')) if (next_btn and next_btn.get('href')) else None
+                next_url = (
+                    ensure_zh_locale(
+                        urllib.parse.urljoin('https://javdb.com', next_btn.get('href'))
+                    )
+                    if (next_btn and next_btn.get('href'))
+                    else None
+                )
 
                 # ======== 新增：动态命名与模式选择 ========
                 if not output_filename:
@@ -521,6 +554,7 @@ def run_spider(
                 res = None
                 try:
                     # 【修改点】调用抽象的 fetch_html 替代 requests.get
+                    movie['url'] = ensure_zh_locale(movie['url'])
                     res = fetch_html(movie['url'], headers=headers, proxies=proxies)
 
                     issue = classify_runtime_fetch_issue(res, stage_label="详情页请求")
@@ -544,6 +578,7 @@ def run_spider(
                             if mag_data: valid_magnets.append(mag_data)
 
                     if valid_magnets:
+                        valid_magnets = score_magnet_candidates(valid_magnets, score_conditions)
                         valid_magnets.sort(key=lambda x: (x['rank'], x['date'], x['size_mb']), reverse=True)
                         best = valid_magnets[0]
 
@@ -583,6 +618,15 @@ def run_task(task_id):
     try:
         checkpoint = db_store.load_task_checkpoint(task_id)
         runtime = db_store.get_runtime_config(include_cookie=True)
+        if checkpoint and "magnet_score_conditions" in checkpoint:
+            score_conditions = checkpoint["magnet_score_conditions"]
+        else:
+            score_conditions = {
+                key: runtime.get(key)
+                for key, _score in SCORE_LEVELS
+            }
+        score_conditions = validate_score_conditions(score_conditions)
+        TASK_CONTEXT.magnet_score_conditions = score_conditions
         run_spider(
             task["start_url"],
             runtime.get("cookie", ""),
@@ -595,6 +639,9 @@ def run_task(task_id):
             collection_type=task.get("collection_type") or COLLECTION_TYPE_ACTOR,
             ranking_category=task.get("ranking_category") or "",
             ranking_period=task.get("ranking_period") or "",
+            score_conditions=score_conditions,
         )
     finally:
         TASK_CONTEXT.task_id = None
+        if hasattr(TASK_CONTEXT, "magnet_score_conditions"):
+            delattr(TASK_CONTEXT, "magnet_score_conditions")

@@ -19,10 +19,11 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
 import db_store
+from javdb_url import ensure_zh_locale
 from services.cookie_validation_service import validate_runtime_cookie
 from utils import build_proxy_dict
 
-LOGIN_URL = "https://javdb.com/login"
+LOGIN_URL = ensure_zh_locale("https://javdb.com/login")
 LOGIN_POST_PATH = "/user_sessions"
 CAPTCHA_PATH = "/rucaptcha/"
 BASE_URL = "https://javdb.com"

@@ -116,6 +116,10 @@ def init_database():
                 priority_score INTEGER DEFAULT 0,
                 magnet_date TEXT DEFAULT '',
                 size_mb REAL DEFAULT 0,
+                tags_json TEXT DEFAULT '[]',
+                has_uncensored INTEGER,
+                has_hd INTEGER,
+                has_subtitle INTEGER,
                 is_selected INTEGER DEFAULT 0,
                 position INTEGER DEFAULT 0,
                 created_at REAL NOT NULL,
@@ -171,6 +175,9 @@ def init_database():
                 user_agent TEXT DEFAULT '',
                 proxies TEXT DEFAULT '',
                 tracker_list_json TEXT DEFAULT '[]',
+                magnet_score_100_condition TEXT DEFAULT 'uncensored',
+                magnet_score_10_condition TEXT DEFAULT 'hd',
+                magnet_score_1_condition TEXT DEFAULT 'subtitle',
                 updated_at REAL NOT NULL
             );
 
@@ -200,8 +207,10 @@ def init_database():
     _migrate_collection_type_columns()
     _migrate_tag_columns()
     _migrate_magnet_check_columns()
+    _migrate_magnet_condition_columns()
     _migrate_runtime_tracker_column()
     _migrate_cookie_lifecycle_columns()
+    _migrate_runtime_magnet_score_columns()
     _migrate_task_cookie_failure_column()
     _migrate_actor_id_column()
 
@@ -218,6 +227,7 @@ def _migrate_tag_columns():
     with connect() as conn:
         _ensure_column(conn, "collections", "tags_json", "TEXT DEFAULT '[]'")
         _ensure_column(conn, "movies", "tags_json", "TEXT DEFAULT '[]'")
+        _ensure_column(conn, "magnets", "tags_json", "TEXT DEFAULT '[]'")
 
 
 def _migrate_magnet_check_columns():
@@ -232,6 +242,13 @@ def _migrate_magnet_check_columns():
             conn.execute("UPDATE magnets SET base_priority_score = priority_score")
 
 
+def _migrate_magnet_condition_columns():
+    with connect() as conn:
+        _ensure_column(conn, "magnets", "has_uncensored", "INTEGER")
+        _ensure_column(conn, "magnets", "has_hd", "INTEGER")
+        _ensure_column(conn, "magnets", "has_subtitle", "INTEGER")
+
+
 def _migrate_runtime_tracker_column():
     with connect() as conn:
         _ensure_column(conn, "runtime_config", "tracker_list_json", "TEXT DEFAULT '[]'")
@@ -244,6 +261,13 @@ def _migrate_cookie_lifecycle_columns():
         _ensure_column(conn, "runtime_config", "cookie_validated_at", "REAL DEFAULT 0")
         _ensure_column(conn, "runtime_config", "cookie_status", "TEXT DEFAULT 'missing'")
         _ensure_column(conn, "runtime_config", "cookie_last_error", "TEXT DEFAULT ''")
+
+
+def _migrate_runtime_magnet_score_columns():
+    with connect() as conn:
+        _ensure_column(conn, "runtime_config", "magnet_score_100_condition", "TEXT DEFAULT 'uncensored'")
+        _ensure_column(conn, "runtime_config", "magnet_score_10_condition", "TEXT DEFAULT 'hd'")
+        _ensure_column(conn, "runtime_config", "magnet_score_1_condition", "TEXT DEFAULT 'subtitle'")
 
 
 def _migrate_task_cookie_failure_column():
@@ -679,10 +703,16 @@ def _reselect_movie_magnet(conn, movie_id, now=None):
         return False
     viable = [row for row in rows if row["check_status"] in {"active", "weak"}]
     candidates = viable if viable else rows
-    selected = sorted(
+    selected = max(
         candidates,
-        key=lambda row: (-_to_int(row["priority_score"]), _to_int(row["position"]), _to_int(row["id"])),
-    )[0]
+        key=lambda row: (
+            _to_int(row["priority_score"]),
+            row["magnet_date"] or "",
+            _to_float(row["size_mb"]),
+            -_to_int(row["position"]),
+            -_to_int(row["id"]),
+        ),
+    )
     conn.execute("UPDATE magnets SET is_selected = 0 WHERE movie_id = ?", (movie_id,))
     conn.execute("UPDATE magnets SET is_selected = 1 WHERE id = ?", (selected["id"],))
     conn.execute(

@@ -116,7 +116,8 @@ export const useDatabaseStore = defineStore('database', () => {
   async function autoSelectMagnets(filenames: string[]): Promise<string> {
     const res = await apiPost<ApiResponse>('/api/magnets/auto_select', { filenames })
     if (res.code !== 200) throw new Error(res.msg || '自动选择失败')
-    return res.msg || '自动选择完成'
+    invalidateMovieCaches()
+    return res.msg || '重新评分和自动选择完成'
   }
 
   async function enqueueCollectionIncremental(name: string): Promise<string> {

@@ -8,6 +8,7 @@ import csv
 import os
 import time
 
+from magnet_scoring import infer_magnet_conditions, score_magnet_candidates, validate_score_conditions
 from db_store import (
     connect,
     _now,
@@ -52,6 +53,14 @@ __all__ = [
     "import_csv_file",
     "import_existing_csvs",
 ]
+
+
+def _stored_condition_flags(candidate):
+    inferred = infer_magnet_conditions(candidate.get("name", ""))
+    return {
+        key: bool(candidate[key]) if candidate.get(key) is not None else inferred[key]
+        for key in ("has_uncensored", "has_hd", "has_subtitle")
+    }
 
 
 def _collection_movie_query(conn, filename, select_columns, extra_joins="", extra_where="", order_by="m.id", params=None):
@@ -187,13 +196,15 @@ def save_movie_result(filename, movie, best_magnet, candidates):
         ).fetchone()["id"]
         conn.execute("DELETE FROM magnets WHERE movie_id = ?", (movie_id,))
         for index, magnet in enumerate(candidates):
+            condition_flags = _stored_condition_flags(magnet)
+            magnet_tags = _normalize_string_list(magnet.get("tags", []))
             conn.execute(
                 """
                 INSERT INTO magnets(
                     movie_id, name, link, base_priority_score, priority_score, magnet_date, size_mb,
-                    is_selected, position, created_at
+                    tags_json, has_uncensored, has_hd, has_subtitle, is_selected, position, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     movie_id,
@@ -203,6 +214,10 @@ def save_movie_result(filename, movie, best_magnet, candidates):
                     _to_int(magnet.get("rank", 0)),
                     magnet.get("date", ""),
                     _to_float(magnet.get("size_mb", 0)),
+                    _tags_to_json(magnet_tags),
+                    int(condition_flags["has_uncensored"]),
+                    int(condition_flags["has_hd"]),
+                    int(condition_flags["has_subtitle"]),
                     1 if magnet.get("link") == best_magnet.get("link") else 0,
                     index,
                     now,
@@ -329,7 +344,8 @@ def get_movie_magnets(movie_id):
         rows = conn.execute(
             """
             SELECT id, movie_id, name, link, base_priority_score, priority_score,
-                   magnet_date, size_mb, is_selected, position, created_at,
+                   magnet_date, size_mb, tags_json, has_uncensored, has_hd, has_subtitle,
+                   is_selected, position, created_at,
                    check_status, seeders, leechers, checked_at, check_error
             FROM magnets
             WHERE movie_id = ?
@@ -337,7 +353,15 @@ def get_movie_magnets(movie_id):
             """,
             (movie_id,),
         ).fetchall()
-    return [dict(row) for row in rows]
+    magnets = []
+    for row in rows:
+        item = dict(row)
+        item["tags"] = _tags_from_json(item.pop("tags_json", ""))
+        for field in ("has_uncensored", "has_hd", "has_subtitle"):
+            value = item.get(field)
+            item[field] = None if value is None else bool(value)
+        magnets.append(item)
+    return magnets
 
 
 def select_movie_magnet(movie_id, magnet_id):
@@ -380,17 +404,75 @@ def get_collection_movie_ids(filename):
     return [row["id"] for row in rows]
 
 
-def auto_select_collection_magnets(filenames):
+def _rescore_movie_magnets(conn, movie_id, score_conditions):
+    rows = conn.execute(
+        "SELECT * FROM magnets WHERE movie_id = ? ORDER BY position, id",
+        (movie_id,),
+    ).fetchall()
+    if not rows:
+        return 0
+
+    candidates = []
+    for row in rows:
+        inferred = infer_magnet_conditions(row["name"])
+        candidates.append(
+            {
+                "id": row["id"],
+                "name": row["name"],
+                "size_mb": row["size_mb"],
+                "has_uncensored": (
+                    inferred["has_uncensored"]
+                    if row["has_uncensored"] is None
+                    else bool(row["has_uncensored"])
+                ),
+                "has_hd": (
+                    inferred["has_hd"]
+                    if row["has_hd"] is None
+                    else bool(row["has_hd"])
+                ),
+                "has_subtitle": (
+                    inferred["has_subtitle"]
+                    if row["has_subtitle"] is None
+                    else bool(row["has_subtitle"])
+                ),
+            }
+        )
+
+    scored = score_magnet_candidates(candidates, score_conditions)
+    rows_by_id = {row["id"]: row for row in rows}
+    for item in scored:
+        row = rows_by_id[item["id"]]
+        base_score = int(item["rank"])
+        priority_score = _score_from_check(
+            base_score,
+            row["check_status"],
+            row["check_error"],
+        )
+        conn.execute(
+            """
+            UPDATE magnets
+            SET base_priority_score = ?, priority_score = ?
+            WHERE id = ?
+            """,
+            (base_score, priority_score, item["id"]),
+        )
+    return len(scored)
+
+
+def auto_select_collection_magnets(filenames, score_conditions):
+    score_conditions = validate_score_conditions(score_conditions)
     safe_names = [normalize_csv_filename(filename) for filename in filenames]
     now = _now()
     updated = 0
+    rescored = 0
     with connect() as conn:
         for filename in safe_names:
             rows = _collection_movie_query(conn, filename, "m.id")
             for row in rows:
+                rescored += _rescore_movie_magnets(conn, row["id"], score_conditions)
                 if _reselect_movie_magnet(conn, row["id"], now):
                     updated += 1
-    return updated
+    return {"updated": updated, "rescored": rescored}
 
 
 def update_magnet_check_result(magnet_id, check_status, seeders=0, leechers=0, check_error=None):
@@ -544,13 +626,14 @@ def import_csv_file(path, filename):
                 (collection_id, movie["code"]),
             ).fetchone()["id"]
             if best["link"]:
+                condition_flags = infer_magnet_conditions(best["name"])
                 conn.execute(
                     """
                     INSERT INTO magnets(
                         movie_id, name, link, base_priority_score, priority_score, magnet_date, size_mb,
-                        is_selected, position, created_at
+                        tags_json, has_uncensored, has_hd, has_subtitle, is_selected, position, created_at
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, 1, 0, ?)
                     """,
                     (
                         movie_id,
@@ -560,6 +643,9 @@ def import_csv_file(path, filename):
                         _to_int(best["rank"]),
                         best["date"],
                         _to_float(best["size_mb"]),
+                        int(condition_flags["has_uncensored"]),
+                        int(condition_flags["has_hd"]),
+                        int(condition_flags["has_subtitle"]),
                         now,
                     ),
                 )

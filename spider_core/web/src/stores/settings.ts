@@ -6,6 +6,12 @@ import { STORAGE_KEYS } from '@/constants/storageKeys'
 
 const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'
 
+export const DEFAULT_SCORE_CONDITIONS = {
+  magnet_score_100_condition: 'uncensored',
+  magnet_score_10_condition: 'hd',
+  magnet_score_1_condition: 'subtitle',
+} as const
+
 export const useSettingsStore = defineStore('settings', () => {
   const config = ref<RuntimeConfig>({
     cookie: '',
@@ -19,6 +25,7 @@ export const useSettingsStore = defineStore('settings', () => {
     cookie_validated_at: 0,
     cookie_status: 'missing',
     cookie_last_error: '',
+    ...DEFAULT_SCORE_CONDITIONS,
   })
 
   function saveCookieCache() {
@@ -45,6 +52,9 @@ export const useSettingsStore = defineStore('settings', () => {
     config.value.cookie_validated_at = data.cookie_validated_at || 0
     config.value.cookie_status = data.cookie_status || (data.has_cookie ? 'unverified' : 'missing')
     config.value.cookie_last_error = data.cookie_last_error || ''
+    config.value.magnet_score_100_condition = data.magnet_score_100_condition || DEFAULT_SCORE_CONDITIONS.magnet_score_100_condition
+    config.value.magnet_score_10_condition = data.magnet_score_10_condition || DEFAULT_SCORE_CONDITIONS.magnet_score_10_condition
+    config.value.magnet_score_1_condition = data.magnet_score_1_condition || DEFAULT_SCORE_CONDITIONS.magnet_score_1_condition
   }
 
   async function save(showMsg = false): Promise<string> {
@@ -60,6 +70,9 @@ export const useSettingsStore = defineStore('settings', () => {
         user_agent: config.value.user_agent,
         proxies: config.value.proxies,
         trackers: config.value.trackers,
+        magnet_score_100_condition: config.value.magnet_score_100_condition,
+        magnet_score_10_condition: config.value.magnet_score_10_condition,
+        magnet_score_1_condition: config.value.magnet_score_1_condition,
       }),
     }).then((r: Response) => r.json())
     config.value.cookie = ''

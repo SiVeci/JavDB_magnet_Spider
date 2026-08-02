@@ -3,7 +3,8 @@ import io
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
+from unittest.mock import Mock, patch
 
 import sys
 
@@ -38,6 +39,137 @@ class RuntimeConfigTest(unittest.TestCase):
         self.assertNotIn("cookie", columns)
         self.assertNotIn("user_agent", columns)
         self.assertNotIn("proxies", columns)
+
+    def test_new_database_uses_default_score_conditions(self):
+        runtime = db_store.get_runtime_config(include_cookie=False)
+
+        self.assertEqual(runtime["magnet_score_100_condition"], "uncensored")
+        self.assertEqual(runtime["magnet_score_10_condition"], "hd")
+        self.assertEqual(runtime["magnet_score_1_condition"], "subtitle")
+
+    def test_runtime_score_conditions_roundtrip(self):
+        db_store.save_runtime_config(
+            magnet_score_100_condition="largest_size",
+            magnet_score_10_condition="subtitle",
+            magnet_score_1_condition="hd",
+        )
+
+        runtime = db_store.get_runtime_config(include_cookie=False)
+
+        self.assertEqual(runtime["magnet_score_100_condition"], "largest_size")
+        self.assertEqual(runtime["magnet_score_10_condition"], "subtitle")
+        self.assertEqual(runtime["magnet_score_1_condition"], "hd")
+
+    def test_omitted_score_conditions_preserve_existing_values(self):
+        db_store.save_runtime_config(
+            magnet_score_100_condition="largest_size",
+            magnet_score_10_condition="subtitle",
+            magnet_score_1_condition="hd",
+        )
+
+        db_store.save_runtime_config(user_agent="updated-ua")
+        runtime = db_store.get_runtime_config(include_cookie=False)
+
+        self.assertEqual(runtime["user_agent"], "updated-ua")
+        self.assertEqual(runtime["magnet_score_100_condition"], "largest_size")
+        self.assertEqual(runtime["magnet_score_10_condition"], "subtitle")
+        self.assertEqual(runtime["magnet_score_1_condition"], "hd")
+
+    def test_duplicate_score_conditions_are_rejected(self):
+        with self.assertRaises(ValueError):
+            db_store.save_runtime_config(
+                magnet_score_100_condition="uncensored",
+                magnet_score_10_condition="uncensored",
+                magnet_score_1_condition="subtitle",
+            )
+
+        runtime = db_store.get_runtime_config(include_cookie=False)
+        self.assertEqual(runtime["magnet_score_100_condition"], "uncensored")
+        self.assertEqual(runtime["magnet_score_10_condition"], "hd")
+        self.assertEqual(runtime["magnet_score_1_condition"], "subtitle")
+
+    def test_legacy_database_migration_adds_default_columns(self):
+        with db_store.connect() as conn:
+            conn.execute("DROP TABLE runtime_config")
+            conn.execute(
+                """
+                CREATE TABLE runtime_config (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    cookie TEXT DEFAULT '',
+                    remember_cookie INTEGER DEFAULT 0,
+                    user_agent TEXT DEFAULT '',
+                    proxies TEXT DEFAULT '',
+                    tracker_list_json TEXT DEFAULT '[]',
+                    updated_at REAL NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO runtime_config
+                    (id, cookie, remember_cookie, user_agent, proxies, tracker_list_json, updated_at)
+                VALUES (1, 'legacy-cookie', 1, 'legacy-ua', 'legacy-proxy', '["legacy-tracker"]', 1)
+                """
+            )
+
+        db_store.init_database()
+
+        with db_store.connect() as conn:
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(runtime_config)").fetchall()}
+            row = conn.execute("SELECT * FROM runtime_config WHERE id = 1").fetchone()
+
+        self.assertTrue({
+            "magnet_score_100_condition",
+            "magnet_score_10_condition",
+            "magnet_score_1_condition",
+        }.issubset(columns))
+        self.assertEqual(row["cookie"], "legacy-cookie")
+        self.assertEqual(row["user_agent"], "legacy-ua")
+        self.assertEqual(row["proxies"], "legacy-proxy")
+        self.assertEqual(row["tracker_list_json"], '["legacy-tracker"]')
+        runtime = db_store.get_runtime_config(include_cookie=False)
+        self.assertEqual(runtime["magnet_score_100_condition"], "uncensored")
+        self.assertEqual(runtime["magnet_score_10_condition"], "hd")
+        self.assertEqual(runtime["magnet_score_1_condition"], "subtitle")
+
+    def test_legacy_magnets_migration_preserves_unknown_condition_values(self):
+        with db_store.connect() as conn:
+            conn.execute("DROP TABLE magnets")
+            conn.execute(
+                """
+                CREATE TABLE magnets (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    movie_id INTEGER NOT NULL,
+                    name TEXT DEFAULT '',
+                    link TEXT NOT NULL,
+                    priority_score INTEGER DEFAULT 0,
+                    magnet_date TEXT DEFAULT '',
+                    size_mb REAL DEFAULT 0,
+                    is_selected INTEGER DEFAULT 0,
+                    position INTEGER DEFAULT 0,
+                    created_at REAL NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO magnets(movie_id, name, link, priority_score, created_at)
+                VALUES (1, 'legacy.torrent', 'magnet:?xt=urn:btih:legacy', 7, 1)
+                """
+            )
+
+        db_store.init_database()
+        db_store.init_database()
+
+        with db_store.connect() as conn:
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(magnets)").fetchall()}
+            legacy_row = conn.execute("SELECT * FROM magnets WHERE id = 1").fetchone()
+
+        self.assertTrue({"tags_json", "has_uncensored", "has_hd", "has_subtitle"}.issubset(columns))
+        self.assertEqual(legacy_row["tags_json"], "[]")
+        self.assertIsNone(legacy_row["has_uncensored"])
+        self.assertIsNone(legacy_row["has_hd"])
+        self.assertIsNone(legacy_row["has_subtitle"])
 
     def test_cookie_persistence_follows_remember_flag(self):
         db_store.save_runtime_config(cookie="session-cookie", remember_cookie=False, user_agent="ua", proxies="proxy")
@@ -176,6 +308,89 @@ class RuntimeConfigTest(unittest.TestCase):
         self.assertEqual(runtime["cookie_validated_at"], 123)
         # 登录成功后会话应被销毁。
         self.assertNotIn(session_id, auth_browser_service._sessions)
+
+    def test_auth_browser_start_session_gets_login_url_with_zh_locale(self):
+        class FakeSession:
+            def __init__(self):
+                self.urls = []
+
+            def get(self, url):
+                self.urls.append(url)
+                return Mock(
+                    status_code=200,
+                    text=(
+                        '<form action="/user_sessions">'
+                        '<input name="authenticity_token" value="token">'
+                        '</form>'
+                    ),
+                )
+
+        auth_browser_service._sessions.clear()
+        fake_session = FakeSession()
+        with patch.object(auth_browser_service, "_new_curl_session", return_value=fake_session), \
+                patch.object(auth_browser_service, "_fetch_captcha", return_value=""):
+            result = auth_browser_service.start_session()
+
+        self.assertEqual(parse_qs(urlparse(fake_session.urls[0]).query)["locale"], ["zh"])
+        self.assertEqual(result["login_url"], fake_session.urls[0])
+        auth_browser_service._sessions.pop(result["session_id"], None)
+
+
+class TaskScoreSnapshotTest(unittest.TestCase):
+    SCORE_CONDITIONS = {
+        "magnet_score_100_condition": "largest_size",
+        "magnet_score_10_condition": "subtitle",
+        "magnet_score_1_condition": "hd",
+    }
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        db_store.configure(self.tmpdir.name)
+
+    def tearDown(self):
+        for attr in ("task_id", "magnet_score_conditions"):
+            if hasattr(spider_engine.TASK_CONTEXT, attr):
+                delattr(spider_engine.TASK_CONTEXT, attr)
+        self.tmpdir.cleanup()
+
+    def test_new_task_uses_runtime_score_conditions(self):
+        db_store.save_runtime_config(**self.SCORE_CONDITIONS)
+        task_id = db_store.create_task("https://javdb.com/actors/demo")
+
+        with patch.object(spider_engine, "run_spider") as run_spider:
+            spider_engine.run_task(task_id)
+
+        self.assertEqual(run_spider.call_args.kwargs["score_conditions"], self.SCORE_CONDITIONS)
+
+    def test_checkpoint_stores_score_condition_snapshot(self):
+        task_id = db_store.create_task("https://javdb.com/actors/demo")
+        spider_engine.TASK_CONTEXT.task_id = task_id
+        spider_engine.TASK_CONTEXT.magnet_score_conditions = dict(self.SCORE_CONDITIONS)
+
+        with patch.object(spider_engine, "atomic_write_json"):
+            spider_engine.save_checkpoint({"phase": 2, "current_index": 1})
+
+        checkpoint = db_store.load_task_checkpoint(task_id)
+        self.assertEqual(checkpoint["magnet_score_conditions"], self.SCORE_CONDITIONS)
+        self.assertEqual(checkpoint["phase"], 2)
+
+    def test_resumed_task_uses_checkpoint_conditions_after_global_change(self):
+        task_id = db_store.create_task("https://javdb.com/actors/demo")
+        db_store.save_task_checkpoint(task_id, {
+            "phase": 2,
+            "current_index": 1,
+            "magnet_score_conditions": dict(self.SCORE_CONDITIONS),
+        })
+        db_store.save_runtime_config(
+            magnet_score_100_condition="uncensored",
+            magnet_score_10_condition="hd",
+            magnet_score_1_condition="subtitle",
+        )
+
+        with patch.object(spider_engine, "run_spider") as run_spider:
+            spider_engine.run_task(task_id)
+
+        self.assertEqual(run_spider.call_args.kwargs["score_conditions"], self.SCORE_CONDITIONS)
 
 
 class TaskEnqueueTest(unittest.TestCase):
@@ -359,7 +574,61 @@ class MagnetSelectionTest(unittest.TestCase):
         self.assertEqual(selected["priority_score"], 100)
         self.assertEqual(next(row for row in rows if row["id"] == second_id)["priority_score"], 50)
 
+    def test_rescore_reapplies_dead_and_error_penalty(self):
+        score_conditions = {
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "subtitle",
+            "magnet_score_1_condition": "uncensored",
+        }
+        dead = {"name": "dead.torrent", "link": "magnet:?xt=urn:btih:dead", "rank": 1, "date": "2026-01-01", "size_mb": 2048}
+        failed = {"name": "failed.torrent", "link": "magnet:?xt=urn:btih:failed", "rank": 1, "date": "2026-01-02", "size_mb": 1024}
+        db_store.save_movie_result(
+            "rescore-health.csv",
+            {"code": "HEALTH-001", "title": "Health", "url": "https://example.test/v/health"},
+            dead,
+            [dead, failed],
+        )
+        movie_id = db_store.get_collection_movies("rescore-health.csv")["movies"][0]["id"]
+        magnets = db_store.get_movie_magnets(movie_id)
+        dead_id = next(row["id"] for row in magnets if row["link"] == dead["link"])
+        failed_id = next(row["id"] for row in magnets if row["link"] == failed["link"])
+        db_store.update_magnet_check_result(dead_id, "dead")
+        db_store.update_magnet_check_result(failed_id, None, check_error="timeout")
+
+        db_store.auto_select_collection_magnets(["rescore-health.csv"], score_conditions)
+        rows = {row["link"]: row for row in db_store.get_movie_magnets(movie_id)}
+        self.assertEqual(rows[dead["link"]]["base_priority_score"], 100)
+        self.assertEqual(rows[dead["link"]]["priority_score"], -100)
+        self.assertEqual(rows[failed["link"]]["base_priority_score"], 0)
+        self.assertEqual(rows[failed["link"]]["priority_score"], -200)
+
+    def test_rescore_keeps_active_or_weak_selection_preference(self):
+        score_conditions = {
+            "magnet_score_100_condition": "largest_size",
+            "magnet_score_10_condition": "subtitle",
+            "magnet_score_1_condition": "uncensored",
+        }
+        for status in ("active", "weak"):
+            filename = f"rescore-{status}.csv"
+            dead = {"name": f"dead-{status}.torrent", "link": f"magnet:?xt=urn:btih:dead-{status}", "rank": 1, "date": "2026-01-01", "size_mb": 2048}
+            available = {"name": f"available-{status}-C.torrent", "link": f"magnet:?xt=urn:btih:available-{status}", "rank": 1, "date": "2026-01-02", "size_mb": 1024}
+            db_store.save_movie_result(
+                filename,
+                {"code": f"HEALTH-{status.upper()}", "title": status, "url": f"https://example.test/v/{status}"},
+                dead,
+                [dead, available],
+            )
+            movie_id = db_store.get_collection_movies(filename)["movies"][0]["id"]
+            magnets = db_store.get_movie_magnets(movie_id)
+            dead_id = next(row["id"] for row in magnets if row["link"] == dead["link"])
+            available_id = next(row["id"] for row in magnets if row["link"] == available["link"])
+            db_store.update_magnet_check_result(dead_id, "dead")
+            db_store.update_magnet_check_result(available_id, status)
+
+            db_store.auto_select_collection_magnets([filename], score_conditions)
+            selected = next(row for row in db_store.get_movie_magnets(movie_id) if row["is_selected"])
+            self.assertEqual(selected["link"], available["link"])
+
 
 if __name__ == "__main__":
     unittest.main()
-
